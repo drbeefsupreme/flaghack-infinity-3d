@@ -33,7 +33,9 @@ func place_building(state: MatchState, faction_id: String, building_id: String, 
 	var building: BuildingState = state.buildings[runtime_id]
 	building.max_hp = int(definition.max_hp)
 	building.hp = building.max_hp
-	_apply_capability(faction, definition)
+	building.capability_key = String(definition.effect_key)
+	building.capability_amount = int(definition.effect_amount)
+	state.add_building_capability(runtime_id)
 	state.emit_event("building_constructed", state.tick, {"building_id": runtime_id, "definition_id": building_id})
 	return {"ok": true, "error": "", "building_id": runtime_id}
 
@@ -45,7 +47,7 @@ func damage_building(state: MatchState, building_id: String, amount: int) -> Dic
 	var was_disabled := building.disabled
 	building.damage(amount)
 	if not was_disabled and building.disabled and state.factions.has(building.faction_id):
-		_remove_capability(state.factions[building.faction_id], definitions[building.kind])
+		state.remove_building_capability(building_id)
 	return {"ok": true, "error": ""}
 
 
@@ -56,15 +58,5 @@ func repair_building(state: MatchState, building_id: String, amount: int) -> Dic
 	var was_disabled := building.disabled
 	building.repair(amount)
 	if was_disabled and not building.disabled and state.factions.has(building.faction_id):
-		_apply_capability(state.factions[building.faction_id], definitions[building.kind])
+		state.add_building_capability(building_id)
 	return {"ok": true, "error": ""}
-
-
-func _apply_capability(faction: FactionState, definition: Dictionary) -> void:
-	var key: String = definition.effect_key
-	faction.camp_capabilities[key] = int(faction.camp_capabilities.get(key, 0)) + int(definition.effect_amount)
-
-
-func _remove_capability(faction: FactionState, definition: Dictionary) -> void:
-	var key: String = definition.effect_key
-	faction.camp_capabilities[key] = maxi(0, int(faction.camp_capabilities.get(key, 0)) - int(definition.effect_amount))

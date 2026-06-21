@@ -61,6 +61,19 @@ func test_camp_capture_disables_buildings_and_neutralizes_hippies() -> void:
 	assert_false(state.factions["rival_surveyor"].hippie_ids.has(hippie_id))
 
 
+func test_new_assets_attach_to_nearest_owned_camp_after_capture() -> void:
+	var state = MatchState.new_default("nearest-camp")
+	state.capture_camp("camp_rival_surveyor", "player", 10)
+
+	var building_id: String = state.spawn_building("player", "flag_workshop", Vector2i(35, 4))
+	var hippie_id: String = state.spawn_hippie("player", Vector2i(35, 5))
+
+	assert_true(state.camps["camp_rival_surveyor"].building_ids.has(building_id))
+	assert_false(state.camps["camp_player"].building_ids.has(building_id))
+	assert_true(state.camps["camp_rival_surveyor"].hippie_ids.has(hippie_id))
+	assert_false(state.camps["camp_player"].hippie_ids.has(hippie_id))
+
+
 func _contains_object(value: Variant) -> bool:
 	if value is Object:
 		return true

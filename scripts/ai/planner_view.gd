@@ -12,7 +12,7 @@ func from_state(state: MatchState, faction_id: String) -> Dictionary:
 
 	var visible_buildings: Array[Dictionary] = []
 	for building in state.buildings.values():
-		if building.faction_id != faction_id:
+		if building.faction_id != faction_id and not building.disabled:
 			visible_buildings.append(building.to_dict())
 
 	var open_jobs: Array[Dictionary] = []

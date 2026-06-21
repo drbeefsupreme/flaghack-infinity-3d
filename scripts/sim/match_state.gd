@@ -148,10 +148,9 @@ func spawn_hippie(faction_id: String, start_cell: Vector2i) -> String:
 	var hippie: HippieState = HippieStateScript.new(hippie_id, faction_id, start_cell)
 	hippies[hippie_id] = hippie
 	factions[faction_id].hippie_ids.append(hippie_id)
-	for camp in camps.values():
-		if camp.faction_id == faction_id:
-			camp.hippie_ids.append(hippie_id)
-			break
+	var camp_id := _nearest_camp_id_for_faction(faction_id, start_cell)
+	if camp_id != "":
+		camps[camp_id].hippie_ids.append(hippie_id)
 	emit_event("hippie_recruited", tick, {"faction_id": faction_id, "hippie_id": hippie_id})
 	return hippie_id
 
@@ -163,10 +162,9 @@ func spawn_building(faction_id: String, kind: String, building_cell: Vector2i) -
 	var building: BuildingState = BuildingStateScript.new(building_id, faction_id, kind, building_cell)
 	buildings[building_id] = building
 	factions[faction_id].building_ids.append(building_id)
-	for camp in camps.values():
-		if camp.faction_id == faction_id:
-			camp.building_ids.append(building_id)
-			break
+	var camp_id := _nearest_camp_id_for_faction(faction_id, building_cell)
+	if camp_id != "":
+		camps[camp_id].building_ids.append(building_id)
 	emit_event("building_spawned", tick, {"faction_id": faction_id, "building_id": building_id, "kind": kind})
 	return building_id
 
@@ -283,6 +281,8 @@ func _disable_captured_buildings(camp: CampState, previous_owner: String, captor
 		if not buildings.has(building_id):
 			continue
 		var building: BuildingState = buildings[building_id]
+		if not building.disabled:
+			remove_building_capability(building_id)
 		if factions.has(previous_owner):
 			factions[previous_owner].building_ids.erase(building_id)
 		building.faction_id = captor_faction_id
@@ -308,6 +308,39 @@ func _neutralize_captured_hippies(camp: CampState, previous_owner: String, event
 func _clear_camp_capabilities(faction: FactionState) -> void:
 	for key in faction.camp_capabilities.keys():
 		faction.camp_capabilities[key] = 0
+
+
+func add_building_capability(building_id: String) -> void:
+	if not buildings.has(building_id):
+		return
+	var building: BuildingState = buildings[building_id]
+	if building.capability_key == "" or not factions.has(building.faction_id):
+		return
+	var faction: FactionState = factions[building.faction_id]
+	faction.camp_capabilities[building.capability_key] = int(faction.camp_capabilities.get(building.capability_key, 0)) + building.capability_amount
+
+
+func remove_building_capability(building_id: String) -> void:
+	if not buildings.has(building_id):
+		return
+	var building: BuildingState = buildings[building_id]
+	if building.capability_key == "" or not factions.has(building.faction_id):
+		return
+	var faction: FactionState = factions[building.faction_id]
+	faction.camp_capabilities[building.capability_key] = maxi(0, int(faction.camp_capabilities.get(building.capability_key, 0)) - building.capability_amount)
+
+
+func _nearest_camp_id_for_faction(faction_id: String, cell: Vector2i) -> String:
+	var nearest_id := ""
+	var nearest_distance := 2147483647
+	for camp in camps.values():
+		if camp.faction_id != faction_id:
+			continue
+		var distance := absi(camp.cell.x - cell.x) + absi(camp.cell.y - cell.y)
+		if distance < nearest_distance:
+			nearest_id = camp.id
+			nearest_distance = distance
+	return nearest_id
 
 
 func _remove_carried_flag_from_all(flag_id: String) -> void:

@@ -110,6 +110,8 @@ func validate_order(state: MatchState, order: Dictionary) -> Dictionary:
 				return _err("unknown_building")
 			if state.buildings[payload.target_building_id].faction_id == faction_id:
 				return _err("cannot_raid_own_building")
+			if state.buildings[payload.target_building_id].disabled:
+				return _err("building_disabled")
 		_:
 			return _err("unknown_order_type")
 

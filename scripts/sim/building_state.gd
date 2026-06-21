@@ -9,6 +9,8 @@ var hp: int = 10
 var max_hp: int = 10
 var constructed: bool = true
 var disabled: bool = false
+var capability_key: String = ""
+var capability_amount: int = 0
 
 func _init(building_id: String = "", owner_id: String = "", building_kind: String = "", building_cell: Vector2i = Vector2i.ZERO) -> void:
 	id = building_id
@@ -37,4 +39,6 @@ func to_dict() -> Dictionary:
 		"max_hp": max_hp,
 		"constructed": constructed,
 		"disabled": disabled,
+		"capability_key": capability_key,
+		"capability_amount": capability_amount,
 	}

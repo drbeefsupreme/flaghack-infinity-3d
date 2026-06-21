@@ -2,6 +2,7 @@ extends GutTest
 
 const MatchState = preload("res://scripts/sim/match_state.gd")
 const ContentLoader = preload("res://scripts/sim/content_loader.gd")
+const RaidOrder = preload("res://scripts/sim/raid_order.gd")
 
 func test_each_building_modifies_distinct_camp_capability() -> void:
 	var state = MatchState.new_default("content-seed")
@@ -60,3 +61,28 @@ func test_repeated_damage_to_disabled_building_does_not_remove_other_capability(
 	catalog.damage_building(state, first.building_id, 99)
 
 	assert_eq(state.factions["player"].camp_capabilities.hearth_defense, 3)
+
+
+func test_raid_damage_uses_same_capability_accounting_as_catalog_damage() -> void:
+	var state = MatchState.new_default("content-seed")
+	var catalog = ContentLoader.new().load_building_catalog()
+	var placed: Dictionary = catalog.place_building(state, "player", "flag_workshop", Vector2i(5, 5))
+
+	RaidOrder.new().apply(state, "rival_surveyor", placed.building_id, 6, 3)
+
+	assert_true(state.buildings[placed.building_id].disabled)
+	assert_eq(state.factions["player"].camp_capabilities.flag_production, 0)
+
+
+func test_repeated_raid_on_disabled_building_rejects_without_attention_spend() -> void:
+	var state = MatchState.new_default("content-seed")
+	var catalog = ContentLoader.new().load_building_catalog()
+	var placed: Dictionary = catalog.place_building(state, "player", "flag_workshop", Vector2i(5, 5))
+	RaidOrder.new().apply(state, "rival_surveyor", placed.building_id, 6, 3)
+	var attention_before: int = state.factions["rival_surveyor"].attention_available
+
+	var result: Dictionary = RaidOrder.new().apply(state, "rival_surveyor", placed.building_id, 1, 4)
+
+	assert_false(result.ok)
+	assert_eq(result.error, "building_disabled")
+	assert_eq(state.factions["rival_surveyor"].attention_available, attention_before)

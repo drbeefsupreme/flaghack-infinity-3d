@@ -23,7 +23,9 @@ func test_mutual_exclusion_is_deterministic() -> void:
 	var drugs: Dictionary = ContentLoader.new().load_drugs()
 
 	assert_true(drugs["luminous_dust"].use_on_faction(state, "player", 1).ok)
+	var attention_before_rejection: int = state.factions["player"].attention_available
 	var result: Dictionary = drugs["acid_cop_vision"].use_on_faction(state, "player", 2)
 
 	assert_false(result.ok)
 	assert_eq(result.error, "mutually_exclusive")
+	assert_eq(state.factions["player"].attention_available, attention_before_rejection)

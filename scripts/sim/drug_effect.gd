@@ -28,12 +28,12 @@ func to_runtime_definition() -> Dictionary:
 func use_on_faction(state: MatchState, faction_id: String, event_tick: int) -> Dictionary:
 	if not state.factions.has(faction_id):
 		return {"ok": false, "error": "unknown_faction"}
-	if not state.spend_attention(faction_id, cost_attention):
-		return {"ok": false, "error": "not_enough_attention"}
 	var faction: FactionState = state.factions[faction_id]
 	for active in faction.active_drugs:
 		if active.mutual_exclusion_group == mutual_exclusion_group and mutual_exclusion_group != "":
 			return {"ok": false, "error": "mutually_exclusive"}
+	if not state.spend_attention(faction_id, cost_attention):
+		return {"ok": false, "error": "not_enough_attention"}
 	var runtime := to_runtime_definition()
 	runtime["expires_tick"] = event_tick + duration_ticks
 	faction.active_drugs.append(runtime)

@@ -29,10 +29,10 @@ func apply(state: MatchState, faction_id: String, target_cell: Vector2i, event_t
 	var faction: FactionState = state.factions[faction_id]
 	if not faction.unlocked_ability_ids.has(id):
 		return {"ok": false, "error": "ability_locked"}
-	if int(faction.ability_cooldowns.get(id, 0)) > event_tick:
-		return {"ok": false, "error": "cooldown"}
 	if target_cell.x < 0 or target_cell.y < 0:
 		return {"ok": false, "error": "invalid_target"}
+	if int(faction.ability_cooldowns.get(id, 0)) > event_tick:
+		return {"ok": false, "error": "cooldown"}
 	if not state.spend_attention(faction_id, cost_attention):
 		return {"ok": false, "error": "not_enough_attention"}
 

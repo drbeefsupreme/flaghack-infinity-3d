@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3 uid="uid://flaghack_match_scene"]
+[gd_scene load_steps=6 format=3 uid="uid://flaghack_match_scene"]
 
 [ext_resource type="Script" path="res://scripts/ui/match_controller.gd" id="1_match_controller"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pattern_overlay.tscn" id="2_overlay_scene"]
 [ext_resource type="Script" path="res://scripts/ui/selection_controller.gd" id="3_selection_controller"]
+[ext_resource type="Script" path="res://scripts/ui/hearth_capture_hud.gd" id="4_capture_hud"]
+[ext_resource type="Script" path="res://scripts/ui/debug_overlay.gd" id="5_debug_overlay"]
 
 [node name="Match" type="Node2D"]
 script = ExtResource("1_match_controller")
@@ -15,3 +17,12 @@ unique_name_in_owner = true
 [node name="SelectionController" type="Node" parent="."]
 unique_name_in_owner = true
 script = ExtResource("3_selection_controller")
+
+[node name="HearthCaptureHUD" type="Control" parent="."]
+unique_name_in_owner = true
+visible = true
+script = ExtResource("4_capture_hud")
+
+[node name="DebugOverlay" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("5_debug_overlay")

@@ -1,0 +1,3 @@
+[gd_scene format=3 uid="uid://flaghack_command_panel_scene"]
+
+[node name="CommandPanel" type="Control"]

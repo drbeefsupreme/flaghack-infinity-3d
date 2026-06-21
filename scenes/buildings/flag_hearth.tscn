@@ -1,0 +1,3 @@
+[gd_scene format=3 uid="uid://flaghack_flag_hearth_scene"]
+
+[node name="FlagHearth" type="Node2D"]

@@ -176,6 +176,8 @@ func capture_camp(camp_id: String, captor_faction_id: String, event_tick: int) -
 		return
 	var camp: CampState = camps[camp_id]
 	var previous_owner := camp.faction_id
+	_disable_captured_buildings(camp, previous_owner, captor_faction_id)
+	_neutralize_captured_hippies(camp, previous_owner, event_tick)
 	camp.faction_id = captor_faction_id
 	camp.captured_tick = event_tick
 	camp.disabled = true
@@ -190,6 +192,8 @@ func capture_camp(camp_id: String, captor_faction_id: String, event_tick: int) -
 			captor.camp_ids.append(camp_id)
 
 	_update_active_factions()
+	if factions.has(previous_owner) and not factions[previous_owner].active:
+		_clear_camp_capabilities(factions[previous_owner])
 	emit_event("camp_captured", event_tick, {
 		"camp_id": camp_id,
 		"previous_owner": previous_owner,
@@ -272,6 +276,38 @@ func _update_active_factions() -> void:
 				has_hearth = true
 				break
 		factions[faction_id].active = has_hearth
+
+
+func _disable_captured_buildings(camp: CampState, previous_owner: String, captor_faction_id: String) -> void:
+	for building_id in camp.building_ids:
+		if not buildings.has(building_id):
+			continue
+		var building: BuildingState = buildings[building_id]
+		if factions.has(previous_owner):
+			factions[previous_owner].building_ids.erase(building_id)
+		building.faction_id = captor_faction_id
+		building.hp = 0
+		building.disabled = true
+		if factions.has(captor_faction_id) and not factions[captor_faction_id].building_ids.has(building_id):
+			factions[captor_faction_id].building_ids.append(building_id)
+
+
+func _neutralize_captured_hippies(camp: CampState, previous_owner: String, event_tick: int) -> void:
+	for hippie_id in camp.hippie_ids:
+		if not hippies.has(hippie_id):
+			continue
+		var hippie: HippieState = hippies[hippie_id]
+		if factions.has(previous_owner):
+			factions[previous_owner].hippie_ids.erase(hippie_id)
+		hippie.faction_id = ""
+		hippie.job_id = ""
+		hippie.active = false
+		emit_event("hippie_neutralized", event_tick, {"hippie_id": hippie_id, "camp_id": camp.id})
+
+
+func _clear_camp_capabilities(faction: FactionState) -> void:
+	for key in faction.camp_capabilities.keys():
+		faction.camp_capabilities[key] = 0
 
 
 func _remove_carried_flag_from_all(flag_id: String) -> void:

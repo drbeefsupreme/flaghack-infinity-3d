@@ -68,6 +68,8 @@ func validate_order(state: MatchState, order: Dictionary) -> Dictionary:
 				return _err("unknown_flag")
 			if state.flags[payload.flag_id].carried_by == "":
 				return _err("flag_not_carried")
+			if state.flags[payload.flag_id].carried_by != order.get("actor_id", ""):
+				return _err("actor_not_carrying_flag")
 			if not payload.has("cell"):
 				return _err("missing_cell")
 		"pickup_flag":
@@ -84,6 +86,8 @@ func validate_order(state: MatchState, order: Dictionary) -> Dictionary:
 				return _err("unknown_flag")
 			if state.flags[payload.flag_id].carried_by == "":
 				return _err("flag_not_carried")
+			if state.flags[payload.flag_id].carried_by != order.get("actor_id", ""):
+				return _err("actor_not_carrying_flag")
 			if not payload.has("cell"):
 				return _err("missing_cell")
 		"assign_survey_work":

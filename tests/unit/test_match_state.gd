@@ -45,6 +45,22 @@ func test_winner_detection_requires_single_active_hearth_owner() -> void:
 	assert_eq(state.winning_faction_id(), "player")
 
 
+func test_camp_capture_disables_buildings_and_neutralizes_hippies() -> void:
+	var state = MatchState.new_default("capture-assets")
+	var building_id: String = state.spawn_building("rival_surveyor", "flag_workshop", Vector2i(30, 4))
+	var hippie_id: String = state.factions["rival_surveyor"].hippie_ids[0]
+	state.capture_camp("camp_rival_surveyor", "player", 10)
+
+	assert_eq(state.buildings[building_id].faction_id, "player")
+	assert_true(state.buildings[building_id].disabled)
+	assert_eq(state.buildings[building_id].hp, 0)
+	assert_false(state.factions["rival_surveyor"].building_ids.has(building_id))
+	assert_true(state.factions["player"].building_ids.has(building_id))
+	assert_eq(state.hippies[hippie_id].faction_id, "")
+	assert_false(state.hippies[hippie_id].active)
+	assert_false(state.factions["rival_surveyor"].hippie_ids.has(hippie_id))
+
+
 func _contains_object(value: Variant) -> bool:
 	if value is Object:
 		return true

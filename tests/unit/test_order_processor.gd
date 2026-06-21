@@ -43,6 +43,36 @@ func test_invalid_orders_leave_state_unchanged() -> void:
 	assert_eq(state.state_hash(), before_hash)
 
 
+func test_actor_cannot_place_or_drop_a_flag_carried_by_someone_else() -> void:
+	var state = MatchState.new_default("seed-alpha")
+	var processor = OrderProcessor.new()
+	var flag_id: String = state.claim_inventory_flag("player", "vex_player")
+	var before_hash: String = state.state_hash()
+
+	var place: Dictionary = processor.apply_order(state, {
+		"id": "stolen_place",
+		"tick": 1,
+		"actor_id": "rival_vex",
+		"faction_id": "rival_surveyor",
+		"type": "place_flag",
+		"payload": {"flag_id": flag_id, "cell": Vector2i(6, 6)}
+	})
+	var drop: Dictionary = processor.apply_order(state, {
+		"id": "stolen_drop",
+		"tick": 1,
+		"actor_id": "rival_vex",
+		"faction_id": "rival_surveyor",
+		"type": "drop_flag",
+		"payload": {"flag_id": flag_id, "cell": Vector2i(7, 7)}
+	})
+
+	assert_false(place.ok)
+	assert_eq(place.error, "actor_not_carrying_flag")
+	assert_false(drop.ok)
+	assert_eq(drop.error, "actor_not_carrying_flag")
+	assert_eq(state.state_hash(), before_hash)
+
+
 func test_attention_and_flag_spending_are_conserved() -> void:
 	var state = MatchState.new_default("seed-alpha")
 	var processor = OrderProcessor.new()

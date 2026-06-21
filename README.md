@@ -51,6 +51,12 @@ The first fixture seed is `flaghack-opening-growth`. It is intended to show
 four corner camps, a central burn landmark, early Survey Pattern growth, rival
 pressure, and debug overlays before final pixel art exists.
 
+Additional fixed fixtures:
+
+- `pattern-collision`: overlapping Survey Patterns with Crystal instability.
+- `hearth-containment`: Hearth containment with visible capture feedback.
+- `match-end`: final camp conquest with the player as winner.
+
 ## Debug Overlays
 
 The debug overlay exposes Survey Pattern vertices, fulfilled vertices, closed

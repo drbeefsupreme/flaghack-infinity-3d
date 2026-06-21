@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="LoreTerms" load_steps=2 format=3 uid="uid://flaghack_lore_terms"]
+
+[ext_resource type="Script" path="res://scripts/core/lore_terms.gd" id="1_lore_terms"]
+
+[resource]
+script = ExtResource("1_lore_terms")
+labels = {
+"ability": "command rite",
+"attention": "attention",
+"building": "camp structure",
+"drug": "strange liquid",
+"flag": "Flag",
+"hearth": "Flag Hearth",
+"hippie": "hippie",
+"instability": "Crystal instability",
+"pattern": "Survey Pattern",
+"ritual": "Flag chakra alignment",
+"vexillomancer": "vexillomancer"
+}
+forbidden_terms = Array[String](["quasicrystal", "Penrose", "aperiodic"])

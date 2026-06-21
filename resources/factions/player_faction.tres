@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="FactionDefinition" load_steps=2 format=3 uid="uid://player_faction_def"]
+
+[ext_resource type="Script" path="res://scripts/ai/faction_definition.gd" id="1_faction_def"]
+
+[resource]
+script = ExtResource("1_faction_def")
+id = "player"
+lore_name = "You, Vexillomancer"
+color = Color(0.953, 0.824, 0.231, 1)
+strategy_profile_id = "player"

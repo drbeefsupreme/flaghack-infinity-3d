@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="FactionDefinition" load_steps=2 format=3 uid="uid://rival_surveyor_def"]
+
+[ext_resource type="Script" path="res://scripts/ai/faction_definition.gd" id="1_faction_def"]
+
+[resource]
+script = ExtResource("1_faction_def")
+id = "rival_surveyor"
+lore_name = "Rival Surveyor"
+color = Color(0.612, 0.349, 0.82, 1)
+strategy_profile_id = "expand_heavy"

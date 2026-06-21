@@ -1,6 +1,8 @@
 class_name OrderProcessor
 extends RefCounted
 
+const RaidOrderScript = preload("res://scripts/sim/raid_order.gd")
+
 func apply_orders_for_tick(state: MatchState, orders: Array[Dictionary], tick: int) -> Array[Dictionary]:
 	var scoped_orders: Array[Dictionary] = []
 	for order in orders:
@@ -39,6 +41,11 @@ func apply_order(state: MatchState, order: Dictionary) -> Dictionary:
 			state.spend_attention(faction_id, int(payload.attention))
 			state.create_job(faction_id, "survey", payload.target_cell, int(payload.attention), tick)
 			return _ok(order)
+		"raid_building":
+			var raid_result: Dictionary = RaidOrderScript.new().apply(state, faction_id, payload.target_building_id, int(payload.attention), tick)
+			if raid_result.ok:
+				return _ok(order)
+			return _err(raid_result.error)
 		_:
 			return _err("unknown_order_type")
 
@@ -87,6 +94,18 @@ func validate_order(state: MatchState, order: Dictionary) -> Dictionary:
 				return _err("not_enough_attention")
 			if not payload.has("target_cell"):
 				return _err("missing_target_cell")
+		"raid_building":
+			var attention: int = int(payload.get("attention", 0))
+			if attention <= 0:
+				return _err("invalid_attention")
+			if state.factions[faction_id].attention_available < attention:
+				return _err("not_enough_attention")
+			if not payload.has("target_building_id"):
+				return _err("missing_target_building")
+			if not state.buildings.has(payload.target_building_id):
+				return _err("unknown_building")
+			if state.buildings[payload.target_building_id].faction_id == faction_id:
+				return _err("cannot_raid_own_building")
 		_:
 			return _err("unknown_order_type")
 

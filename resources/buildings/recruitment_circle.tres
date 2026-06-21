@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BuildingDefinition" load_steps=2 format=3 uid="uid://recruitment_circle_def"]
+
+[ext_resource type="Script" path="res://scripts/sim/building_definition.gd" id="1_building_def"]
+
+[resource]
+script = ExtResource("1_building_def")
+id = "recruitment_circle"
+lore_name = "Recruitment Circle"
+kind = "recruitment_circle"
+cost_flags = 1
+cost_attention = 2
+max_hp = 10
+effect_key = "recruitment"
+effect_amount = 1

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AbilityEffect" load_steps=2 format=3 uid="uid://priority_beacon_ability"]
+
+[ext_resource type="Script" path="res://scripts/sim/ability_effect.gd" id="1_ability_effect"]
+
+[resource]
+script = ExtResource("1_ability_effect")
+id = "priority_beacon"
+lore_name = "Priority Beacon"
+cost_attention = 1
+cooldown_ticks = 3
+target_mode = "cell"
+effect_key = "redirect_hippies"
+effect_amount = 1.0
+downside_key = "attention_spike"

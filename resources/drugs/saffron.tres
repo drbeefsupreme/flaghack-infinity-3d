@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="DrugEffect" load_steps=2 format=3 uid="uid://saffron_drug"]
+
+[ext_resource type="Script" path="res://scripts/sim/drug_effect.gd" id="1_drug_effect"]
+
+[resource]
+script = ExtResource("1_drug_effect")
+id = "saffron"
+lore_name = "Saffron"
+cost_attention = 1
+duration_ticks = 5
+benefit_key = "ritual_focus"
+benefit_amount = 1.5
+risk_key = "overstimulation"
+risk_amount = 0.35
+mutual_exclusion_group = "focus"

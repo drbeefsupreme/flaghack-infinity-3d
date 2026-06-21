@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="DrugEffect" load_steps=2 format=3 uid="uid://luminous_dust_drug"]
+
+[ext_resource type="Script" path="res://scripts/sim/drug_effect.gd" id="1_drug_effect"]
+
+[resource]
+script = ExtResource("1_drug_effect")
+id = "luminous_dust"
+lore_name = "Luminous Dust"
+cost_attention = 1
+duration_ticks = 4
+benefit_key = "hidden_pattern_vision"
+benefit_amount = 1.0
+risk_key = "confusion"
+risk_amount = 0.4
+mutual_exclusion_group = "vision"

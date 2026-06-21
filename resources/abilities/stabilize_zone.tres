@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AbilityEffect" load_steps=2 format=3 uid="uid://stabilize_zone_ability"]
+
+[ext_resource type="Script" path="res://scripts/sim/ability_effect.gd" id="1_ability_effect"]
+
+[resource]
+script = ExtResource("1_ability_effect")
+id = "stabilize_zone"
+lore_name = "Stabilize Zone"
+cost_attention = 2
+cooldown_ticks = 5
+target_mode = "cell"
+effect_key = "reduce_instability"
+effect_amount = 0.5
+downside_key = "ritual_fatigue"

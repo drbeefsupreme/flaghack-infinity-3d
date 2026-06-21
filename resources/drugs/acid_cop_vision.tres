@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="DrugEffect" load_steps=2 format=3 uid="uid://acid_cop_vision_drug"]
+
+[ext_resource type="Script" path="res://scripts/sim/drug_effect.gd" id="1_drug_effect"]
+
+[resource]
+script = ExtResource("1_drug_effect")
+id = "acid_cop_vision"
+lore_name = "Acid Cop Vision"
+cost_attention = 2
+duration_ticks = 3
+benefit_key = "rival_intent_vision"
+benefit_amount = 1.0
+risk_key = "paranoia"
+risk_amount = 0.6
+mutual_exclusion_group = "vision"

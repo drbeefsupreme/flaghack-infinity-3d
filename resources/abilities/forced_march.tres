@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AbilityEffect" load_steps=2 format=3 uid="uid://forced_march_ability"]
+
+[ext_resource type="Script" path="res://scripts/sim/ability_effect.gd" id="1_ability_effect"]
+
+[resource]
+script = ExtResource("1_ability_effect")
+id = "forced_march"
+lore_name = "Forced March"
+cost_attention = 2
+cooldown_ticks = 4
+target_mode = "cell"
+effect_key = "work_speed"
+effect_amount = 1.5
+downside_key = "exhaustion"

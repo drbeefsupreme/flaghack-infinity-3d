@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="BuildingDefinition" load_steps=2 format=3 uid="uid://drug_lab_def"]
+
+[ext_resource type="Script" path="res://scripts/sim/building_definition.gd" id="1_building_def"]
+
+[resource]
+script = ExtResource("1_building_def")
+id = "drug_lab"
+lore_name = "Drug Lab"
+kind = "drug_lab"
+cost_flags = 1
+cost_attention = 2
+max_hp = 9
+effect_key = "drug_brewing"
+effect_amount = 1

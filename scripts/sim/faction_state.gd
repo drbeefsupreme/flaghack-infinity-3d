@@ -10,6 +10,15 @@ var flag_inventory: int = 6
 var attention_capacity: int = 10
 var attention_available: int = 10
 var ritual: int = 0
+var active_drugs: Array[Dictionary] = []
+var unlocked_ability_ids: Array[String] = []
+var ability_cooldowns: Dictionary = {}
+var camp_capabilities: Dictionary = {
+	"flag_production": 0,
+	"recruitment": 0,
+	"hearth_defense": 0,
+	"drug_brewing": 0,
+}
 var camp_ids: Array[String] = []
 var hippie_ids: Array[String] = []
 var building_ids: Array[String] = []
@@ -38,6 +47,10 @@ func to_dict() -> Dictionary:
 		"attention_capacity": attention_capacity,
 		"attention_available": attention_available,
 		"ritual": ritual,
+		"active_drugs": active_drugs.duplicate(true),
+		"unlocked_ability_ids": unlocked_ability_ids.duplicate(),
+		"ability_cooldowns": ability_cooldowns.duplicate(true),
+		"camp_capabilities": camp_capabilities.duplicate(true),
 		"camp_ids": camp_ids.duplicate(),
 		"hippie_ids": hippie_ids.duplicate(),
 		"building_ids": building_ids.duplicate(),

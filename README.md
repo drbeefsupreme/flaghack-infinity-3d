@@ -57,6 +57,10 @@ Additional fixed fixtures:
 - `hearth-containment`: Hearth containment with visible capture feedback.
 - `match-end`: final camp conquest with the player as winner.
 
+The integration runner `FullMatchRunner` uses `full-seed` to exercise setup,
+opening expansion, first conflict, Hearth containment, first capture, captured
+faction order rejection, and final match end.
+
 ## Debug Overlays
 
 The debug overlay exposes Survey Pattern vertices, fulfilled vertices, closed

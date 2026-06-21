@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3 uid="uid://flaghack_match_scene"]
+
+[ext_resource type="Script" path="res://scripts/ui/match_controller.gd" id="1_match_controller"]
+[ext_resource type="PackedScene" path="res://scenes/ui/pattern_overlay.tscn" id="2_overlay_scene"]
+[ext_resource type="Script" path="res://scripts/ui/selection_controller.gd" id="3_selection_controller"]
+
+[node name="Match" type="Node2D"]
+script = ExtResource("1_match_controller")
+
+[node name="World" type="Node2D" parent="."]
+
+[node name="PatternOverlay" parent="." instance=ExtResource("2_overlay_scene")]
+unique_name_in_owner = true
+
+[node name="SelectionController" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("3_selection_controller")

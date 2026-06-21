@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://flaghack_pattern_overlay_scene"]
+
+[ext_resource type="Script" path="res://scripts/ui/pattern_overlay.gd" id="1_overlay_script"]
+
+[node name="PatternOverlay" type="Node2D"]
+script = ExtResource("1_overlay_script")

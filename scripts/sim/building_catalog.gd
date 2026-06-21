@@ -42,8 +42,9 @@ func damage_building(state: MatchState, building_id: String, amount: int) -> Dic
 	if not state.buildings.has(building_id):
 		return {"ok": false, "error": "unknown_building"}
 	var building: BuildingState = state.buildings[building_id]
+	var was_disabled := building.disabled
 	building.damage(amount)
-	if building.disabled and state.factions.has(building.faction_id):
+	if not was_disabled and building.disabled and state.factions.has(building.faction_id):
 		_remove_capability(state.factions[building.faction_id], definitions[building.kind])
 	return {"ok": true, "error": ""}
 

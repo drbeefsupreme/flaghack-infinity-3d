@@ -48,3 +48,15 @@ func test_building_damage_disable_and_repair_changes_output() -> void:
 	catalog.repair_building(state, building_id, 99)
 	assert_false(state.buildings[building_id].disabled)
 	assert_eq(state.factions["player"].camp_capabilities.hearth_defense, 3)
+
+
+func test_repeated_damage_to_disabled_building_does_not_remove_other_capability() -> void:
+	var state = MatchState.new_default("content-seed")
+	var catalog = ContentLoader.new().load_building_catalog()
+	var first: Dictionary = catalog.place_building(state, "player", "hearth_ward", Vector2i(5, 5))
+	catalog.place_building(state, "player", "hearth_ward", Vector2i(6, 5))
+
+	catalog.damage_building(state, first.building_id, 99)
+	catalog.damage_building(state, first.building_id, 99)
+
+	assert_eq(state.factions["player"].camp_capabilities.hearth_defense, 3)

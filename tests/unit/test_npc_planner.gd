@@ -45,3 +45,25 @@ func test_planner_uses_visible_order_path_to_disrupt_building() -> void:
 
 	assert_true(result.ok)
 	assert_lt(state.buildings[building_id].hp, state.buildings[building_id].max_hp)
+
+
+func test_planner_does_not_emit_orders_without_attention() -> void:
+	var state = MatchState.new_default("planner-seed")
+	var map = BurnMapGenerator.new().generate("planner-seed")
+	state.factions["rival_surveyor"].attention_available = 0
+	var planner = NPCPlanner.new(NPCStrategyProfile.default_for("rival_surveyor"))
+
+	assert_true(planner.plan_tick(state, map, "rival_surveyor", 1).is_empty())
+
+
+func test_raid_planner_caps_attention_to_available_pool() -> void:
+	var state = MatchState.new_default("planner-seed")
+	var map = BurnMapGenerator.new().generate("planner-seed")
+	state.spawn_building("player", "flag_workshop", Vector2i(5, 5))
+	state.factions["rival_warden"].attention_available = 1
+	var planner = NPCPlanner.new(NPCStrategyProfile.raid_heavy())
+
+	var order: Dictionary = planner.plan_tick(state, map, "rival_warden", 1)[0]
+
+	assert_eq(order.payload.attention, 1)
+	assert_true(OrderProcessor.new().validate_order(state, order).ok)

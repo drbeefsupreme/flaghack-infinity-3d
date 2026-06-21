@@ -14,9 +14,12 @@ func plan_tick(state: MatchState, burn_map: BurnMapGenerator, faction_id: String
 	var view := view_builder.from_state(state, faction_id)
 	if view.is_empty() or not bool(view.active):
 		return []
+	if int(view.attention_available) <= 0:
+		return []
 
+	var available_attention := int(view.attention_available)
 	if profile.raid_weight > profile.expand_weight and not view.visible_buildings.is_empty():
-		return [_raid_order(faction_id, tick, view.visible_buildings[0].id)]
+		return [_raid_order(faction_id, tick, view.visible_buildings[0].id, mini(2, available_attention))]
 
 	var target_cell := _next_survey_target(state, burn_map, faction_id)
 	if target_cell == Vector2i(-1, -1):
@@ -30,12 +33,12 @@ func plan_tick(state: MatchState, burn_map: BurnMapGenerator, faction_id: String
 		"type": "assign_survey_work",
 		"payload": {
 			"target_cell": target_cell,
-			"attention": mini(2, int(view.attention_available)),
+			"attention": mini(2, available_attention),
 		},
 	}]
 
 
-func _raid_order(faction_id: String, tick: int, target_building_id: String) -> Dictionary:
+func _raid_order(faction_id: String, tick: int, target_building_id: String, attention: int) -> Dictionary:
 	return {
 		"id": "%s_raid_%d" % [faction_id, tick],
 		"tick": tick,
@@ -44,7 +47,7 @@ func _raid_order(faction_id: String, tick: int, target_building_id: String) -> D
 		"type": "raid_building",
 		"payload": {
 			"target_building_id": target_building_id,
-			"attention": 2,
+			"attention": attention,
 		},
 	}
 

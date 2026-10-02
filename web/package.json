@@ -1,0 +1,30 @@
+{
+  "name": "flaghack-infinity",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Survey Flags: a 3D 1v1v1v1 vexillomantic action-strategy game built on an aperiodic Ley Lattice.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fontsource/bungee": "^5.3.0",
+    "@fontsource/cinzel": "^5.3.0",
+    "@fontsource/cinzel-decorative": "^5.3.0",
+    "@fontsource/rubik": "^5.3.0",
+    "@fontsource/stardos-stencil": "^5.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}

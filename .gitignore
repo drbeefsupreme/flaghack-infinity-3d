@@ -5,3 +5,6 @@ export.cfg
 export_presets.cfg
 *.tmp
 *.log
+web/node_modules/
+web/dist/
+web/.vite/

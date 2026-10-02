@@ -1,0 +1,84 @@
+/* Base layout and design tokens. UI-specific styles live in src/ui (owned by the UI agent). */
+:root {
+  --flag: #ffd400;
+  --flag-deep: #e0a800;
+  --ink: #0d0b14;
+  --parchment: #f3e6c4;
+  --cyan: #29e3ff;
+  --crimson: #ff4058;
+  --lime: #86ff4a;
+  --purple: #a45cff;
+  --font-display: 'Cinzel', 'Times New Roman', serif;
+  --font-ornate: 'Cinzel Decorative', 'Cinzel', serif;
+  --font-ui: 'Rubik', system-ui, sans-serif;
+  --font-stencil: 'Stardos Stencil', 'Impact', sans-serif;
+  --font-loud: 'Bungee', 'Impact', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: var(--font-ui);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+canvas#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+}
+
+#ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ui * {
+  pointer-events: auto;
+}
+
+.title-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+.title-screen h1 {
+  font-family: var(--font-ornate);
+  font-size: 96px;
+  color: var(--flag);
+  text-shadow: 0 0 30px rgba(255, 212, 0, 0.6);
+  margin: 0;
+}
+
+.title-screen button {
+  font-family: var(--font-display);
+  font-size: 24px;
+  padding: 12px 32px;
+  background: var(--flag);
+  color: var(--ink);
+  border: none;
+  cursor: pointer;
+}

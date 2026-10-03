@@ -298,4 +298,29 @@ describe('Hearth capture', () => {
     // Neutral Flags never linger with a dead owner.
     for (const fl of world.flags.values()) expect(fl.owner === NEUTRAL || world.factions[fl.owner].alive).toBe(true);
   });
+
+  it('a fallen outpost’s Signifiers scatter neutral while the survivor’s home camp stays loyal', () => {
+    const world = newMatch('capture-g');
+    world.tide.nextAt = Infinity;
+    const outpost = must(world.hearthOf(1), 'hearth 1');
+    captureHearth(world, outpost, 0);
+    const home = must(world.hearthOf(0), 'hearth 0');
+
+    // Station one of faction 0's Signifiers at the outpost, holding a Flag from home stock.
+    const [stationed, ...homeCrew] = world.hippiesOf(0);
+    stationed.pos = { x: outpost.pos.x + 2, z: outpost.pos.z + 2 };
+    const carried = must(world.stockOf(home.id)[0], 'stock Flag');
+    carried.state = 'carried';
+    carried.holder = stationed.id;
+    stationed.carryingFlag = carried.id;
+    for (const h of homeCrew) h.pos = { x: home.pos.x + 3, z: home.pos.z + 3 };
+
+    captureHearth(world, outpost, 2);
+    expect(world.factions[0].alive).toBe(true);
+    expect(stationed.faction).toBe(NEUTRAL);
+    expect(stationed.carryingFlag).toBe(-1);
+    expect(carried.state).toBe('loose');
+    for (const h of homeCrew) expect(h.faction).toBe(0);
+    expect(flagProblems(world)).toEqual([]);
+  });
 });

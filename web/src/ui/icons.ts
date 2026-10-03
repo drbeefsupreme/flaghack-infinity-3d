@@ -76,6 +76,7 @@ export type IconName =
   | 'sun'
   | 'dusk'
   | 'moon'
+  | 'dawn' // sun rising over the horizon with an up arrow (Dawn countdown, dawn crowning)
   | 'tide'
   | 'burn'
   | 'clock'
@@ -364,6 +365,10 @@ export const ICONS: Record<IconName, string> = {
     `<path d="M6.5 16a5.5 5.5 0 0 1 11 0z" fill="var(--ic-flag, #ffd400)" fill-opacity=".7" stroke-width="1.3"/>` +
     line('M2.5 16h19M12 5.5v2.5M4.6 9.1l1.8 1.8M19.4 9.1l-1.8 1.8M6 20h12'),
   moon: soft('M19.5 14.8A8 8 0 1 1 9.2 4.5a6.4 6.4 0 0 0 10.3 10.3z', '.3'),
+  // Unlike dusk: a full-bright half sun, rays fanning upward and an arrow climbing out of it.
+  dawn:
+    `<path d="M6.5 17a5.5 5.5 0 0 1 11 0z" fill="var(--ic-flag, #ffd400)" stroke-width="1.3"/>` +
+    line('M2.5 17h19M12 9V2.8M9.8 5 12 2.8 14.2 5M4.4 10.4l1.8 1.6M19.6 10.4l-1.8 1.6M2.8 14h1.9M19.3 14h1.9'),
   tide:
     soft('M12 3l3 4.5-3 4.5-3-4.5z', '.35') +
     line('M2.5 15.5c2.4-2 4.7-2 7.1 0s4.7 2 7.1 0 3.6-1.5 4.8-.6M2.5 20c2.4-2 4.7-2 7.1 0s4.7 2 7.1 0 3.6-1.5 4.8-.6'),

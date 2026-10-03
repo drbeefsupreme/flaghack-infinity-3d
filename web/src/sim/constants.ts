@@ -319,6 +319,15 @@ export const SUDDEN_DEATH_PRESSURE_MULT = 2;
 export const SUDDEN_DEATH_ESCALATE_EVERY = 120;
 /** Pressure multiplier on a captured outpost (a Hearth held by anyone but its founder). */
 export const OUTPOST_PRESSURE_MULT = 1.5;
+/**
+ * Dawn: if more than one camp still stands at this time, the dominant one wins (most Hearths,
+ * then largest Survey, then C.M.I.). Requirements R4/R5: matches end within 30 minutes and a
+ * "dominant Flag Hearth" may win. Only the ~10% of matches that stall in a Hearth-trading
+ * duel ever reach it (32-seed all-AI sweep).
+ */
+export const DAWN_TIME = 30 * 60;
+/** Seconds before DAWN_TIME that every camp is warned ("One minute to dawn"). */
+export const DAWN_WARNING = 60;
 
 // ── Chakras / abilities ──────────────────────────────────────────────────────
 export const ALIGN_COST = [30, 70, 130] as const; // cost to reach level 1, 2, 3

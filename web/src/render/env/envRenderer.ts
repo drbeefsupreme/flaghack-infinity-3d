@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import type { GameEvent } from '../../sim/events';
 import type { RenderContext, RenderModule } from '../context';
+import { burnStartFor } from './burn/burnTimeline';
 import { Effigy } from './burn/effigy';
 import { BURN_CHAR_SECONDS, STAGE_BPM } from './envTypes';
 import type { BurnState, EnvContext, EnvPart } from './envTypes';
@@ -110,7 +111,7 @@ export class EnvRenderer implements RenderModule {
     const burn = env.burn;
     if (world.suddenDeath && !burn.active) {
       burn.active = true;
-      burn.startedAt = world.time;
+      burn.startedAt = burnStartFor(world.time);
     }
     burn.elapsed = burn.active ? Math.max(0, world.time - burn.startedAt) : 0;
     burn.progress = Math.min(1, burn.elapsed / BURN_CHAR_SECONDS);

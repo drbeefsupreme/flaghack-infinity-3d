@@ -6,6 +6,7 @@
 import { AVATAR, SIM_DT, SIM_HZ } from '../../constants';
 import type { GameEvent, GameEventType } from '../../events';
 import { spawnFlag } from '../../factory';
+import { planEnclosure } from '../../lattice/planner';
 import { createMatch } from '../../setup';
 import type { FactionId } from '../../types';
 import type { World } from '../../world';
@@ -80,6 +81,25 @@ export function campDistance(world: World, x: number, z: number): number {
   let best = Infinity;
   for (const b of world.buildings.values()) best = Math.min(best, Math.hypot(b.pos.x - x, b.pos.z - z));
   return best;
+}
+
+/** Plant a closed loop of fresh Flags for `f` around (x, z) with the shared planner. Returns its nodes. */
+export function loopAround(world: World, f: FactionId, x: number, z: number, minRadius: number): number[] {
+  const loop = must(planEnclosure(world.lattice, { x, z, minRadius, cost: freeCost(world, f) }), 'loop');
+  plantFresh(world, f, loop);
+  return loop;
+}
+
+/** A 5-fold focus far from every camp, free itself, whose whole pentacle `f` can plant. */
+export function freeFocus(world: World, f: FactionId): number {
+  const lat = world.lattice;
+  const focus = world.survey.focusNodes.find(
+    (n) =>
+      campDistance(world, lat.nodes[n].x, lat.nodes[n].z) > 50 &&
+      world.survey.nodeFlag[n] < 0 &&
+      lat.neighbors(n).every((p) => canPlantAt(world, p, f)),
+  );
+  return must(focus, 'free focus node');
 }
 
 /**

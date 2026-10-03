@@ -226,11 +226,11 @@ export class Controls {
     input.capturesKey = (code) => app.session.screen === 'playing' && GAME_KEYS[code] === true;
     input.onLockLost = () => {
       const s = app.session;
-      if (s.screen === 'playing' && s.view === 'action' && !panelOpen(s)) app.setPaused(true);
+      if (s.screen === 'playing' && s.view === 'action' && !panelOpen(s) && !this.spectating()) app.setPaused(true);
     };
     input.onCanvasDown = () => {
       const s = app.session;
-      if (s.screen !== 'playing' || s.view !== 'action' || panelOpen(s) || input.locked || input.lockUnavailable) return false;
+      if (s.screen !== 'playing' || s.view !== 'action' || panelOpen(s) || input.locked || input.lockUnavailable || this.spectating()) return false;
       input.requestLock(); // this click only grabs the pointer
       return true;
     };
@@ -238,7 +238,7 @@ export class Controls {
       // Pointer lock can only be requested inside a user gesture: take it now for keys that are
       // about to return the player to the action view.
       const s = app.session;
-      if (s.screen !== 'playing') return;
+      if (s.screen !== 'playing' || this.spectating()) return;
       const p = s.panels;
       const open = (p.chakras ? 1 : 0) + (p.codex ? 1 : 0) + (p.help ? 1 : 0) + (p.settings ? 1 : 0);
       const closesLast = open === 1 && ((code === 'KeyK' && p.chakras) || (code === 'KeyJ' && p.codex) || (code === 'F1' && p.help));
@@ -252,32 +252,38 @@ export class Controls {
     const s = app.session;
     const world = app.world;
     if (!world) return;
-    if (world !== this.world) this.attachWorld(world, s);
-    if (s.screen !== this.screen) this.screenChanged(s);
+    const fresh = world !== this.world;
+    if (fresh) this.attachWorld(world, s);
+    // A new burn (Play again) is a fresh start even when the screen stays 'playing'.
+    if (fresh || s.screen !== this.screen) this.screenChanged(s);
     const f = s.playerFaction;
     const av = world.avatars.get(world.factions[f].avatarId);
     const playing = s.screen === 'playing' && !world.options.allAi && av !== undefined;
+    const spectating = playing && !world.factions[f].alive;
     if (playing && av && this.freshWorld) this.beginMatch(s, av);
 
     if (playing && av) {
-      this.toggles(world, s, av);
+      this.toggles(s, av, spectating);
       if (s.view !== this.view) {
         if (s.view === 'command') this.enterCommand(s, av, null);
         else this.exitCommand(s);
       }
-      if ((s.view === 'command' || panelOpen(s)) && this.input.locked) this.input.exitLock();
+      if ((s.view === 'command' || panelOpen(s) || spectating) && this.input.locked) this.input.exitLock();
       s.pointerLocked = this.input.locked;
-      if (s.view === 'action') this.look(s);
-      else this.command.controlCamera(s, dt);
+      if (s.view === 'command') this.command.controlCamera(s, dt);
+      else if (!spectating) this.look(s);
     }
     this.animateBlend(s, dt);
     this.updateCamera(world, s, av, dt);
-    if (playing && av) {
+    if (playing && av && !spectating) {
       this.pick(world, s, av);
       this.targetedKeys(s, av);
       if (s.view === 'action') this.actionFrame(world, s, av, dt);
       else this.commandFrame(world, s, av);
-    } else this.idle(s);
+    } else {
+      if (spectating) this.spectate(s);
+      this.idle(s);
+    }
     this.input.endFrame();
   }
 
@@ -288,6 +294,12 @@ export class Controls {
     if (!world || world !== this.world || s.screen !== 'playing' || world.options.allAi) return;
     const av = world.avatars.get(world.factions[s.playerFaction].avatarId);
     if (!av) return;
+    if (!world.factions[s.playerFaction].alive) {
+      // Spectating: a fallen camp sends nothing (commands queued this frame fall with it).
+      this.queue.length = 0;
+      this.throwQueued = false;
+      return;
+    }
     const inp = this.input;
     const cmd = this.inputCmd;
     const out = cmd.input;
@@ -353,6 +365,28 @@ export class Controls {
     s.orderMarker = null;
   }
 
+  /**
+   * The player's camp has fallen but the burn plays on for the rivals: the camera still works
+   * (orbit over the fallen vexillomancer, Command View pan/zoom), the pointer stays free for the
+   * end-screen buttons, and no gameplay input reaches the sim.
+   */
+  private spectating(): boolean {
+    const w = this.app.world;
+    return w !== null && !w.options.allAi && !w.factions[this.app.session.playerFaction].alive;
+  }
+
+  /** Spectator frame: Esc backs out of the Command View, else opens the pause menu; tools stay down. */
+  private spectate(s: Session): void {
+    if (this.input.wasPressed('Escape')) {
+      if (s.view === 'command') this.exitCommand(s);
+      else this.app.setPaused(true);
+    }
+    s.selection.clear();
+    if (s.planPreview.length > 0) s.planPreview = [];
+    s.planTool = 'select';
+    s.tool = 'flag';
+  }
+
   /** First playing frame of a match: camera behind the vexillomancer, facing the burn. */
   private beginMatch(s: Session, av: Avatar): void {
     this.freshWorld = false;
@@ -371,7 +405,7 @@ export class Controls {
       // Keys belong to the burn now, not to the menu button that started it.
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       // Resume / Begin: the click that got us here still counts as a gesture.
-      if (s.view === 'action' && !panelOpen(s)) this.input.requestLock();
+      if (s.view === 'action' && !panelOpen(s) && !this.spectating()) this.input.requestLock();
     } else this.input.exitLock();
   }
 
@@ -385,7 +419,7 @@ export class Controls {
     this.lastDemolish = -1;
   }
 
-  private toggles(world: World, s: Session, av: Avatar): void {
+  private toggles(s: Session, av: Avatar, spectating: boolean): void {
     const inp = this.input;
     const p = s.panels;
     if (inp.wasPressed('Escape') && panelOpen(s)) {
@@ -395,7 +429,7 @@ export class Controls {
       p.settings = false;
       inp.consume('Escape');
     }
-    if (inp.wasPressed('KeyK')) p.chakras = !p.chakras;
+    if (inp.wasPressed('KeyK') && !spectating) p.chakras = !p.chakras;
     if (inp.wasPressed('KeyJ')) p.codex = !p.codex;
     if (inp.wasPressed('F1')) p.help = !p.help;
     if (inp.wasPressed('KeyL')) s.showLattice = !s.showLattice;
@@ -898,6 +932,7 @@ export class Controls {
 
   private actionPrompt(world: World, s: Session, av: Avatar, aiming: boolean): string | null {
     if (av.koUntil > world.time) {
+      if (!Number.isFinite(av.koUntil)) return 'Flagless. No Hearth remains to call you back';
       const sec = Math.ceil(av.koUntil - world.time);
       if (sec !== this.respawnSec) {
         this.respawnSec = sec;
@@ -955,7 +990,7 @@ export class Controls {
     return this.joined;
   }
 
-  /** Not playing (title / paused / ended): nothing under the crosshair, nothing to prompt. */
+  /** Not playing (title / paused / ended / spectating): nothing under the crosshair, nothing to prompt. */
   private idle(s: Session): void {
     const hv = s.hover;
     hv.point = null;
@@ -969,5 +1004,6 @@ export class Controls {
     s.channel = -1;
     s.selectBox = null;
     s.pointerLocked = this.input.locked;
+    this.input.setCursor('');
   }
 }

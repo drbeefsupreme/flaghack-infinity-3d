@@ -513,18 +513,31 @@
   gap: 10px;
 }
 .tod-ic {
+  display: inline-flex;
   font-size: 22px;
 }
-.tod-ic.sun {
+.tod-ic.day {
   color: #ffcf4a;
   filter: drop-shadow(0 0 5px rgba(255, 190, 40, 0.8));
 }
 .tod-ic.dusk {
   color: #ff8a4a;
 }
-.tod-ic.moon {
+.tod-ic.night {
   color: #bcd4ff;
   filter: drop-shadow(0 0 5px rgba(170, 200, 255, 0.7));
+}
+/* First light: the sun is still below the horizon; the sky glows violet (matches the env sky). */
+.tod-ic.first {
+  --ic-flag: #d9a8ff;
+  color: #c9b4ff;
+  filter: drop-shadow(0 0 5px rgba(190, 150, 255, 0.7));
+}
+/* Dawn: the rose-gold of the Dawn chip; the sun breaks the horizon. */
+.tod-ic.dawn {
+  --ic-flag: #ffb070;
+  color: #ffd2b0;
+  filter: drop-shadow(0 0 6px rgba(255, 170, 120, 0.85));
 }
 .clock-t {
   font-size: 28px;
@@ -582,6 +595,18 @@
   background: linear-gradient(90deg, rgba(120, 20, 0, 0.75), rgba(200, 70, 0, 0.75));
   color: #fff1c0;
   animation: fh-flicker 0.7s steps(3) infinite;
+}
+/* Dawn: rose-gold, the only warm-but-not-fire colour on the plaque. */
+.chip.dawn {
+  color: #ffd2b0;
+}
+.chip.dawn .chip-ic {
+  color: #ffb38a;
+}
+.chip.dawn.soon {
+  border-color: #ffb38a;
+  color: #fff4e6;
+  animation: fh-dawn 1s ease-in-out infinite;
 }
 
 /* ── C.M.I. (bottom-right) ───────────────────────────────────────────────── */
@@ -888,6 +913,75 @@
 }
 .rail-card.dead .rc-note {
   color: var(--cream-dim);
+}
+/* Dawn marker (from The Burn): the camp Dawn would crown right now. */
+.rc-dawn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0 0 16px;
+  padding: 1px 8px 1px 5px;
+  border: 1px solid rgba(255, 179, 138, 0.7);
+  border-radius: 999px;
+  background: rgba(70, 30, 20, 0.75);
+  color: #ffd2b0;
+  font: 700 10px/1.5 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rc-dawn.ix {
+  cursor: help;
+}
+.rc-dawn-ic,
+.rc-dawn-role {
+  display: inline-flex;
+  font-size: 13px;
+}
+.rc-dawn-ic {
+  color: #ffb38a;
+}
+.rc-dawn-role:empty {
+  display: none;
+}
+/* Ours: a steady gold ring, something to hold. */
+.rail-card.dawn-own {
+  box-shadow: 0 0 0 1px rgba(255, 210, 122, 0.8), 0 0 14px rgba(255, 190, 110, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.rail-card.dawn-own .rc-dawn {
+  border-color: #ffd27a;
+  background: rgba(60, 45, 10, 0.85);
+  color: #ffe7a8;
+}
+.rail-card.dawn-own .rc-dawn-role {
+  color: var(--ok);
+}
+/* Theirs: a pulsing red ring and a crosshair, something to bring down before dawn. */
+.rail-card.dawn-target {
+  animation: fh-dawn-target 1.4s ease-in-out infinite;
+}
+.rail-card.dawn-target .rc-dawn {
+  border-color: #ff6a6a;
+  background: rgba(80, 14, 20, 0.85);
+  color: #ffc0b8;
+}
+.rail-card.dawn-target .rc-dawn-role {
+  color: #ff6a6a;
+}
+/* The rail hugs the left edge: its tooltip opens to the right of the marker. */
+.rc-dawn .tip {
+  left: calc(100% + 12px);
+  top: -10px;
+  bottom: auto;
+  width: 290px;
+  transform: none;
+  font: 400 12.5px/1.4 var(--font-ui);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.rc-dawn.ix:hover .tip {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ── D.E.G.E.N. minimap ──────────────────────────────────────────────────── */
@@ -1340,6 +1434,36 @@
   font-family: var(--font-ornate);
   font-weight: 700;
   font-size: 50px;
+}
+/* Dawn crowning: ceremonial serif in a sunrise gradient over a low horizon glow. */
+.banner.tone-dawn {
+  --accent: #ffcf96;
+  position: relative;
+}
+.banner.tone-dawn::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: 900px;
+  height: 320px;
+  transform: translate(-50%, -40%);
+  background: radial-gradient(ellipse at 50% 100%, rgba(255, 170, 110, 0.45), rgba(255, 120, 150, 0.16) 45%, transparent 70%);
+  pointer-events: none;
+}
+.banner.tone-dawn .banner-title,
+.endscreen.m-dawn .end-title {
+  font-family: var(--font-ornate);
+  font-weight: 700;
+  background: linear-gradient(180deg, #fff3c8 10%, #ffc778 55%, #ff8f7a 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.banner.tone-dawn .banner-title {
+  font-size: 56px;
+  -webkit-text-stroke: 1px rgba(90, 40, 10, 0.45);
 }
 
 /* ── Command View panels ─────────────────────────────────────────────────── */
@@ -2681,6 +2805,29 @@
   font-size: 44px;
   color: var(--cream);
 }
+.endscreen.m-dawn {
+  background: radial-gradient(ellipse at 50% 120%, rgba(255, 150, 100, 0.42), transparent 62%),
+    radial-gradient(circle at 50% 40%, rgba(40, 26, 6, 0.5), rgba(3, 2, 1, 0.88));
+}
+.endscreen.m-dawn .end-title {
+  font-size: 56px;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  text-shadow: none;
+  filter: drop-shadow(0 0 18px rgba(255, 170, 110, 0.55)) drop-shadow(0 3px 0 rgba(90, 40, 10, 0.8));
+  animation: none;
+}
+/* Losing at dawn is not being overwritten: a dimmed sigil, not a dead one. */
+.endscreen.m-dawn.m-defeat .end-sigil {
+  filter: saturate(0.6) brightness(0.85);
+}
+.end-verdict {
+  max-width: 680px;
+  margin: 0 0 6px;
+  font: 700 13px/1.4 var(--font-display);
+  letter-spacing: 0.05em;
+  color: #ffd2a0;
+}
 .end-sub {
   max-width: 680px;
   margin: 0 0 6px;
@@ -2835,6 +2982,25 @@
   50% {
     box-shadow: 0 0 14px rgba(111, 243, 255, 0.85);
     background: rgba(20, 90, 110, 0.6);
+  }
+}
+@keyframes fh-dawn-target {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(255, 90, 90, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(255, 90, 90, 0.95), 0 0 16px rgba(255, 90, 110, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+}
+@keyframes fh-dawn {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 170, 120, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(255, 170, 120, 0.9);
+    background: rgba(120, 50, 40, 0.6);
   }
 }
 @keyframes fh-flicker {

@@ -5,16 +5,23 @@
  * stays readable in a brawl.
  */
 import type { FeedItem } from '../game/session';
-import { CAPTURE } from '../sim/constants';
+import {
+  CAPTURE,
+  DAWN_TIME,
+  GCC,
+  SUDDEN_DEATH_PRESSURE_MULT,
+  TIDE_INTERVAL_SUDDEN_DEATH,
+  TIDE_WARNING,
+} from '../sim/constants';
 import type { GameEvent, Severity } from '../sim/events';
 import type { V2, V3 } from '../sim/math';
 import type { FactionId, Owner } from '../sim/types';
 import type { World } from '../sim/world';
 import { BUILDING_NAMES } from '../sim/systems/buildings';
 import { CHAKRA_INFO, DRUG_INFO } from './catalog';
-import { factionName } from './core';
+import { DAWN_BANNER_S, factionName } from './core';
 import type { UiHost, UiPart } from './core';
-import { el } from './dom';
+import { el, fmtClock } from './dom';
 
 const VISIBLE_ROWS = 6;
 const ROW_LIFETIME_MS = 10_000;
@@ -104,7 +111,7 @@ export class FeedPart implements UiPart {
         }
         break;
       case 'tideWarning':
-        this.host.post('The Crystal is turning… Phason Tide in 10 s. Close your loops.', 'warn');
+        this.host.post(`The Crystal is turning… Phason Tide in ${TIDE_WARNING} s. Close your loops.`, 'warn');
         break;
       case 'tide':
         // The wave sweeps the burn for e.duration seconds; keep the banner up until it has passed.
@@ -164,8 +171,25 @@ export class FeedPart implements UiPart {
         }
         break;
       case 'burn':
-        this.host.banner({ title: 'THE BURN BEGINS', sub: 'Sudden death · pressure ×2 · Phason Tides every 40 s', tone: 'burn', dur: 4 });
-        this.host.post('The effigy burns. Sudden death!', 'epic');
+        this.host.banner({
+          title: 'THE BURN BEGINS',
+          sub: `Sudden death · pressure ×${SUDDEN_DEATH_PRESSURE_MULT} and rising · Phason Tides every ${TIDE_INTERVAL_SUDDEN_DEATH} s`,
+          tone: 'burn',
+          dur: 4,
+        });
+        this.host.post(`The effigy burns. Sudden death until dawn at ${fmtClock(DAWN_TIME)}!`, 'epic');
+        break;
+      case 'victory':
+        // A conquest needs no banner (the end screen says it); a dawn crowning gets its moment over the live burn.
+        if (e.reason === 'dawn') {
+          this.host.banner({
+            title: 'DAWN OVER THE BURN',
+            sub: e.faction === P ? 'The Survey is completed. Your Survey stands dominant.' : `${name(e.faction)}'s Survey stands dominant.`,
+            tone: 'dawn',
+            dur: DAWN_BANNER_S,
+            urgent: true,
+          });
+        }
         break;
       case 'ko':
         if (e.kind === 'avatar' && e.faction === P) {
@@ -247,7 +271,7 @@ export class FeedPart implements UiPart {
         else if (e.faction === P && e.action === 'simulacra') this.host.post('A Flag Simulacrum enters superposition', 'good', e.pos);
         break;
       case 'gccDestroyed':
-        if (e.faction === P) this.host.post('Your Geomantic Command Center collapsed. Rebuilding in 45 s', 'danger', e.pos);
+        if (e.faction === P) this.host.post(`Your Geomantic Command Center collapsed. Rebuilding in ${GCC.rebuildTime} s`, 'danger', e.pos);
         else this.host.post(`${name(e.faction)}'s Geomantic Command Center collapsed`, 'good', e.pos);
         break;
       case 'gccRebuilt':
@@ -379,7 +403,7 @@ export class FeedPart implements UiPart {
           );
           break;
         case 'overwritten':
-          this.host.banner({ title: 'OVERWRITTEN', sub: 'Your Hearth falls in 3 s', tone: 'danger', dur: 3 });
+          this.host.banner({ title: 'OVERWRITTEN', sub: `Your Hearth falls in ${CAPTURE.overwriteTime} s`, tone: 'danger', dur: CAPTURE.overwriteTime });
           break;
         case 'safe':
           if (e.prev === 'contained' || e.prev === 'contested') this.host.post('Your Hearth is safe again', 'good', pos);

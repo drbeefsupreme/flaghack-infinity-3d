@@ -6,13 +6,15 @@
  *     sun flare, damage, flash, vignette, dither) which also tone-maps (ACES at
  *     renderer.toneMappingExposure) and sRGB-encodes onto the canvas: the OutputPass work,
  *     folded in to save a full-screen HDR pass.
- * Reads ctx.daylight, ctx.shared.fx, ctx.shared.sunDisc and world.suddenDeath.
+ * Reads ctx.daylight, ctx.shared.fx, ctx.shared.sunDisc, world.suddenDeath and world.time
+ * (the Burn grade follows the effigy's fire, burn/burnTimeline.ts).
  * Owner: RenderWorld agent (post slice).
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { burnStartFor, fireIntensity } from '../env/burn/burnTimeline';
 import type { RenderContext } from '../context';
 import { BloomChain } from './bloom';
 import { createGradeMaterial } from './grade';
@@ -39,8 +41,10 @@ const THRESHOLD_DAY = 1.4;
 const THRESHOLD_NIGHT = 0.75;
 /** Angular radius (rad) of the fully bright core of the sky's sun disc (sky.ts). */
 const SUN_CORE_RADIUS = 0.02;
-/** Rate (1/s) at which the Burn grade eases in once The Burn starts. */
+/** Rate (1/s) at which the Burn grade follows the fire. */
 const BURN_FADE = 0.6;
+/** Share of the Burn grade daylight takes back: by day the fire lights its surroundings, not the sky. */
+const BURN_DAYLIGHT_FALLOFF = 0.75;
 /**
  * Facet instability is a gameplay value; its shimmer and moire start just before the 0.35
  * Flag Psychosis threshold and are full by the 0.65 crystal discharges.
@@ -57,6 +61,8 @@ export class PostFx {
   private uniforms: GradeUniforms;
   /** Eased 0..1 Burn grade. */
   private burn = 0;
+  /** Match clock when The Burn began (Infinity before): the fire's own clock, as env keeps it. */
+  private burnStartedAt = Infinity;
   private sunPoint = new THREE.Vector3();
   private viewDir = new THREE.Vector3();
 
@@ -107,7 +113,14 @@ export class PostFx {
 
     // Golden warmth peaks from late afternoon through sunset and fades out over dusk.
     const warm = smoothstep(daylight, 0.05, 0.6) * (1 - 0.35 * smoothstep(daylight, 0.9, 1));
-    this.burn += ((ctx.world.suddenDeath ? 1 : 0) - this.burn) * Math.min(1, dt * BURN_FADE);
+    // The Burn grade follows the fire: full while the effigy blazes, easing as it smoulders
+    // (so the night can deepen) and giving way as daylight returns at Dawn.
+    const world = ctx.world;
+    if (world.suddenDeath && this.burnStartedAt === Infinity) this.burnStartedAt = burnStartFor(world.time);
+    const fire = world.suddenDeath
+      ? fireIntensity(Math.max(0, world.time - this.burnStartedAt)) * (1 - BURN_DAYLIGHT_FALLOFF * daylight)
+      : 0;
+    this.burn += (fire - this.burn) * Math.min(1, dt * BURN_FADE);
     const flicker = 0.05 * Math.sin(ctx.time * 7.3) + 0.03 * Math.sin(ctx.time * 12.9 + 1.7);
     u.uGrade.value.set(warm, night, this.burn, flicker);
 

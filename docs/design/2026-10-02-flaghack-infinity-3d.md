@@ -320,9 +320,18 @@ Overwritten → Captured**.
   - their hippies become neutral;
   - their GCC is destroyed.
 
+  If the loser still holds another Hearth (an outpost), only what lies nearer the captured
+  Hearth than any surviving one changes hands: its buildings, its planted Flags (neutral),
+  its Signifiers (neutral, carried Flags dropped) and the GCC if parked there.
+
   A faction with no Hearth is eliminated. Last faction with a Hearth wins.
-- **The Burn** (sudden death) at 14:00: the effigy burns with fireworks. Pressure ×2,
-  Phason Tides every 40 s, Omega Node Crystal pressure bonus doubled.
+- **The Burn** (sudden death) at 14:00: the effigy burns with fireworks. Pressure ×2, +1
+  every 120 s after, Phason Tides every 40 s, Omega Node Crystal pressure bonus doubled.
+- **Dawn** at 30:00 (`DAWN_TIME`): if more than one camp still stands, the dominant one
+  completes the Survey and wins (most Hearths, then largest Survey, then C.M.I.; no one
+  else is eliminated). Requirements R4/R5 bound a match at 30 minutes and allow a
+  "dominant" Hearth to win. In a 32-seed all-AI sweep ~10% of matches stall in a
+  Hearth-trading duel past 30:00; Dawn ends only those.
 
 Counterplay toolbox: pull a loop Flag (any one breaks the enclosure; the HUD shows the
 loop's **critical Flags**), Phason Shift a loop node, plant your own Flag on their

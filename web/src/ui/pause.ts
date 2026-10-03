@@ -38,7 +38,7 @@ export class PauseMenu implements UiPart {
         setText(this.quit, 'Abandon this Survey?');
         return;
       }
-      this.host.app.quitToTitle();
+      this.host.veiledLoad(() => this.host.app.quitToTitle());
     });
     this.tip = el('p', 'pause-tip', box, '');
   }

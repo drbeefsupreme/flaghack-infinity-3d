@@ -177,13 +177,13 @@ export class ChakraScreen implements UiPart {
         )
         .join('');
     }
-    setText(this.dMeta, level === 0 ? 'Not yet aligned.' : `Aligned to level ${level} of 3.`);
+    setText(this.dMeta, level === 0 ? 'Not yet aligned.' : `Aligned to level ${level} of ${ALIGN_COST.length}.`);
 
     const av = world.avatars.get(fac.avatarId);
     const hearth = world.hearthOf(fac.id);
     const dist = av && hearth ? Math.hypot(av.pos.x - hearth.pos.x, av.pos.z - hearth.pos.z) : Infinity;
     const aligning = av?.action.kind === 'align' ? av.action : null;
-    const maxed = level >= 3;
+    const maxed = level >= ALIGN_COST.length;
     const blocker = alignBlocker(world, fac.id, c);
     setText(this.alignBtn, maxed ? 'Fully aligned' : `Align to level ${level + 1} · ${ALIGN_COST[level]} Ritual`);
     setClass(this.alignBtn, 'blocked', blocker !== '');

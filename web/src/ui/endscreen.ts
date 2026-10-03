@@ -1,20 +1,28 @@
 /**
  * End screens. Victory (world.winner is the player): FLAGISTAN APPROACHES. Defeat: YOUR SURVEY
  * HAS BEEN OVERWRITTEN, shown the moment the player's camp is eliminated with Spectate / Play
- * again / Title, and again (final) when the match ends. Both list every faction's stats and
+ * again / Title, and again (final) when the match ends. A dawn crowning (victory event reason
+ * 'dawn') reads DAWN OVER THE BURN instead, names the dominant Survey and the measure that
+ * decided it, and waits for its banner first. All of them list every faction's stats and
  * the match time.
  */
 import type { GameEvent } from '../sim/events';
+import { dominanceOrder } from '../sim/systems/victory';
 import type { FactionId, FactionStats } from '../sim/types';
 import type { World } from '../sim/world';
 import type { UiHost, UiPart } from './core';
-import { factionName } from './core';
+import { DAWN_BANNER_S, factionName } from './core';
+import { dawnLead } from './dawn';
 import { button, el, escapeHtml, fmtClock, html, setClass, show } from './dom';
 import { iconSvg } from './icons';
 import { DEFEAT_LINES, VICTORY_LINES } from './lore';
 import { sigilSvg } from './title';
 
 type Mode = 'hidden' | 'eliminated' | 'victory' | 'defeat' | 'draw';
+/** How the match was won; the victory event's reason, absent meaning conquest. */
+type EndReason = 'conquest' | 'dawn';
+
+const ORDINAL: Record<number, string> = { 2: '2nd', 3: '3rd', 4: '4th' };
 
 const STAT_ROWS: readonly (readonly [keyof FactionStats, string])[] = [
   ['flagsPlanted', 'Flags planted'],
@@ -35,6 +43,9 @@ export class EndScreen implements UiPart {
   private eliminatedBy: FactionId | null = null;
   private eliminated = false;
   private spectating = false;
+  private reason: EndReason = 'conquest';
+  /** performance.now() of the first tick that read screen 'ended' (a dawn crowning holds the cards back). */
+  private endedAt = 0;
 
   constructor(host: UiHost, parent: HTMLElement) {
     this.host = host;
@@ -47,6 +58,8 @@ export class EndScreen implements UiPart {
     this.eliminated = false;
     this.eliminatedBy = null;
     this.spectating = false;
+    this.reason = 'conquest';
+    this.endedAt = 0;
   }
 
   onEvent(e: GameEvent, _w: World): void {
@@ -55,15 +68,20 @@ export class EndScreen implements UiPart {
       this.eliminated = true;
       this.eliminatedBy = e.by;
     }
+    if (e.t === 'victory') this.reason = e.reason ?? 'conquest';
   }
 
-  update(world: World | null, _now: number): void {
+  update(world: World | null, now: number): void {
     const s = this.host.app.session;
     let mode: Mode = 'hidden';
     if (world && s.screen === 'ended') {
-      mode = world.winner === s.playerFaction ? 'victory' : world.winner === null ? 'draw' : 'defeat';
-    } else if (world && s.screen === 'playing' && this.eliminated && !this.spectating) {
-      mode = 'eliminated';
+      if (this.endedAt === 0) this.endedAt = now;
+      // A dawn crowning lets its banner play over the live burn before the cards come up.
+      const held = this.reason === 'dawn' && now - this.endedAt < DAWN_BANNER_S * 1000;
+      if (!held) mode = world.winner === s.playerFaction ? 'victory' : world.winner === null ? 'draw' : 'defeat';
+    } else {
+      this.endedAt = 0;
+      if (world && s.screen === 'playing' && this.eliminated && !this.spectating) mode = 'eliminated';
     }
     show(this.root, mode !== 'hidden' && !s.panels.codex && !s.panels.settings);
     if (mode === this.mode) return;
@@ -77,10 +95,17 @@ export class EndScreen implements UiPart {
     const P = s.playerFaction;
     const win = mode === 'victory';
     for (const m of ['victory', 'defeat', 'eliminated', 'draw']) setClass(this.root, `m-${m}`, m === mode);
+    const dawn = this.reason === 'dawn' && (mode === 'victory' || mode === 'defeat');
+    setClass(this.root, 'm-dawn', dawn);
     const pick = (lines: readonly string[]): string => lines[Math.floor(Math.random() * lines.length)] ?? '';
     let title: string;
     let sub: string;
-    if (win) {
+    let verdict = '';
+    if (dawn) {
+      title = 'DAWN OVER THE BURN';
+      sub = win ? 'The Survey is completed. Your Survey stands dominant.' : `${factionName(world, world.winner)}'s Survey stands dominant.`;
+      verdict = dawnVerdict(world, P);
+    } else if (win) {
       title = 'FLAGISTAN APPROACHES';
       sub = pick(VICTORY_LINES);
     } else if (mode === 'draw') {
@@ -121,6 +146,7 @@ export class EndScreen implements UiPart {
     html('div', 'end-sigil', sigilSvg(win ? 'sigil spin' : 'sigil'), this.box);
     el('h1', 'end-title', this.box, title);
     el('p', 'end-sub', this.box, sub);
+    if (verdict) el('p', 'end-verdict', this.box, verdict);
     el('div', 'end-time', this.box, `Match time ${fmtClock(world.time)}`);
     html('div', 'end-stats', table, this.box);
     const row = el('div', 'end-buttons', this.box);
@@ -130,10 +156,24 @@ export class EndScreen implements UiPart {
       });
     }
     button('btn btn-primary', row, 'Play again', () => this.host.veiledLoad(() => this.host.app.startMatch()));
-    button('btn', row, 'Title', () => this.host.app.quitToTitle());
+    button('btn', row, 'Title', () => this.host.veiledLoad(() => this.host.app.quitToTitle()));
   }
 
   dispose(): void {
     this.root.remove();
   }
+}
+
+/**
+ * The line under a dawn crowning: the measure that put the winner above the runner-up (the
+ * same wording the Hearth rail's dawn marker used all night), plus the player's placing when
+ * the player still stands but lost. dominanceOrder is the rule's own, so this can never
+ * disagree with who was crowned.
+ */
+function dawnVerdict(world: World, player: FactionId): string {
+  const order = dominanceOrder(world);
+  const line = dawnLead(world, order, player);
+  const rank = order.indexOf(player);
+  if (!line || rank <= 0) return line;
+  return `${line} Your camp still stands, ${ORDINAL[rank + 1] ?? `#${rank + 1}`} of ${order.length}.`;
 }

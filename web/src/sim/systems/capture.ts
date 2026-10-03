@@ -20,7 +20,7 @@ import { isAvatarDown } from './avatars';
 import { collapseGcc, disableBuilding, isCollapsed } from './buildings';
 import { transferFlags } from './flags';
 import { FACTION_SHORT, isFactionId } from './rules/factions';
-import { eliminate, suddenDeathMult } from './victory';
+import { eliminate, neutralizeHippie, suddenDeathMult } from './victory';
 
 /** A Hearth's stage notice is not repeated within this many seconds (flicker guard). */
 const NOTICE_QUIET = 8;
@@ -121,6 +121,10 @@ export function captureHearth(world: World, hearth: Building, to: FactionId): vo
     return;
   }
   transferFlags(world, from, NEUTRAL, (fl) => inCamp(fl.pos.x, fl.pos.z));
+  // The fallen camp's Signifiers scatter neutral; those nearer a surviving Hearth stay loyal.
+  for (const h of world.hippies.values()) {
+    if (h.faction === from && inCamp(h.pos.x, h.pos.z)) neutralizeHippie(world, h);
+  }
   const gcc = world.gccOf(from);
   if (gcc && !isCollapsed(gcc) && inCamp(gcc.pos.x, gcc.pos.z)) {
     collapseGcc(world, gcc, world.time + GCC.rebuildTime);

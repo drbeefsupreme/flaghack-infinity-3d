@@ -1,9 +1,14 @@
 /**
  * Day–night palette of the burn, keyed on the match clock: golden afternoon at 0:00, sunset
- * around 6:00, blue-hour dusk around 8:00, night from 10:00, deep night at The Burn (14:00).
+ * around 6:00, blue-hour dusk around 8:00, night from 10:00. The Burn (14:00) runs through
+ * deep night, darkest around 20:00; first light comes about 26:00 low on the horizon opposite
+ * where the sun set, the pre-dawn blue hour around 27:30, and the sun breaks the horizon at
+ * Dawn (DAWN_TIME, 30:00), the moment the burn is decided. The night keys are placed
+ * relative to BURN_TIME and DAWN_TIME so the sky keeps time with the rules.
  * Keys are authored in sRGB hex and interpolated in linear space with smoothstep easing.
  */
 import * as THREE from 'three';
+import { BURN_TIME, DAWN_TIME, DAWN_WARNING } from '../../sim/constants';
 import type { DayState } from './envTypes';
 
 interface DayKey {
@@ -27,6 +32,9 @@ interface DayKey {
   dusk: number;
   stars: number;
 }
+
+/** The darkest hour (~20:00 with the shipped rules): three eighths of the way from The Burn to Dawn. */
+const DEEPEST_NIGHT = BURN_TIME + 0.375 * (DAWN_TIME - BURN_TIME);
 
 const KEYS: DayKey[] = [
   {
@@ -59,10 +67,55 @@ const KEYS: DayKey[] = [
     hemiSky: 0x31437a, hemiGround: 0x0e101c, hemiIntensity: 0.72, fogNear: 48, fogFar: 500, exposure: 1.36,
     daylight: 0.03, night: 1, dusk: 0.08, stars: 1,
   },
+  // The Burn: deep night.
   {
-    t: 840, sunEl: -30, sunAz: 160, zenith: 0x050817, horizon: 0x151c35, sunGlow: 0x1c1c3a, sunColor: 0xff7a4c, sunIntensity: 0,
-    hemiSky: 0x2b3b6a, hemiGround: 0x0b0d16, hemiIntensity: 0.68, fogNear: 46, fogFar: 480, exposure: 1.42,
+    t: BURN_TIME, sunEl: -30, sunAz: 160, zenith: 0x050817, horizon: 0x151c35, sunGlow: 0x1c1c3a, sunColor: 0xff7a4c, sunIntensity: 0,
+    hemiSky: 0x2b3b6a, hemiGround: 0x0b0d16, hemiIntensity: 0.66, fogNear: 46, fogFar: 480, exposure: 1.42,
     daylight: 0, night: 1, dusk: 0, stars: 1,
+  },
+  // The darkest hour. Far below the horizon the sun swings round toward where it will rise.
+  {
+    t: DEEPEST_NIGHT, sunEl: -40, sunAz: 250, zenith: 0x03050f, horizon: 0x0f1529, sunGlow: 0x141430, sunColor: 0xff7a4c, sunIntensity: 0,
+    hemiSky: 0x263460, hemiGround: 0x090b13, hemiIntensity: 0.62, fogNear: 44, fogFar: 460, exposure: 1.42,
+    daylight: 0, night: 1, dusk: 0, stars: 1,
+  },
+  {
+    t: DAWN_TIME - 360, sunEl: -24, sunAz: 322, zenith: 0x050817, horizon: 0x151c35, sunGlow: 0x1c1c3a, sunColor: 0xff7a4c, sunIntensity: 0,
+    hemiSky: 0x2b3b6a, hemiGround: 0x0b0d16, hemiIntensity: 0.66, fogNear: 46, fogFar: 480, exposure: 1.42,
+    daylight: 0, night: 1, dusk: 0, stars: 1,
+  },
+  // First light: a violet glow low on the horizon opposite the sunset. The HUD clock's
+  // "First light" label (ui/hud.ts FIRST_LIGHT_AT) uses the same 240 s lead: move both together.
+  {
+    t: DAWN_TIME - 240, sunEl: -12, sunAz: 346, zenith: 0x0a1230, horizon: 0x2c3866, sunGlow: 0x5c4a8c, sunColor: 0xff7a4c, sunIntensity: 0,
+    hemiSky: 0x56689e, hemiGround: 0x10121e, hemiIntensity: 1.12, fogNear: 47, fogFar: 490, exposure: 1.4,
+    daylight: 0.04, night: 0.95, dusk: 0.18, stars: 0.8,
+  },
+  // Pre-dawn blue hour: the stars fade while rose and amber gather where the sun will rise. The
+  // moonlight has handed over to the sky, so the brightening sky light alone carries the ground.
+  {
+    t: DAWN_TIME - 150, sunEl: -6, sunAz: 352, zenith: 0x1a2a5c, horizon: 0x6e6e9c, sunGlow: 0xe07a50, sunColor: 0xff7a4c, sunIntensity: 0,
+    hemiSky: 0x8a9ad0, hemiGround: 0x2e2838, hemiIntensity: 1.3, fogNear: 50, fogFar: 520, exposure: 1.36,
+    daylight: 0.2, night: 0.68, dusk: 0.6, stars: 0.3,
+  },
+  // The last minute (the "One minute to dawn" warning, which the HUD clock also keys on): the
+  // glow burns orange right where the disc will break.
+  {
+    t: DAWN_TIME - DAWN_WARNING, sunEl: -1, sunAz: 356, zenith: 0x2c4a86, horizon: 0xc8a0a0, sunGlow: 0xff7a40, sunColor: 0xff8a50, sunIntensity: 0.6,
+    hemiSky: 0x9aa4cc, hemiGround: 0x44342e, hemiIntensity: 1.2, fogNear: 54, fogFar: 580, exposure: 1.28,
+    daylight: 0.45, night: 0.3, dusk: 1, stars: 0.03,
+  },
+  // Dawn: the disc clears the forest skyline (~5° from the map) and low gold light rakes the burn.
+  {
+    t: DAWN_TIME, sunEl: 6, sunAz: 360, zenith: 0x3a5fa0, horizon: 0xf4b894, sunGlow: 0xffa050, sunColor: 0xffb87a, sunIntensity: 2.8,
+    hemiSky: 0x96a4cc, hemiGround: 0x5a4030, hemiIntensity: 0.85, fogNear: 58, fogFar: 620, exposure: 1.1,
+    daylight: 0.7, night: 0.08, dusk: 0.85, stars: 0,
+  },
+  // Morning, should the clock ever run past Dawn.
+  {
+    t: DAWN_TIME + 120, sunEl: 12, sunAz: 366, zenith: 0x3b6cb5, horizon: 0xf5d2ae, sunGlow: 0xffcb82, sunColor: 0xffd7a8, sunIntensity: 3.5,
+    hemiSky: 0xa4bbe0, hemiGround: 0x6a5236, hemiIntensity: 0.9, fogNear: 72, fogFar: 740, exposure: 1.02,
+    daylight: 0.92, night: 0, dusk: 0.3, stars: 0,
   },
 ];
 
@@ -77,7 +130,17 @@ const LINEAR = KEYS.map((k) => ({
 }));
 
 const MOON_COLOR = new THREE.Color(0xb4c6ff);
-const MOON_AZ = 64;
+const MOON_INTENSITY = 0.85;
+/**
+ * The moon rises as the sun sets and arcs over the night (azimuth MOON_RISE_AZ, sweeping
+ * MOON_SWEEP degrees, MOON_PEAK_EL above its rising height at the top) to set low on the
+ * sunset side just after Dawn, across the sky from the sunrise.
+ */
+const MOONRISE = 380;
+const MOONSET = DAWN_TIME + 60;
+const MOON_RISE_AZ = 64;
+const MOON_SWEEP = 136;
+const MOON_PEAK_EL = 52;
 /** Minimum light elevation used for shadows: a grazing sun would smear the shadow map. */
 const MIN_LIGHT_EL = 10;
 const DEG = Math.PI / 180;
@@ -136,9 +199,11 @@ export function computeDayState(clock: number, out: DayState): DayState {
   const sunAz = mix(a.sunAz, b.sunAz);
   dirFromAngles(out.sunDir, sunEl, sunAz);
 
-  // The moon climbs from the east as the evening deepens.
-  const moonEl = 8 + Math.min(1, Math.max(0, (clock - 380) / 520)) * 42;
-  dirFromAngles(out.moonDir, moonEl, MOON_AZ - Math.max(0, clock - 380) * 0.02);
+  // The moon arcs across the night sky.
+  const moonT = THREE.MathUtils.clamp((clock - MOONRISE) / (MOONSET - MOONRISE), 0, 1);
+  const moonEl = 4 + MOON_PEAK_EL * Math.sin(Math.PI * moonT);
+  const moonAz = MOON_RISE_AZ + MOON_SWEEP * moonT;
+  dirFromAngles(out.moonDir, moonEl, moonAz);
 
   out.zenith.lerpColors(la.zenith, lb.zenith, s);
   out.horizon.lerpColors(la.horizon, lb.horizon, s);
@@ -155,9 +220,12 @@ export function computeDayState(clock: number, out: DayState): DayState {
   out.dusk = mix(a.dusk, b.dusk);
   out.stars = mix(a.stars, b.stars);
 
-  // Direct light: the sun fades out as it touches the horizon, then the moon takes over.
+  // Direct light: the sun fades out as it touches the horizon, then the moon takes over. Before
+  // first light the moonlight gives way to the sky, so the hand-back to the rising sun happens
+  // with both lights near zero (shadowless blue hour) and the shadows never jump across.
   const sunI = mix(a.sunIntensity, b.sunIntensity);
-  const moonI = 0.85 * Math.min(1, Math.max(0, (clock - 430) / 190));
+  const smoothstep = THREE.MathUtils.smoothstep;
+  const moonI = MOON_INTENSITY * smoothstep(clock, 430, 620) * (1 - smoothstep(clock, DAWN_TIME - 300, DAWN_TIME - 150));
   if (sunI >= moonI) {
     out.lightColor.lerpColors(la.sunColor, lb.sunColor, s);
     out.lightIntensity = sunI;
@@ -165,7 +233,7 @@ export function computeDayState(clock: number, out: DayState): DayState {
   } else {
     out.lightColor.copy(MOON_COLOR);
     out.lightIntensity = moonI;
-    dirFromAngles(out.lightDir, Math.max(moonEl, MIN_LIGHT_EL + 8), MOON_AZ);
+    dirFromAngles(out.lightDir, Math.max(moonEl, MIN_LIGHT_EL + 8), moonAz);
   }
   return out;
 }

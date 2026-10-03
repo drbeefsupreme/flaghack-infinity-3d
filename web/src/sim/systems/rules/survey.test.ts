@@ -1,27 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BURN_TIME,
   CRYSTAL_GROW_TIME,
   CRYSTAL_RITUAL_PER_SEC,
   HEARTH_OBSERVE_RADIUS,
   INSTABILITY_RISE,
-  SUDDEN_DEATH_ESCALATE_EVERY,
-  SUDDEN_DEATH_PRESSURE_MULT,
   TIDE_INTERVAL,
-  TIDE_INTERVAL_SUDDEN_DEATH,
   TIDE_WARNING,
 } from '../../constants';
-import type { GameEvent } from '../../events';
 import { spawnZone } from '../../factory';
-import { planEnclosure } from '../../lattice/planner';
-import type { FactionId } from '../../types';
 import type { World } from '../../world';
-import { captureHearth } from '../capture';
 import { canPlantAt, isBuildingCorner, plantSimulacrum, pullFlag } from '../flags';
 import { isObserved } from '../survey';
 import { applyFlip } from '../tides';
-import { suddenDeathMult } from '../victory';
-import { campDistance, eventsOf, flagProblems, freeCost, must, newMatch, plantFresh, runRules } from './testWorld';
+import { campDistance, eventsOf, flagProblems, freeFocus, loopAround, must, newMatch, plantFresh, runRules } from './testWorld';
 
 /** A flippable, plantable node far from every camp and unobserved by anyone. */
 function remoteFlippable(world: World): number {
@@ -31,13 +22,6 @@ function remoteFlippable(world: World): number {
     if (campDistance(world, n.x, n.z) > 50) return n.id;
   }
   throw new Error('no remote flippable node');
-}
-
-/** Plant a closed loop for `f` around (x, z) with the shared planner. */
-function loopAround(world: World, f: FactionId, x: number, z: number, minRadius: number): number[] {
-  const loop = planEnclosure(world.lattice, { x, z, minRadius, cost: freeCost(world, f) });
-  plantFresh(world, f, must(loop, 'loop'));
-  return must(loop, 'loop');
 }
 
 describe('Phason tides and Zeno observation', () => {
@@ -174,13 +158,7 @@ describe('Crystals', () => {
     world.tide.nextAt = Infinity;
     runRules(world, 0.1);
     const lat = world.lattice;
-    const focus = world.survey.focusNodes.find(
-      (n) =>
-        campDistance(world, lat.nodes[n].x, lat.nodes[n].z) > 50 &&
-        world.survey.nodeFlag[n] < 0 &&
-        lat.neighbors(n).every((p) => canPlantAt(world, p, 3)),
-    );
-    const star = must(focus, 'free focus node');
+    const star = freeFocus(world, 3);
     const ids = plantFresh(world, 3, lat.neighbors(star));
     let events = runRules(world, 0.05);
     const manifest = eventsOf(events, 'crystalManifest');
@@ -247,50 +225,3 @@ describe('Instability', () => {
   });
 });
 
-describe('The Burn and victory', () => {
-  it('The Burn starts sudden death at BURN_TIME, quickens the tides and escalates on a clock', () => {
-    const world = newMatch('burn-a');
-    world.time = BURN_TIME - 0.5;
-    world.tide.nextAt = world.time + 70;
-    expect(suddenDeathMult(world)).toBe(1);
-    let events = runRules(world, 1);
-    expect(eventsOf(events, 'burn')).toHaveLength(1);
-    expect(world.suddenDeath).toBe(true);
-    expect(world.tide.nextAt).toBeLessThanOrEqual(world.time + TIDE_INTERVAL_SUDDEN_DEATH);
-    expect(suddenDeathMult(world)).toBe(SUDDEN_DEATH_PRESSURE_MULT);
-    const rages = (evs: GameEvent[]): string[] =>
-      eventsOf(evs, 'notify')
-        .filter((n) => n.faction === 'all' && n.severity === 'epic' && n.text.startsWith('The Burn rages'))
-        .map((n) => n.text);
-    expect(rages(events)).toEqual([]);
-    world.tide.nextAt = Infinity;
-    events = runRules(world, 1);
-    expect(eventsOf(events, 'burn')).toHaveLength(0);
-
-    // Each SUDDEN_DEATH_ESCALATE_EVERY seconds the multiplier steps up by one, announced once.
-    for (let step = 1; step <= 2; step++) {
-      world.time = BURN_TIME + step * SUDDEN_DEATH_ESCALATE_EVERY - 0.5;
-      expect(suddenDeathMult(world)).toBe(SUDDEN_DEATH_PRESSURE_MULT + step - 1);
-      events = runRules(world, 1);
-      expect(suddenDeathMult(world)).toBe(SUDDEN_DEATH_PRESSURE_MULT + step);
-      expect(rages(events)).toEqual([`The Burn rages: Surveys overwrite ×${SUDDEN_DEATH_PRESSURE_MULT + step}.`]);
-      expect(rages(runRules(world, 1))).toEqual([]);
-    }
-  });
-
-  it('the last faction holding a Hearth wins', () => {
-    const world = newMatch('victory-a');
-    world.tide.nextAt = Infinity;
-    captureHearth(world, must(world.hearthOf(1), 'hearth 1'), 2);
-    captureHearth(world, must(world.hearthOf(3), 'hearth 3'), 2);
-    runRules(world, 0.05);
-    expect(world.phase).toBe('playing');
-    captureHearth(world, must(world.hearthOf(0), 'hearth 0'), 2);
-    const events = runRules(world, 0.05);
-    expect(world.phase).toBe('ended');
-    expect(world.winner).toBe(2);
-    expect(eventsOf(events, 'victory')).toEqual([{ t: 'victory', faction: 2 }]);
-    expect(world.factions[2].hearthIds).toHaveLength(4);
-    expect(flagProblems(world)).toEqual([]);
-  });
-});

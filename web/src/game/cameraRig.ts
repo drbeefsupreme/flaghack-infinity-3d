@@ -376,7 +376,8 @@ export class CameraRig {
   private deathPose(world: World, av: Avatar, f: FactionId, dt: number, out: RigPose): void {
     this.orbitYaw += dt * 0.22;
     const hearth = world.hearthOf(f);
-    const k = hearth ? smoothstep(av.koUntil - 2, av.koUntil - 0.3, world.time) : 0;
+    // Eliminated (koUntil = Infinity): no respawn to drift toward, keep orbiting the body.
+    const k = hearth && Number.isFinite(av.koUntil) ? smoothstep(av.koUntil - 2, av.koUntil - 0.3, world.time) : 0;
     const hx = hearth ? hearth.pos.x : av.pos.x;
     const hz = hearth ? hearth.pos.z : av.pos.z;
     out.tx = av.pos.x + (hx - av.pos.x) * k;

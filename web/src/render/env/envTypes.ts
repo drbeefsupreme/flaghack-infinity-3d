@@ -27,7 +27,7 @@ export interface DayState {
   /** Sky gradient: straight up and at the horizon. The horizon colour equals the fog colour. */
   zenith: THREE.Color;
   horizon: THREE.Color;
-  /** Warm glow around the sun (and the afterglow band at dusk). */
+  /** Warm glow around the sun (and the horizon band on its side in the twilights). */
   sunGlow: THREE.Color;
   fogColor: THREE.Color;
   fogNear: number;
@@ -38,7 +38,7 @@ export interface DayState {
   daylight: number;
   /** 0 = day, 1 = night: scales every emissive festival light. */
   night: number;
-  /** 0..1, peaks around sunset/dusk (pink and amber tones). */
+  /** 0..1, peaks in the twilights, sunset/dusk and pre-dawn/sunrise (pink and amber tones). */
   dusk: number;
   /** 0..1 star field visibility. */
   stars: number;
@@ -71,7 +71,7 @@ export interface EnvUniforms {
 /** The Burn as seen by presentation: set from world.suddenDeath, timed in sim seconds. */
 export interface BurnState {
   active: boolean;
-  /** world.time when The Burn was first observed (Infinity before). */
+  /** Match clock when The Burn began (Infinity before): BURN_TIME by rule, see burnStartFor. */
   startedAt: number;
   /** Seconds of sim time since The Burn started (0 before). */
   elapsed: number;

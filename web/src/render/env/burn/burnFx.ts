@@ -144,10 +144,12 @@ uniform float uViewFade;
 uniform vec2 uWind;
 uniform float uFogNear;
 uniform float uFogFar;
+uniform vec3 uSunDir;
 varying vec2 vUv;
 varying float vAlpha;
 varying float vGlow;
 varying float vFog;
+varying float vScatter;
 varying vec2 vRot;
 varying vec2 vSeed;
 
@@ -180,6 +182,10 @@ void main() {
   vGlow = uFire * exp(-max(0.0, y - uFireTop) / 15.0);
   vFog = smoothstep(uFogNear, uFogFar, -mv.z);
   vSeed = aSeed2.yz;
+  // Forward scattering: a puff between the camera and the sun (or moon) lights up at its thin
+  // edges, the silver lining of a smoke column against the dawn.
+  vec3 toPuff = normalize((modelMatrix * vec4(c, 1.0)).xyz - cameraPosition);
+  vScatter = pow(max(dot(toPuff, uSunDir), 0.0), 8.0);
 }
 `;
 
@@ -193,6 +199,7 @@ varying vec2 vUv;
 varying float vAlpha;
 varying float vGlow;
 varying float vFog;
+varying float vScatter;
 varying vec2 vRot;
 varying vec2 vSeed;
 
@@ -207,6 +214,7 @@ void main() {
   // Screen-space underside of the puff: that is where the fire below lights it.
   float below = clamp(0.5 - (vRot.y * p.x + vRot.x * p.y), 0.0, 1.0);
   vec3 lit = vec3(0.075, 0.07, 0.066) * (uAmbient + uSunColor * 0.25) * (0.75 + 0.5 * n);
+  lit += uSunColor * (0.3 * vScatter * (1.0 - 0.6 * dens) * (0.6 + 0.4 * n));
   vec3 glow = vec3(1.0, 0.3, 0.07) * vGlow * (0.35 + 1.1 * below) * (0.5 + 0.7 * n);
   gl_FragColor = vec4(mix(lit + glow, uFogColor, vFog), a * (1.0 - 0.5 * vFog));
   #include <colorspace_fragment>
@@ -376,6 +384,7 @@ export class BurnFx {
         uViewFade: this.uViewFade,
         uAmbient: this.uAmbient,
         uSunColor: u.uSunColor,
+        uSunDir: u.uSunDir,
         uFogColor: u.uFogColor,
       },
       transparent: true,

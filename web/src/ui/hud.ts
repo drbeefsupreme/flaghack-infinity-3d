@@ -1,10 +1,20 @@
 /**
  * Core HUD: the ornate "N FLAGS" resource frame (top-left), the clock plaque with time of
- * day, Phason Tide and Burn countdowns (top-centre), the C.M.I. frame (bottom-right), the
- * tool-dependent crosshair with prompt and channel ring, the Command View hint bar, the
- * select box, the spectator pill and the FPS / sim timing overlay.
+ * day, Phason Tide, Burn and (after The Burn) Dawn countdowns (top-centre), the C.M.I. frame
+ * (bottom-right), the tool-dependent crosshair with prompt and channel ring, the Command View
+ * hint bar, the select box, the spectator pill and the FPS / sim timing overlay.
  */
-import { AVATAR, BURN_TIME, HOARD_THRESHOLD, SUDDEN_DEATH_ESCALATE_EVERY, TIDE_WARNING } from '../sim/constants';
+import {
+  AVATAR,
+  BURN_TIME,
+  DAWN_TIME,
+  DAWN_WARNING,
+  HIPPIE_AI,
+  HOARD_THRESHOLD,
+  SUDDEN_DEATH_ESCALATE_EVERY,
+  TIDE_INTERVAL,
+  TIDE_WARNING,
+} from '../sim/constants';
 import { isHoarding, popCap } from '../sim/systems/economy';
 import { suddenDeathMult } from '../sim/systems/victory';
 import type { World } from '../sim/world';
@@ -16,6 +26,23 @@ import type { IconName } from './icons';
 /** Dusk falls at 6:00 and night at 10:00 (design §14). */
 const DUSK_AT = 6 * 60;
 const NIGHT_AT = 10 * 60;
+/**
+ * The night ends on the sky's schedule (render/env/timeOfDay.ts keys): first light, a violet
+ * glow, 4 minutes before Dawn; then the sun glows on the horizon through the last minute,
+ * the same minute the sim warns "One minute to dawn".
+ */
+const FIRST_LIGHT_AT = DAWN_TIME - 240;
+const SUNRISE_AT = DAWN_TIME - DAWN_WARNING;
+
+type TimeOfDay = 'day' | 'dusk' | 'night' | 'first' | 'dawn';
+
+const TIME_OF_DAY: Record<TimeOfDay, { icon: IconName; label: string }> = {
+  day: { icon: 'sun', label: 'Golden hour' },
+  dusk: { icon: 'dusk', label: 'Dusk' },
+  night: { icon: 'moon', label: 'Night' },
+  first: { icon: 'dusk', label: 'First light' },
+  dawn: { icon: 'dawn', label: 'Dawn' },
+};
 const RING_LEN = 2 * Math.PI * 21;
 
 interface ResRow {
@@ -37,13 +64,16 @@ export class HudPart implements UiPart {
   private attnBar: HTMLElement;
   private attnVal: HTMLElement;
   private clockT: HTMLElement;
-  private tod: Record<'sun' | 'dusk' | 'moon', HTMLElement>;
+  private todIc: HTMLElement;
+  private todPhase: TimeOfDay | null = null;
   private todLabel: HTMLElement;
   private tide: HTMLElement;
   private tideT: HTMLElement;
   private burn: HTMLElement;
   private burnL: HTMLElement;
   private burnT: HTMLElement;
+  private dawn: HTMLElement;
+  private dawnT: HTMLElement;
   private cmiN: HTMLElement;
   private cross: HTMLElement;
   private prompt: HTMLElement;
@@ -75,7 +105,7 @@ export class HudPart implements UiPart {
     };
     this.stock = mk('stock', 'Hearth stock');
     this.hoard = el('span', 'res-tag is-off', this.stock.row, 'HOARDING');
-    this.hoard.title = `Hoarding is villainy: above ${HOARD_THRESHOLD} Flags in stock your Signifiers lose attention 50% faster.`;
+    this.hoard.title = `Hoarding is villainy: above ${HOARD_THRESHOLD} Flags in stock your Signifiers lose attention ${Math.round((HIPPIE_AI.hoardDrainMult - 1) * 100)}% faster.`;
     this.lumber = mk('lumber', 'Lumber');
     this.ritual = mk('ritual', 'Ritual');
     this.hippies = mk('hippie', 'Signifiers');
@@ -89,23 +119,23 @@ export class HudPart implements UiPart {
     // ── Clock plaque ──
     const plaque = el('div', 'clock plaque', layout.topCenter);
     const main = el('div', 'clock-main', plaque);
-    const todBox = el('span', 'tod', main);
-    this.tod = {
-      sun: html('span', 'tod-ic sun', iconSvg('sun'), todBox),
-      dusk: html('span', 'tod-ic dusk is-off', iconSvg('dusk'), todBox),
-      moon: html('span', 'tod-ic moon is-off', iconSvg('moon'), todBox),
-    };
+    this.todIc = el('span', 'tod-ic', main);
     this.clockT = el('span', 'clock-t num', main, '0:00');
-    this.todLabel = el('span', 'tod-l', main, 'Golden hour');
+    this.todLabel = el('span', 'tod-l', main, '');
     const sub = el('div', 'clock-sub', plaque);
     this.tide = el('span', 'chip tide', sub);
     html('span', 'chip-ic', iconSvg('tide'), this.tide);
     el('span', 'chip-l', this.tide, 'Tide');
-    this.tideT = el('b', 'num', this.tide, '1:15');
+    this.tideT = el('b', 'num', this.tide, fmtClock(TIDE_INTERVAL));
     this.burn = el('span', 'chip burn', sub);
     html('span', 'chip-ic', iconSvg('burn'), this.burn);
     this.burnL = el('span', 'chip-l', this.burn, 'Burn');
-    this.burnT = el('b', 'num', this.burn, '14:00');
+    this.burnT = el('b', 'num', this.burn, fmtClock(BURN_TIME));
+    // After The Burn the night runs until Dawn, when the dominant camp is crowned.
+    this.dawn = el('span', 'chip dawn is-off', sub);
+    html('span', 'chip-ic', iconSvg('dawn'), this.dawn);
+    el('span', 'chip-l', this.dawn, 'Dawn');
+    this.dawnT = el('b', 'num', this.dawn, fmtClock(DAWN_TIME - BURN_TIME));
 
     // ── C.M.I. ──
     const cmi = el('div', 'cmi frame', layout.bottomRight);
@@ -138,7 +168,7 @@ export class HudPart implements UiPart {
     // ── Spectator pill (after elimination) ──
     this.spectate = el('div', 'spectate ix is-off', layout.topCenter);
     el('span', 'spectate-l', this.spectate, 'Spectating · your Survey has been overwritten');
-    button('btn btn-small', this.spectate, 'Title', () => this.host.app.quitToTitle());
+    button('btn btn-small', this.spectate, 'Title', () => this.host.veiledLoad(() => this.host.app.quitToTitle()));
 
     this.selectBox = el('div', 'selbox is-off', layout.raw);
     this.nodes.push(frame, plaque, cmi, this.cross, this.ring, this.prompt, this.hint, this.spectate, this.selectBox);
@@ -185,11 +215,15 @@ export class HudPart implements UiPart {
     // Clock, time of day, tide, Burn.
     const t = world.time;
     setText(this.clockT, fmtClock(t));
-    const tod = t < DUSK_AT ? 'sun' : t < NIGHT_AT ? 'dusk' : 'moon';
-    show(this.tod.sun, tod === 'sun');
-    show(this.tod.dusk, tod === 'dusk');
-    show(this.tod.moon, tod === 'moon');
-    setText(this.todLabel, tod === 'sun' ? 'Golden hour' : tod === 'dusk' ? 'Dusk' : 'Night');
+    const phase: TimeOfDay =
+      t >= SUNRISE_AT ? 'dawn' : t >= FIRST_LIGHT_AT ? 'first' : t >= NIGHT_AT ? 'night' : t >= DUSK_AT ? 'dusk' : 'day';
+    if (phase !== this.todPhase) {
+      this.todPhase = phase;
+      const tod = TIME_OF_DAY[phase];
+      this.todIc.className = `tod-ic ${phase}`;
+      this.todIc.innerHTML = iconSvg(tod.icon);
+      setText(this.todLabel, tod.label);
+    }
     const toTide = world.tide.nextAt - t;
     setText(this.tideT, fmtClock(Math.ceil(toTide)));
     setClass(this.tide, 'pulse', toTide <= TIDE_WARNING);
@@ -204,6 +238,13 @@ export class HudPart implements UiPart {
     }
     setClass(this.burn, 'lit', world.suddenDeath);
     setClass(this.burn, 'soon', !world.suddenDeath && BURN_TIME - t <= 60);
+    show(this.dawn, world.suddenDeath);
+    if (world.suddenDeath) {
+      const toDawn = DAWN_TIME - t;
+      setText(this.dawnT, fmtClock(Math.ceil(toDawn)));
+      // Pulses through the same last minute the sim announces ("One minute to dawn").
+      setClass(this.dawn, 'soon', toDawn <= DAWN_WARNING);
+    }
 
     setText(this.cmiN, String(Math.round(fac.stats.cmi)));
 

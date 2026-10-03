@@ -1,22 +1,86 @@
 /**
  * Player-facing lore text: title quotes, rival bios, the LIBER HH codex, end-screen
- * lines and tips. Pure data so screens stay layout-only. Tuning numbers that playtests
- * move (capture pressure, Ritual income) are interpolated from sim/constants so the manual
- * never contradicts the rules; the rest mirror docs/design/2026-10-02-flaghack-infinity-3d.md.
+ * lines and tips. Pure data so screens stay layout-only. Every tuning number is interpolated
+ * from sim/constants so the manual never contradicts the rules; the only literals left are
+ * geometry facts (rhombus angles) and values private to a system (resonance +20%, the C.M.I.
+ * formula, the TAKE A SHOT wobble).
  */
 import {
+  ABILITY,
+  ALIGN_COST,
+  ALIGN_RADIUS,
+  ALIGN_TIME,
+  AVATAR,
+  BREW_COST,
+  BREW_TIME,
+  BUILD_TIME,
+  BUILDINGS,
+  BURN_TIME,
   CAPTURE,
+  CRYSTAL_GROW_TIME,
+  CRYSTAL_OBSERVE_RADIUS,
+  CRYSTAL_PRESSURE_BONUS,
+  CRYSTAL_PRESSURE_RADIUS,
   CRYSTAL_RITUAL_PER_SEC,
+  DAWN_TIME,
+  DAWN_WARNING,
+  DISCHARGE_DAMAGE,
+  DISCHARGE_STUN,
   DRUG,
+  DRUG_MAX,
   DRUM_RITUAL_PER_SEC,
+  DRUMMERS_PER_CIRCLE,
+  GCC,
+  HEARTH_FLAG_COST,
+  HEARTH_FLAG_INTERVAL,
+  HEARTH_OBSERVE_RADIUS,
+  HIPPIE,
+  HIPPIE_AI,
+  HOARD_THRESHOLD,
+  IMPLIED_MAX_ORDER,
+  INSTABILITY_DECAY,
+  INSTABILITY_DISCHARGE,
+  INSTABILITY_RISE,
+  INSTABILITY_SHIMMER,
+  INSTABILITY_STORM,
+  LEY_EDGE,
+  MAX_BUILD_LEVEL,
+  MESH_TAP_DURATION,
   OUTPOST_PRESSURE_MULT,
+  PIECE,
+  PROJECTILE,
+  RECRUIT_INTERVAL,
+  RECRUIT_LUMBER,
+  RETRANSMIT_ATTENTION,
+  RETRANSMIT_COOLDOWN,
   SUDDEN_DEATH_ESCALATE_EVERY,
   SUDDEN_DEATH_PRESSURE_MULT,
+  TIDE_FRACTION,
+  TIDE_INTERVAL,
+  TIDE_INTERVAL_SUDDEN_DEATH,
+  TIDE_WARNING,
+  WARD_OBSERVE_RADIUS,
+  WARD_PULSE_DAMAGE,
+  WARD_PULSE_INTERVAL,
+  WARD_PULSE_RADIUS,
+  WARD_PULSE_STUN,
+  WARD_RADIUS,
+  WORKSHOP_FLAG_COST,
+  WORKSHOP_FLAG_INTERVAL,
 } from '../sim/constants';
+import { EFFIGY_HEIGHT } from '../sim/map/mapgen';
 import type { FactionId } from '../sim/types';
+import { fmtClock } from './dom';
 
-/** Pressure build rate while the owner holds a contained Hearth in person, as a percentage. */
-const HOLD_PCT = Math.round(CAPTURE.contestedMult * 100);
+/** A fraction or multiplier excess as a whole percentage (0.6 → 60; 1.15 − 1 → 15). */
+const pct = (fraction: number): number => Math.round(fraction * 100);
+/** Pressure build rate while the owner holds a contained Hearth in person. */
+const HOLD_PCT = pct(CAPTURE.contestedMult);
+const BURN_CLOCK = fmtClock(BURN_TIME);
+const DAWN_CLOCK = fmtClock(DAWN_TIME);
+const CRYSTAL_BONUS_PCT = pct(CRYSTAL_PRESSURE_BONUS - 1);
+const HOARD_PCT = pct(HIPPIE_AI.hoardDrainMult - 1);
+const ESCALATE_MIN = SUDDEN_DEATH_ESCALATE_EVERY / 60;
 
 export interface Quote {
   text: string;
@@ -99,7 +163,7 @@ export const RIVAL_BIOS: Record<FactionId, RivalBio> = {
       'He has disappeared, and is wanted for high crimes against transhumanity over the GA-FL-AL Tri-State Water Wars. He is suspected to be hiding among the Vexillians, which would explain the crimson ribbons on so many yellow Flags.',
     ],
     playstyle:
-      'The Surveyor. Crow expands early and keeps expanding, hunts Crystal Focus points for pentacles and leans hard on Phason Shift: expect your loop nodes to hop out from under your Flags at 60 m range. Canon III will not save you from a Shift; only a Stabilize Zone will. Break his pentacles by pulling one of the five, and watch his C.M.I. climb if you do not.',
+      `The Surveyor. Crow expands early and keeps expanding, hunts Crystal Focus points for pentacles and leans hard on Phason Shift: expect your loop nodes to hop out from under your Flags at ${ABILITY.phason.range} m range. Canon III will not save you from a Shift; only a Stabilize Zone will. Break his pentacles by pulling one of the five, and watch his C.M.I. climb if you do not.`,
     quote: { text: 'Flags is the herpes of objects', by: 'Dr. Beelzebub Crow' },
   },
   2: {
@@ -109,7 +173,7 @@ export const RIVAL_BIOS: Record<FactionId, RivalBio> = {
       'He worked his way bottom up, in the dirt, in the crowd, and still runs rogue sets at unlicensed burns. The Acid Cops have an open file on him. It is mostly question marks.',
     ],
     playstyle:
-      'The Raider. Scarecrow comes early and comes fast: Saffron-dosed hippies under Forced March sprint for the critical Flags of your loops, pull them and steal them home. Wall off your loop Flags, keep some hippies on Defend so SOS pings get answered, and let a Hearth Ward vibe-check his raiders. Survive the rush and his Saffron crash leaves his camp at −30% speed for 20 s.',
+      `The Raider. Scarecrow comes early and comes fast: Saffron-dosed hippies under Forced March sprint for the critical Flags of your loops, pull them and steal them home. Wall off your loop Flags, keep some hippies on Defend so SOS pings get answered, and let a Hearth Ward vibe-check his raiders. Survive the rush and his Saffron crash leaves his camp at −${pct(DRUG.crashMag)}% speed for ${DRUG.crashTime} s.`,
     quote: { text: "The Acid Cops have an open file on him. It's mostly question marks." },
   },
   3: {
@@ -144,22 +208,23 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
   {
     kind: 'list',
     items: [
-      '**Quiver**: you carry 10 Flags. Stand within 6 m of your Hearth and the quiver refills from camp stock.',
-      '**Plant** (E, or LMB with the flag tool): a 0.2 s tap on a free node within 3.5 m.',
-      '**Throw** (Q): a flick at 26 m/s, 0.3 s cooldown. The Flag auto-plants on the nearest free node within 3 m of impact; otherwise it lies loose. A direct hit stuns a hippie for 1 s.',
-      '**Pull** (hold E): your own Flag in 0.35 s, an enemy or neutral Flag in a 1.0 s channel. Pulled Flags go to your quiver if there is room, else they drop loose.',
-      '**Flagless**: at 0 HP you drop every carried Flag loose and return to your Hearth after 6 s.',
+      `**Quiver**: you carry ${AVATAR.quiver} Flags. Stand within ${AVATAR.restockRadius} m of your Hearth and the quiver refills from camp stock.`,
+      `**Plant** (E): a ${AVATAR.plantTime} s tap on a free node within ${AVATAR.plantReach} m.`,
+      `**Throw** (Q, or hold RMB to aim and click LMB): a flick at ${AVATAR.throwSpeed} m/s, ${AVATAR.throwCooldown} s cooldown. The Flag auto-plants on the nearest free node within ${AVATAR.throwSnapRadius} m of impact; otherwise it lies loose. A direct hit stuns a hippie for ${PROJECTILE.hippieStun} s.`,
+      `**Pull** (hold E): your own Flag in ${AVATAR.pullOwnTime} s, an enemy or neutral Flag in a ${AVATAR.pullEnemyTime} s channel. Pulled Flags go to your quiver if there is room, else they drop loose.`,
+      `**Staff** (LMB with the Flag tool): a swing for ${AVATAR.swingDamage} damage to units and ${AVATAR.swingPieceDamage} to pieces; at a pile it chops ${AVATAR.swingLumber} lumber. The staff never plants.`,
+      `**Flagless**: at 0 HP you drop every carried Flag loose and return to your Hearth after ${AVATAR.respawnTime} s.`,
     ],
   },
   { kind: 'h', text: 'Ley Nodes and Ley Lines' },
   {
     kind: 'p',
-    text: 'Beneath the grass lies the Ley Lattice: **Ley Nodes** joined by edges 8 m long. One Flag per node; nodes inside tents, domes and trees are blocked. An edge becomes a **Ley Line** only when both of its nodes are held by the same camp, and then it glows in that camp\'s colour.',
+    text: `Beneath the grass lies the Ley Lattice: **Ley Nodes** joined by edges ${LEY_EDGE} m long. One Flag per node; nodes inside tents, domes and trees are blocked. An edge becomes a **Ley Line** only when both of its nodes are held by the same camp, and then it glows in that camp's colour.`,
   },
   { kind: 'h', text: 'Implied Flags' },
   {
     kind: 'p',
-    text: 'When two of your nodes have a free node at their **exact** midpoint, that node holds an **implied Flag** of yours. Implied Flags imply further Flags, up to order 3. They count for Ley Lines, facets, pentacles and enclosure, they cannot be pulled, and they vanish the moment a parent goes.',
+    text: `When two of your nodes have a free node at their **exact** midpoint, that node holds an **implied Flag** of yours. Implied Flags imply further Flags, up to order ${IMPLIED_MAX_ORDER}. They count for Ley Lines, facets, pentacles and enclosure, they cannot be pulled, and they vanish the moment a parent goes.`,
   },
   {
     kind: 'p',
@@ -177,18 +242,18 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: 'Where two Surveys overlap, the facet gathers **instability**: shimmer, Flag Psychosis, Crystal discharges and finally phason storms (see The Crystal). The camp with more Flags in the overlap works 20% faster there.',
+    text: 'Where two Surveys overlap, the facet gathers **instability**: shimmer, Flag Psychosis, Crystal discharges and finally phason storms (see The Crystal). Once it shimmers, the camp holding most of its corners **resonates** and works 20% faster there; everyone else inside falls into Flag Psychosis.',
   },
   { kind: 'h', text: 'Overwriting a Hearth' },
   {
     kind: 'table',
     head: ['Stage', 'Condition'],
     rows: [
-      ['**Safe**', 'No enemy Survey facet or enemy Ley Line within 30 m.'],
-      ['**Threatened**', 'An enemy Survey facet or enemy Ley Line within 30 m.'],
+      ['**Safe**', `No enemy Survey facet or enemy Ley Line within ${CAPTURE.threatRadius} m.`],
+      ['**Threatened**', `An enemy Survey facet or enemy Ley Line within ${CAPTURE.threatRadius} m.`],
       ['**Contained**', 'An enemy Survey encloses the Hearth. Pressure builds toward the overwrite.'],
       ['**Contested**', `Contained, but the owner's vexillomancer stands within ${CAPTURE.holdRadius} m (not Flagless) to **Hold the Hearth** in person: pressure builds at ${HOLD_PCT}%.`],
-      ['**Overwritten**', 'Pressure reached 100. A 3 s overwrite begins and cannot be stopped.'],
+      ['**Overwritten**', `Pressure reached 100. A ${CAPTURE.overwriteTime} s overwrite begins and cannot be stopped.`],
       ['**Captured**', 'The Hearth belongs to the captor.'],
     ],
   },
@@ -201,11 +266,11 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
     head: ['Modifier', 'Pressure'],
     rows: [
       ['Held in person (Contested)', `×${CAPTURE.contestedMult}`],
-      ['Each defending hippie within 12 m', '×0.93 (floor 0.5)'],
-      ['Hearth Ward within 30 m', '×0.6'],
-      ['Each attacker Crystal within 45 m', '×1.15'],
+      [`Each defending hippie within ${CAPTURE.defenderRadius} m`, `×${CAPTURE.defenderMult}, never below ×${CAPTURE.defenderFloor} in total`],
+      [`The owner's Hearth Ward within ${WARD_RADIUS} m (one counts)`, `×${CAPTURE.wardMult}`],
+      [`Each attacker Crystal within ${CRYSTAL_PRESSURE_RADIUS} m`, `×${CRYSTAL_PRESSURE_BONUS}`],
       ['A captured outpost (held by anyone but its founder)', `×${OUTPOST_PRESSURE_MULT}`],
-      ['The Burn', `×${SUDDEN_DEATH_PRESSURE_MULT}, then +1 every ${SUDDEN_DEATH_ESCALATE_EVERY / 60} minutes`],
+      ['The Burn', `×${SUDDEN_DEATH_PRESSURE_MULT}, then +1 every ${ESCALATE_MIN} minutes`],
     ],
   },
   {
@@ -219,12 +284,29 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: 'A camp with no Hearth is eliminated. The last vexillomancer with a Hearth wins.',
+    text: 'A camp with no Hearth is eliminated. The last vexillomancer with a Hearth wins, unless the night runs out first: then **Dawn** crowns the dominant camp (below).',
   },
   { kind: 'h', text: 'The Burn' },
   {
     kind: 'p',
-    text: `At **14:00** the Flag effigy on the Omega Node burns. Sudden death: containment pressure ×${SUDDEN_DEATH_PRESSURE_MULT}, rising by one every ${SUDDEN_DEATH_ESCALATE_EVERY / 60} minutes the Burn rages (the clock shows the current ×N), Phason Tides every 40 s, and the pressure bonus of a Crystal on the Omega Node doubled.`,
+    text: `At **${BURN_CLOCK}** the Flag effigy on the Omega Node burns. Sudden death: containment pressure ×${SUDDEN_DEATH_PRESSURE_MULT}, rising by one every ${ESCALATE_MIN} minutes the Burn rages (the clock shows the current ×N), and Phason Tides every ${TIDE_INTERVAL_SUDDEN_DEATH} s. A Crystal on the Omega Node burns with the effigy: its bonus doubles to +${pct(2 * (CRYSTAL_PRESSURE_BONUS - 1))}% and reaches every Hearth on the burn.`,
+  },
+  { kind: 'h', text: 'Dawn' },
+  {
+    kind: 'p',
+    text: `The Burn rages through the night, ${(DAWN_TIME - BURN_TIME) / 60} minutes of it. If more than one camp still stands at **${DAWN_CLOCK}**, dawn breaks over the burn and the Survey is completed by the **dominant** camp. No one else is eliminated; their Surveys simply stand second. Dominance is judged in order:`,
+  },
+  {
+    kind: 'list',
+    items: [
+      'the most **Hearths** held, captured outposts included;',
+      'then the largest **Survey**: the facets enclosed at that moment, not your best ever;',
+      'then the highest **C.M.I.**',
+    ],
+  },
+  {
+    kind: 'p',
+    text: `From The Burn on, the clock counts down to dawn, and everyone is warned ${DAWN_WARNING} s before it breaks. An outpost captured in the last minute counts in full; so does a loop closed in the last second.`,
   },
   { kind: 'h', text: 'Counterplay' },
   {
@@ -263,7 +345,7 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: 'The lattice is centred on the **Omega Node**, a 5-fold star where five Sun facets meet at their points. The Flag effigy stands on it, 26 m of wood waiting for The Burn.',
+    text: `The lattice is centred on the **Omega Node**, a 5-fold star where five Sun facets meet at their points. The Flag effigy stands on it, ${EFFIGY_HEIGHT} m of wood waiting for The Burn.`,
   },
   { kind: 'h', text: 'Phason Flips' },
   {
@@ -272,7 +354,7 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: 'Every 75 s a **Phason Tide** flips about 5% of the flippable nodes, after a 10 s warning: "The Crystal is turning…". Tides favour nodes under high **perpendicular strain**, so the lattice heals itself back toward perfect Penrose order. After The Burn the tides come every 40 s.',
+    text: `Every ${TIDE_INTERVAL} s a **Phason Tide** sweeps the burn as a wave and turns about ${pct(TIDE_FRACTION)}% of the flippable nodes, after a ${TIDE_WARNING} s warning: "The Crystal is turning…". Tides favour nodes under high **perpendicular strain**, so the lattice heals itself back toward perfect Penrose order. After The Burn the tides come every ${TIDE_INTERVAL_SUDDEN_DEATH} s.`,
   },
   { kind: 'h', text: 'Observation Freezes the Crystal' },
   {
@@ -288,10 +370,10 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
     kind: 'list',
     items: [
       'held by a Flag with Ley Lines to **two or more** other Flags (Canon III: the Flag observes itself);',
-      'within 12 m of you, the vexillomancer;',
-      'within 30 m of your Geomantic Command Center;',
-      'within 22 m of your Hearth;',
-      'within 26 m of one of your Hearth Wards;',
+      `within ${AVATAR.observeRadius} m of you, the vexillomancer;`,
+      `within ${GCC.adviceRadius} m of your Geomantic Command Center;`,
+      `within ${HEARTH_OBSERVE_RADIUS} m of your Hearth;`,
+      `within ${WARD_OBSERVE_RADIUS} m of one of your Hearth Wards;`,
       'inside one of your Stabilize Zones.',
     ],
   },
@@ -301,23 +383,23 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: '**Phason Shift**, the Field chakra, flips a node on purpose at up to 60 m. It ignores Canon III. Only a Stabilize Zone blocks it, which makes it the precision answer to a finished loop.',
+    text: `**Phason Shift**, the Field chakra, flips a node on purpose at up to ${ABILITY.phason.range} m. It ignores Canon III. Only a Stabilize Zone blocks it, which makes it the precision answer to a finished loop.`,
   },
   { kind: 'h', text: 'Focus Points and Pentacles' },
   {
     kind: 'p',
-    text: 'Every 5-fold star vertex is a **Crystal Focus**. Focus points are invisible, and they appear and vanish as phasons flip. Geomantic Advice reveals them within 30 m of your GCC; Luminous Dust reveals them all.',
+    text: `Every 5-fold star vertex is a **Crystal Focus**. Focus points are invisible, and they appear and vanish as phasons flip. Geomantic Advice reveals them within ${GCC.adviceRadius} m of your GCC; Luminous Dust reveals them all.`,
   },
   {
     kind: 'p',
-    text: 'Hold all five neighbours of a focus, the canonical five Flags, and you have a **pentacle**. Within 3 s a **Crystal** manifests on the focus:',
+    text: `Hold all five neighbours of a focus, the canonical five Flags, and you have a **pentacle**. Within ${CRYSTAL_GROW_TIME} s a **Crystal** manifests on the focus:`,
   },
   {
     kind: 'list',
     items: [
       `+${CRYSTAL_RITUAL_PER_SEC} Ritual per second for its owner;`,
-      '+15% containment pressure on enemy Hearths within 45 m;',
-      'observes every node within 10 m;',
+      `+${CRYSTAL_BONUS_PCT}% containment pressure on enemy Hearths within ${CRYSTAL_PRESSURE_RADIUS} m;`,
+      `observes every node within ${CRYSTAL_OBSERVE_RADIUS} m;`,
       'adds to your **C.M.I.**',
     ],
   },
@@ -328,7 +410,7 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
   { kind: 'h', text: 'Flag Simulacra' },
   {
     kind: 'p',
-    text: 'The GCC can plant one Flag on **two nodes at once**. The superposed Flag counts as real on both, until an enemy unit comes within 10 m of either: then it collapses, 50/50, onto one node and the other vanishes with a glitch.',
+    text: `The GCC can plant one Flag on **two nodes at once**. The superposed Flag counts as real on both, until an enemy unit comes within ${GCC.simulacraObserveRadius} m of either: then it collapses, 50/50, onto one node and the other vanishes with a glitch.`,
   },
   {
     kind: 'quote',
@@ -337,20 +419,20 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
   { kind: 'h', text: 'Interference' },
   {
     kind: 'p',
-    text: 'A facet inside two or more Surveys gathers instability from 0 to 1 at +0.08 per second, and sheds it at 0.15 per second once the overlap ends.',
+    text: `A facet inside two or more Surveys gathers instability from 0 to 1 at +${INSTABILITY_RISE} per second, and sheds it at ${INSTABILITY_DECAY} per second once the overlap ends.`,
   },
   {
     kind: 'table',
     head: ['Instability', 'Effect'],
     rows: [
-      ['≥ 0.35', 'Shimmer and moiré. **Flag Psychosis**: hippies inside lose attention twice as fast.'],
-      ['≥ 0.65', '**Crystal discharge**: lightning every few seconds, stunning units 1.2 s and dealing 25 damage to pieces and buildings.'],
-      ['≥ 0.9', '**Phason storms**: unobserved nodes flip on their own.'],
+      [`≥ ${INSTABILITY_SHIMMER}`, `Shimmer and moiré. **Flag Psychosis**: hippies inside lose attention ${HIPPIE_AI.psychosisDrainMult}× as fast, unless their camp holds most of the facet's corners.`],
+      [`≥ ${INSTABILITY_DISCHARGE}`, `**Crystal discharge**: lightning every few seconds, stunning units ${DISCHARGE_STUN} s and dealing ${DISCHARGE_DAMAGE} damage to pieces and buildings.`],
+      [`≥ ${INSTABILITY_STORM}`, '**Phason storms**: unobserved nodes flip on their own.'],
     ],
   },
   {
     kind: 'p',
-    text: 'In any overlap, the camp holding more Flags **resonates**: its hippies work 20% faster there.',
+    text: 'In a shimmering overlap, the camp holding most of a facet\'s corners **resonates** instead: its hippies work 20% faster there.',
   },
   { kind: 'h', text: 'C.M.I.' },
   {
@@ -365,11 +447,11 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   { kind: 'h', text: 'Signifiers' },
   {
     kind: 'p',
-    text: 'Your hippies, the **Signifiers**, do most of the work of the Survey. Each runs at 5.5 m/s, has 100 vibes, carries one Flag or 10 lumber, and has **attention** from 0 to 100.',
+    text: `Your hippies, the **Signifiers**, do most of the work of the Survey. Each runs at ${HIPPIE.speed} m/s, has ${HIPPIE.maxHp} vibes, carries one Flag or ${HIPPIE.gatherAmount} lumber, and has **attention** from 0 to 100.`,
   },
   {
     kind: 'p',
-    text: 'Attention drains 1 per second while working, 2 per second inside instability. At 0 a hippie is distracted and wanders to the nearest sound camp for 10 s, returning at 60. Idle hippies recover 4 per second near your Hearth or a Drum Circle. A hippie knocked to 0 vibes drops what it carries and returns to your Hearth after 14 s.',
+    text: `Attention drains ${HIPPIE.attentionDrain} per second while working, ${HIPPIE.attentionDrain * HIPPIE_AI.psychosisDrainMult} per second in Flag Psychosis. At 0 a hippie is distracted and wanders to the nearest sound camp for ${HIPPIE.distractedTime} s, returning at ${HIPPIE.distractedRecoverTo}. Idle hippies recover ${HIPPIE.attentionRecover} per second near your Hearth or a Drum Circle. A hippie knocked to 0 vibes drops what it carries and returns to your Hearth after ${HIPPIE.respawnTime} s.`,
   },
   { kind: 'h', text: 'Jobs and Orders' },
   {
@@ -384,47 +466,55 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: 'Set each job from 0 to 4 in **Camp Priorities**; idle hippies divide themselves by those weights. From the Command View, select hippies and right click to give direct orders. On foot, **G** rallies every hippie within 25 m to follow you and **H** sends your followers at the crosshair.',
+    text: `Set each job from 0 to 4 in **Camp Priorities**; idle hippies divide themselves by those weights. From the Command View, select hippies and right click to give direct orders. On foot, **G** rallies every hippie within ${HIPPIE_AI.rallyRadius} m to follow you and **H** sends your followers at the crosshair.`,
   },
   {
     kind: 'canon',
     title: 'Hoarding Is Villainy',
-    text: 'Hoarding Flags caused the fall of Tartaria. Keep more than 24 Flags in your Hearth stock and your hippies\' attention drains 50% faster, for the cold is the lack of activity.',
+    text: `Hoarding Flags caused the fall of Tartaria. Keep more than ${HOARD_THRESHOLD} Flags in your Hearth stock and your hippies' attention drains ${HOARD_PCT}% faster, for the cold is the lack of activity.`,
   },
   { kind: 'h', text: 'Buildings' },
   {
     kind: 'p',
-    text: 'Camp buildings snap to the centre of a Sun facet **inside your own Survey** and complete in 8 s, faster with a hippie helping. At 0 HP they are disabled until hippies repair them.',
+    text: `Camp buildings snap to the centre of a Sun facet **inside your own Survey** and complete in ${BUILD_TIME} s, faster with a hippie helping. At 0 HP they are disabled until hippies repair them.`,
   },
   {
     kind: 'table',
     head: ['Building', 'Lumber', 'Effect'],
     rows: [
-      ['**Flag Hearth**', '—', '1500 HP. Crafts 1 Flag every 8 s for 4 lumber and keeps your stock. Cannot be destroyed, only overwritten.'],
-      ['**Flag Workshop**', '80', '+1 Flag every 5 s for 3 lumber.'],
-      ['**Drum Circle**', '80', `Recruits 1 hippie every 14 s for 1 Flag + 10 lumber. +6 pop cap. Up to 4 drummers, +${DRUM_RITUAL_PER_SEC} Ritual/s each.`],
-      ['**Hearth Ward**', '120', '−40% enemy pressure on your Hearths within 30 m. Observes 26 m. Vibe-check pulse every 4 s: enemy hippies within 14 m stunned 1 s, 10 damage.'],
-      ['**Drug Lab**', '100', 'Brews one dose every 22 s for 25 lumber, up to 3 of each drug.'],
+      ['**Flag Hearth**', '—', `${BUILDINGS.hearth.hp} HP. Crafts 1 Flag every ${HEARTH_FLAG_INTERVAL} s for ${HEARTH_FLAG_COST} lumber and keeps your stock. Cannot be destroyed, only overwritten.`],
+      ['**Flag Workshop**', `${BUILDINGS.workshop.cost}`, `+1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber.`],
+      [
+        '**Drum Circle**',
+        `${BUILDINGS.drumcircle.cost}`,
+        `Recruits 1 hippie every ${RECRUIT_INTERVAL} s for 1 Flag + ${RECRUIT_LUMBER} lumber. +${HIPPIE.popCapPerDrumCircle} pop cap. Up to ${DRUMMERS_PER_CIRCLE} drummers, +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
+      ],
+      [
+        '**Hearth Ward**',
+        `${BUILDINGS.ward.cost}`,
+        `−${pct(1 - CAPTURE.wardMult)}% enemy pressure on your Hearths within ${WARD_RADIUS} m. Observes ${WARD_OBSERVE_RADIUS} m. Vibe-check pulse every ${WARD_PULSE_INTERVAL} s: enemy hippies within ${WARD_PULSE_RADIUS} m stunned ${WARD_PULSE_STUN} s, ${WARD_PULSE_DAMAGE} damage.`,
+      ],
+      ['**Drug Lab**', `${BUILDINGS.druglab.cost}`, `Brews one dose every ${BREW_TIME} s for ${BREW_COST} lumber, up to ${DRUG_MAX} of each drug.`],
     ],
   },
   { kind: 'h', text: 'Pieces' },
   {
     kind: 'p',
-    text: 'Pieces cost 10 lumber, pop in instantly and have 150 HP: **Z** Tarp Wall on a Ley edge, **X** Deck on a facet, **C** Ramp up one level, **V** Demolish your own piece for a 5 lumber refund. Levels run 0 to 3; anything above ground needs support from the level below.',
+    text: `Pieces cost ${PIECE.cost} lumber, pop in instantly and have ${PIECE.hp} HP: **Z** Tarp Wall on a Ley edge, **X** Deck on a facet, **C** Ramp up one level, **V** Demolish your own piece for a ${PIECE.refund} lumber refund. Levels run 0 to ${MAX_BUILD_LEVEL}; anything above ground needs support from the level below.`,
   },
   { kind: 'h', text: 'The Geomantic Command Center' },
   {
     kind: 'p',
-    text: 'A black pentagonal cart with Flag-spoked wheels and a tabletop map of the burn. Use the **Command Table** to dive into the Command View. Push the cart with E at 4 m/s. If it collapses it is rebuilt at your Hearth after 45 s.',
+    text: `A black pentagonal cart with Flag-spoked wheels and a tabletop map of the burn. Use the **Command Table** to dive into the Command View. Hold E at the cart to push it at ${GCC.pushSpeed} m/s. If it collapses it is rebuilt at your Hearth after ${GCC.rebuildTime} s.`,
   },
   {
     kind: 'list',
     items: [
-      '**Geomantic Advice**: reveals the lattice and focus points within 30 m and observes those nodes.',
-      '**Flag Repair**: every 3 s re-plants one loose Flag of yours within 20 m and mends your pieces and buildings there.',
-      '**Flag Gifts** (3 s cooldown): spend 1 Flag to recruit a neutral hippie within 15 m.',
-      '**Flagellian Dialectics** (40 s cooldown, 3 s channel at the cart): converts up to 3 enemy hippies within 14 m.',
-      '**Flag Simulacra** (20 s cooldown): one Flag on two nodes at once.',
+      `**Geomantic Advice**: reveals the lattice and focus points within ${GCC.adviceRadius} m and observes those nodes.`,
+      `**Flag Repair**: every ${GCC.repairInterval} s re-plants one loose Flag of yours within ${GCC.repairRadius} m and mends your pieces and buildings there.`,
+      `**Flag Gifts** (${GCC.giftCooldown} s cooldown): spend 1 Flag to recruit a neutral hippie within ${GCC.giftRadius} m.`,
+      `**Flagellian Dialectics** (${GCC.dialecticsCooldown} s cooldown, ${GCC.dialecticsChannel} s channel at the cart): converts up to ${GCC.dialecticsMax} enemy hippies within ${GCC.dialecticsRadius} m.`,
+      `**Flag Simulacra** (${GCC.simulacraCooldown} s cooldown): one Flag on two nodes at once.`,
     ],
   },
   { kind: 'h', text: 'Drugs' },
@@ -432,9 +522,21 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
     kind: 'table',
     head: ['Drug', 'Effect', 'Risk'],
     rows: [
-      ['**Saffron** (Vexillicrocus tea)', `40 s: every hippie +50% work and move speed; +${DRUG.saffronRitualPerSec} Ritual/s.`, '20 s crash at −30% speed; each hippie has a 25% chance to wander off overstimulated.'],
-      ['**Luminous Dust**', '30 s: the whole lattice, focus points, strain and enemy simulacra revealed; your throws snap within 5 m.', 'Screen distortion, minimap noise, and 3–5 hallucinated False Flags.'],
-      ['**Acid Cop Vision**', '30 s: every rival\'s hippies, tasks, planned nodes and avatar, through walls.', 'Paranoia: attention drains ×2; phantom pursuers on your minimap.'],
+      [
+        '**Saffron** (Vexillicrocus tea)',
+        `${DRUG.duration.saffron} s: every hippie +${pct(DRUG.saffronMag)}% work and move speed; +${DRUG.saffronRitualPerSec} Ritual/s.`,
+        `${DRUG.crashTime} s crash at −${pct(DRUG.crashMag)}% speed; each hippie has a ${pct(DRUG.overstimChance)}% chance to wander off overstimulated.`,
+      ],
+      [
+        '**Luminous Dust**',
+        `${DRUG.duration.dust} s: the whole lattice, focus points, strain and enemy simulacra revealed; your throws snap within ${AVATAR.throwSnapRadiusDust} m.`,
+        `Screen distortion, minimap noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} hallucinated False Flags.`,
+      ],
+      [
+        '**Acid Cop Vision**',
+        `${DRUG.duration.acidcop} s: every rival's hippies, tasks, planned nodes and avatar, through walls.`,
+        `Paranoia: attention drains ×${HIPPIE_AI.paranoiaDrainMult}; phantom pursuers on your minimap.`,
+      ],
     ],
   },
   { kind: 'h', text: 'The D.E.G.E.N. Mesh' },
@@ -446,9 +548,9 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
     kind: 'list',
     items: [
       '**Pings**: Rally, Attack, Flag-here and SOS (P or middle mouse).',
-      '**SOS**: a hurt hippie pings on its own; Defend hippies within 60 m respond.',
-      '**Retransmit: TAKE A SHOT** (60 s cooldown): every hippie on your mesh gains 35 attention and wobbles for 2 s.',
-      '**MOOP**: a knocked-out enemy may drop its beacon. Pick it up to tap that camp\'s mesh for 30 s.',
+      `**SOS**: a hurt hippie pings on its own; Defend hippies within ${HIPPIE.sosRespondRadius} m respond.`,
+      `**Retransmit: TAKE A SHOT** (${RETRANSMIT_COOLDOWN} s cooldown): every hippie on your mesh gains ${RETRANSMIT_ATTENTION} attention and wobbles for 2 s.`,
+      `**MOOP**: a knocked-out enemy may drop its beacon. Pick it up to tap that camp's mesh for ${MESH_TAP_DURATION} s.`,
     ],
   },
   {
@@ -459,7 +561,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   { kind: 'h', text: 'Chakras' },
   {
     kind: 'p',
-    text: 'Five **Flag chakras**, one per Ley direction, named for the anatomy of a Flag: **Hoist** (Priority Beacon), **Fly** (Forced March), **Canton** (Stabilize Zone), **Field** (Phason Shift) and **Finial** (Omega Pulse). Align them with Ritual at your Hearth in a 4 s channel: 30, 70 and 130 Ritual for levels 1, 2 and 3. Ritual comes from drumming, Crystals and Saffron, never from the size of your Survey.',
+    text: `Five **Flag chakras**, one per Ley direction, named for the anatomy of a Flag: **Hoist** (Priority Beacon), **Fly** (Forced March), **Canton** (Stabilize Zone), **Field** (Phason Shift) and **Finial** (Omega Pulse). Align them with Ritual within ${ALIGN_RADIUS} m of your Hearth in a ${ALIGN_TIME} s channel: ${ALIGN_COST[0]}, ${ALIGN_COST[1]} and ${ALIGN_COST[2]} Ritual for levels 1, 2 and 3. Ritual comes from drumming, Crystals and Saffron, never from the size of your Survey.`,
   },
 ];
 
@@ -484,18 +586,19 @@ export const TIPS: readonly string[] = [
   'A Flag with Ley Lines to two others observes itself, so a finished loop shrugs off the Phason Tide.',
   'Phason Shift ignores Canon III; only a Stabilize Zone keeps a node from hopping.',
   'Plant a real Flag on a rival\'s implied node and the implication evaporates.',
-  'Your quiver refills from Hearth stock whenever you stand within 6 m of the Hearth.',
-  'A thrown Flag plants itself on the nearest free node within 3 m of where it lands.',
-  'Keep more than 24 Flags in your Hearth and your hippies\' attention drains 50% faster: hoarding is villainy.',
+  `Your quiver refills from Hearth stock whenever you stand within ${AVATAR.restockRadius} m of the Hearth.`,
+  `A thrown Flag plants itself on the nearest free node within ${AVATAR.throwSnapRadius} m of where it lands.`,
+  `Keep more than ${HOARD_THRESHOLD} Flags in your Hearth and your hippies' attention drains ${HOARD_PCT}% faster: hoarding is villainy.`,
   `Break the loop and the siege unwinds: pressure on a Hearth that is no longer contained decays ${CAPTURE.decay} per second.`,
-  'Every defending hippie within 12 m of a Hearth slows the overwrite, down to half speed.',
-  'A Crystal adds 15% containment pressure to every enemy Hearth within 45 m.',
+  `Every defending hippie within ${CAPTURE.defenderRadius} m of a Hearth slows the overwrite, down to ×${CAPTURE.defenderFloor} speed.`,
+  `A Crystal adds ${CRYSTAL_BONUS_PCT}% containment pressure to every enemy Hearth within ${CRYSTAL_PRESSURE_RADIUS} m.`,
   'Five Flags around a hidden Crystal Focus make a pentacle; Geomantic Advice and Luminous Dust show where.',
   `Stand within ${CAPTURE.holdRadius} m of your contained Hearth to Hold it in person: pressure builds at ${HOLD_PCT}% while you are there.`,
-  `At 14:00 the Flag burns: pressure doubles, then burns hotter every ${SUDDEN_DEATH_ESCALATE_EVERY / 60} minutes, and the Crystal turns every 40 s.`,
+  `At ${BURN_CLOCK} the Flag burns: pressure ×${SUDDEN_DEATH_PRESSURE_MULT}, burning hotter every ${ESCALATE_MIN} minutes, and the Crystal turns every ${TIDE_INTERVAL_SUDDEN_DEATH} s.`,
+  `If several camps still stand at ${DAWN_CLOCK}, dawn crowns the one with the most Hearths, then the largest Survey, then the highest C.M.I.`,
   'Saffron is fast and the crash is faster; dose before the push, not during the defence.',
-  'Answer SOS pings: Defend hippies within 60 m come running, and so should you.',
-  'Retransmit TAKE A SHOT when attention runs low; it gives every hippie 35 more.',
-  'An enemy beacon dropped in the dirt taps their mesh for 30 s. MOOP responsibly.',
-  'Overlapping Surveys grow unstable; above 0.65 the Crystal discharges lightning on everyone inside.',
+  `Answer SOS pings: Defend hippies within ${HIPPIE.sosRespondRadius} m come running, and so should you.`,
+  `Retransmit TAKE A SHOT when attention runs low; it gives every hippie ${RETRANSMIT_ATTENTION} more.`,
+  `An enemy beacon dropped in the dirt taps their mesh for ${MESH_TAP_DURATION} s. MOOP responsibly.`,
+  `Overlapping Surveys grow unstable; above ${INSTABILITY_DISCHARGE} the Crystal discharges lightning on everyone inside.`,
 ];

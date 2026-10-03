@@ -20,8 +20,15 @@ export class Banners implements UiPart {
   }
 
   push(b: BannerSpec): void {
-    // Under a flood (mass captures at The Burn) the oldest pending banner yields.
-    if (this.queue.length >= MAX_QUEUE) this.queue.shift();
+    if (b.urgent) {
+      // The match is over: nothing queued earlier matters more, and the end screen is waiting.
+      this.queue.length = 0;
+      this.current?.remove();
+      this.current = null;
+    } else if (this.queue.length >= MAX_QUEUE) {
+      // Under a flood (mass captures at The Burn) the oldest pending banner yields.
+      this.queue.shift();
+    }
     this.queue.push(b);
   }
 

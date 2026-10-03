@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BURN_TIME } from '../../sim/constants';
+import { BURN_TIME, DAWN_TIME } from '../../sim/constants';
 import type { GroundType, MapLayout } from '../../sim/map/mapgen';
 import { bakeGroundTypes } from './ground';
 import { terrainHeight } from './terrain';
@@ -23,12 +23,78 @@ describe('time of day', () => {
     expect(day.sunDir.y).toBeLessThan(0);
   });
 
-  it('keeps the shadow light above the horizon and a lit, sunny title screen', () => {
+  it('deepens the night after The Burn, then breaks dawn at DAWN_TIME opposite the sunset', () => {
     const day = createDayState();
-    for (let t = 0; t <= BURN_TIME + 120; t += 5) {
+    const zenith = () => day.zenith.r * 0.2126 + day.zenith.g * 0.7152 + day.zenith.b * 0.0722;
+    const bearing = () => {
+      const l = Math.hypot(day.sunDir.x, day.sunDir.z);
+      return { x: day.sunDir.x / l, z: day.sunDir.z / l };
+    };
+    // Where the sun went down: its bearing as it crosses the horizon at dusk.
+    let t = 0;
+    for (computeDayState(t, day); day.sunDir.y > 0; computeDayState(++t, day));
+    const set = bearing();
+
+    // The darkest moment falls between The Burn and Dawn, darker than the night at The Burn.
+    computeDayState(BURN_TIME, day);
+    const atBurn = zenith();
+    let darkest = BURN_TIME;
+    let darkestLum = atBurn;
+    for (t = BURN_TIME; t <= DAWN_TIME; t += 5) {
+      computeDayState(t, day);
+      if (zenith() < darkestLum) {
+        darkest = t;
+        darkestLum = zenith();
+      }
+    }
+    expect(darkestLum).toBeLessThan(atBurn * 0.8);
+    expect(darkest).toBeGreaterThan(BURN_TIME);
+    expect(darkest).toBeLessThan(DAWN_TIME - 300);
+
+    // From then on the sky only brightens, all the way to Dawn.
+    let lastDay = -Infinity;
+    let lastLum = -Infinity;
+    for (t = darkest; t <= DAWN_TIME; t += 5) {
+      computeDayState(t, day);
+      expect(day.daylight).toBeGreaterThanOrEqual(lastDay - 1e-9);
+      expect(zenith()).toBeGreaterThanOrEqual(lastLum - 1e-9);
+      lastDay = day.daylight;
+      lastLum = zenith();
+    }
+
+    // Pre-dawn: the sun still below the horizon, stars fading, the glow gathering opposite the sunset.
+    computeDayState(DAWN_TIME - 150, day);
+    expect(day.sunDir.y).toBeLessThan(0);
+    expect(day.stars).toBeGreaterThan(0);
+    expect(day.stars).toBeLessThan(1);
+    const glow = bearing();
+    expect(glow.x * set.x + glow.z * set.z).toBeLessThan(-0.95);
+
+    // Dawn: the disc is up, the stars are gone and warm daylight returns.
+    computeDayState(DAWN_TIME, day);
+    expect(day.sunDir.y).toBeGreaterThan(Math.sin((4 * Math.PI) / 180));
+    expect(day.stars).toBe(0);
+    expect(day.daylight).toBeGreaterThan(0.5);
+    expect(day.lightIntensity).toBeGreaterThan(2);
+    const rise = bearing();
+    expect(rise.x * set.x + rise.z * set.z).toBeLessThan(-0.95);
+  });
+
+  it('keeps the shadow light above the horizon, only swinging across while faint, and a sunny title', () => {
+    const day = createDayState();
+    computeDayState(0, day);
+    let prevDir = day.lightDir.clone();
+    let prevI = day.lightIntensity;
+    for (let t = 0; t <= DAWN_TIME + 120; t += 1) {
       computeDayState(t, day);
       expect(day.lightDir.y).toBeGreaterThan(0.15);
       expect(Math.abs(day.lightDir.length() - 1)).toBeLessThan(1e-9);
+      // A sun ↔ moon hand-off flips the shadows across the map: only allowed with both lights faint.
+      if (day.lightDir.dot(prevDir) < Math.cos((20 * Math.PI) / 180)) {
+        expect(Math.min(day.lightIntensity, prevI)).toBeLessThan(0.1);
+      }
+      prevDir = prevDir.copy(day.lightDir);
+      prevI = day.lightIntensity;
     }
     computeDayState(ATTRACT_CLOCK, day);
     expect(day.sunDir.y).toBeGreaterThan(0.1);

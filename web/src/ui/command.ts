@@ -5,7 +5,7 @@
  * session fields or app.submit(Command); nothing here mutates the World.
  */
 import type { PlanTool } from '../game/session';
-import { BREW_COST, BREW_TIME, BUILDINGS } from '../sim/constants';
+import { BREW_COST, BREW_TIME, BUILDINGS, GCC } from '../sim/constants';
 import { BUILDING_NAMES, canPlaceBuilding, isCollapsed } from '../sim/systems/buildings';
 import { gccBlocker } from '../sim/systems/gcc';
 import { brewBlocker } from '../sim/systems/drugs';
@@ -343,7 +343,10 @@ export class CommandPanels implements UiPart {
     if (!gcc?.gcc) status = 'No cart: your Geomantic Command Center is gone';
     else if (isCollapsed(gcc)) status = `Collapsed · rebuilt at the Hearth in ${fmtCountdown(gcc.gcc.destroyedUntil - t)}`;
     else if (gcc.gcc.channelUntil > t) status = `Dialectics in session · ${fmtCountdown(gcc.gcc.channelUntil - t)}`;
-    else status = gcc.gcc.pushedBy !== -1 ? 'Rolling · Geomantic Advice 30 m' : 'Parked · Geomantic Advice 30 m · Flag Repair 20 m';
+    else {
+      const advice = `Geomantic Advice ${GCC.adviceRadius} m`;
+      status = gcc.gcc.pushedBy !== -1 ? `Rolling · ${advice}` : `Parked · ${advice} · Flag Repair ${GCC.repairRadius} m`;
+    }
     setText(this.gccStatus, status);
     let hint = '';
     for (const action of GCC_ACTIONS) {

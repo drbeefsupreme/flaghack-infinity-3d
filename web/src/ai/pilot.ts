@@ -8,11 +8,11 @@
  */
 import { ALIGN_RADIUS, AVATAR, BUILDINGS, GCC, GCC_REACH, HIPPIE, SIM_DT } from '../sim/constants';
 import { TAU } from '../sim/math';
-import type { V3 } from '../sim/math';
+import type { V2, V3 } from '../sim/math';
 import { GROUND_SHAPE } from '../sim/physics/collision';
 import { alignBlocker, isFlagProtected } from '../sim/systems/abilities';
 import { throwOrigin, throwVelocity } from '../sim/systems/avatars';
-import { popCap, population } from '../sim/systems/economy';
+import { nearestHearth, popCap, population, stockAt } from '../sim/systems/economy';
 import { canPlantAt } from '../sim/systems/flags';
 import { gccBlocker } from '../sim/systems/gcc';
 import { NEUTRAL } from '../sim/types';
@@ -69,6 +69,8 @@ const GUARD_RADIUS = 9;
 
 const origin: V3 = { x: 0, y: 0, z: 0 };
 const vel: V3 = { x: 0, y: 0, z: 0 };
+/** Scratch point: the front an assault restocks for. */
+const front: V2 = { x: 0, z: 0 };
 
 export function pilotTick(b: Brain): void {
   const world = b.world;
@@ -114,8 +116,10 @@ function taskValid(b: Brain, av: Avatar, t: PilotTask): boolean {
       const pile = world.piles.get(t.pileId);
       return !!pile && pile.lumber > 0;
     }
-    case 'restock':
-      return av.carried.length < AVATAR.quiver && b.view.stock > 0;
+    case 'restock': {
+      const depot = world.buildings.get(t.hearthId);
+      return !!depot && depot.faction === b.f && av.carried.length < AVATAR.quiver && b.view.stock > 0;
+    }
     case 'fight': {
       const foe = world.hippies.get(t.target) ?? world.avatars.get(t.target);
       return !!foe && foe.faction !== b.f && foe.faction !== NEUTRAL && foe.koUntil <= world.time;
@@ -187,10 +191,17 @@ function chooseTask(b: Brain, av: Avatar): PilotTask {
     if (squatter >= 0) return { kind: 'pull', flagId: squatter };
   }
   const assault = (b.posture === 'attack' || b.posture === 'opportunist') && r !== undefined;
+  // Flags are fetched from the stocked Hearth nearest where they go: in an assault a captured
+  // outpost near the front saves a crossing of the burn per quiver.
+  if (assault && r) {
+    front.x = r.hx;
+    front.z = r.hz;
+  }
+  const depot = v.stock > 0 ? nearestHearth(world, b.f, assault ? front : av.pos, true) : undefined;
   // Siege walls ready but for their keystones: come back with a full quiver and wait by them.
   const keystone = assault && r && r.keystones.length > 0 ? world.lattice.nodes[r.keystones[0]] : null;
-  if (keystone && av.carried.length < CLOSE_QUIVER && v.stock > 0) return { kind: 'restock' };
-  if (av.carried.length === 0 && planWork && v.stock > 0 && !holding) return { kind: 'restock' };
+  if (depot && keystone && av.carried.length < CLOSE_QUIVER) return { kind: 'restock', hearthId: depot.id };
+  if (depot && av.carried.length === 0 && planWork && !holding) return { kind: 'restock', hearthId: depot.id };
   if (av.carried.length > 0) {
     const node = pickPlantNode(b, av);
     if (node >= 0) return { kind: 'plant', node };
@@ -200,7 +211,7 @@ function chooseTask(b: Brain, av: Avatar): PilotTask {
     const spot = keystone ?? (holding ? frontFlag(b, r.ourCritical, r.hx, r.hz) : frontNode(b, r.loop, r.hx, r.hz));
     if (spot) return { kind: 'guard', x: spot.x, z: spot.z };
   }
-  if (av.carried.length === 0 && planWork && v.stock > 0) return { kind: 'restock' };
+  if (depot && av.carried.length === 0 && planWork) return { kind: 'restock', hearthId: depot.id };
   if (v.lumber < HARVEST_BELOW) {
     const pile = nearestPile(b, av);
     if (pile >= 0) return { kind: 'harvest', pileId: pile };
@@ -399,12 +410,15 @@ function run(b: Brain, av: Avatar): void {
       return;
     }
     case 'restock': {
-      if (Math.hypot(v.hx - av.pos.x, v.hz - av.pos.z) <= BUILDINGS.hearth.radius + AVATAR.restockRadius - 1.5) {
+      const depot = world.buildings.get(t.hearthId);
+      if (!depot) return done(b);
+      if (Math.hypot(depot.pos.x - av.pos.x, depot.pos.z - av.pos.z) <= BUILDINGS.hearth.radius + AVATAR.restockRadius - 1.5) {
         stand(b, av);
-        if (av.carried.length >= AVATAR.quiver) done(b);
+        // A full quiver, or this Hearth ran dry (another may still have Flags): choose again.
+        if (av.carried.length >= AVATAR.quiver || stockAt(world, depot.id) === 0) done(b);
         return;
       }
-      moveTo(b, av, v.hx, v.hz, BUILDINGS.hearth.radius + AVATAR.restockRadius - 2);
+      moveTo(b, av, depot.pos.x, depot.pos.z, BUILDINGS.hearth.radius + AVATAR.restockRadius - 2);
       return;
     }
     case 'harvest': {

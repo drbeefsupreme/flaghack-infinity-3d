@@ -4,8 +4,19 @@
  * incandescent. One source of truth: the CPU reads these curves for the fire light and the
  * shader uniforms, and the GLSL below derives per-fragment charring from the same constants.
  */
+import { BURN_TIME } from '../../../sim/constants';
 import { EFFIGY_HEIGHT, EFFIGY_RADIUS } from '../../../sim/map/mapgen';
 import { BURN_CHAR_SECONDS } from '../envTypes';
+
+/**
+ * When The Burn began, given the match clock at which presentation first saw world.suddenDeath.
+ * By rule it begins at BURN_TIME, so after a fast-forward or a skipped frame the fire has still
+ * been burning since then (Dawn shows charred remains, not a fresh blaze); a debug toggle
+ * before BURN_TIME lights it on the spot.
+ */
+export function burnStartFor(firstSeen: number): number {
+  return Math.min(firstSeen, BURN_TIME);
+}
 
 /** Plinth (pedestal) radius and height, matching the effigy obstacle. */
 export const PLINTH_RADIUS = EFFIGY_RADIUS;

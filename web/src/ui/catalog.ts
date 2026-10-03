@@ -9,16 +9,29 @@ import {
   ABILITY,
   ALIGN_RADIUS,
   ALIGN_TIME,
+  AVATAR,
   BREW_COST,
   BREW_TIME,
   BUILDINGS,
   CAPTURE,
   DRUG,
+  DRUG_MAX,
   DRUM_RITUAL_PER_SEC,
+  DRUMMERS_PER_CIRCLE,
   GCC,
+  HIPPIE,
+  HIPPIE_AI,
   PIECE,
+  RECRUIT_INTERVAL,
+  RECRUIT_LUMBER,
   RETRANSMIT_ATTENTION,
   RETRANSMIT_COOLDOWN,
+  WARD_OBSERVE_RADIUS,
+  WARD_PULSE_INTERVAL,
+  WARD_PULSE_RADIUS,
+  WARD_RADIUS,
+  WORKSHOP_FLAG_COST,
+  WORKSHOP_FLAG_INTERVAL,
 } from '../sim/constants';
 import { ABILITY_NAMES, CHAKRA_NAMES } from '../sim/systems/abilities';
 import { BUILDING_NAMES } from '../sim/systems/buildings';
@@ -146,7 +159,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     key: '7',
     name: DRUG_NAMES.dust,
     duration: DRUG.duration.dust,
-    effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points, strain and enemy Simulacra. Your throws snap to nodes up to 5 m away.`,
+    effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points, strain and enemy Simulacra. Your throws snap to nodes up to ${AVATAR.throwSnapRadiusDust} m away.`,
     risk: `The screen distorts, the minimap fills with noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} False Flags appear that are not there.`,
     icon: 'dust',
   },
@@ -155,7 +168,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     name: DRUG_NAMES.acidcop,
     duration: DRUG.duration.acidcop,
     effect: `For ${DRUG.duration.acidcop} s you see every rival's Signifiers, what they are doing, their planned nodes, and their vexillomancer through walls.`,
-    risk: 'Paranoia: your Signifiers lose attention twice as fast, and phantom pursuers show up on your minimap.',
+    risk: `Paranoia: your Signifiers lose attention ${HIPPIE_AI.paranoiaDrainMult}× as fast, and phantom pursuers show up on your minimap.`,
     icon: 'acidcop',
   },
 };
@@ -171,23 +184,28 @@ export interface BuildInfo {
 }
 
 export const BUILD_INFO: Record<CampBuildingKind, BuildInfo> = {
-  workshop: { name: BUILDING_NAMES.workshop, cost: BUILDINGS.workshop.cost, effect: 'Crafts +1 Flag every 5 s for 3 lumber each.', icon: 'workshop' },
+  workshop: {
+    name: BUILDING_NAMES.workshop,
+    cost: BUILDINGS.workshop.cost,
+    effect: `Crafts +1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber each.`,
+    icon: 'workshop',
+  },
   drumcircle: {
     name: BUILDING_NAMES.drumcircle,
     cost: BUILDINGS.drumcircle.cost,
-    effect: `Recruits a Signifier every 14 s (1 Flag + 10 lumber) and raises the pop cap by 6. Up to 4 drummers make +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
+    effect: `Recruits a Signifier every ${RECRUIT_INTERVAL} s (1 Flag + ${RECRUIT_LUMBER} lumber) and raises the pop cap by ${HIPPIE.popCapPerDrumCircle}. Up to ${DRUMMERS_PER_CIRCLE} drummers make +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
     icon: 'drumcircle',
   },
   ward: {
     name: BUILDING_NAMES.ward,
     cost: BUILDINGS.ward.cost,
-    effect: 'Enemy pressure on Hearths within 30 m drops by 40%. Observes 26 m. Every 4 s a vibe check stuns enemy Signifiers within 14 m.',
+    effect: `Enemy pressure on Hearths within ${WARD_RADIUS} m drops by ${Math.round((1 - CAPTURE.wardMult) * 100)}%. Observes ${WARD_OBSERVE_RADIUS} m. Every ${WARD_PULSE_INTERVAL} s a vibe check stuns enemy Signifiers within ${WARD_PULSE_RADIUS} m.`,
     icon: 'ward',
   },
   druglab: {
     name: BUILDING_NAMES.druglab,
     cost: BUILDINGS.druglab.cost,
-    effect: `Brews one dose every ${BREW_TIME} s (${BREW_COST} lumber). Holds up to 3 doses of each drug.`,
+    effect: `Brews one dose every ${BREW_TIME} s (${BREW_COST} lumber). Holds up to ${DRUG_MAX} doses of each drug.`,
     icon: 'druglab',
   },
 };
@@ -386,7 +404,7 @@ export const KEYMAP: readonly KeyGroup[] = [
     keys: [
       ['1 – 5', 'Chakra abilities at the crosshair'],
       ['6 7 8', 'Saffron · Luminous Dust · Acid Cop Vision'],
-      ['G', 'Rally Signifiers within 25 m'],
+      ['G', `Rally Signifiers within ${HIPPIE_AI.rallyRadius} m`],
       ['H', 'Send followers at the crosshair'],
       ['P', 'Ping (attack, Flag here or rally, by context)'],
       ['T', 'Retransmit: TAKE A SHOT'],

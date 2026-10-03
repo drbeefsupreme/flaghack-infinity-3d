@@ -59,7 +59,8 @@ voice.
   your Command View. It also does Flag Repair, Flag Gifts (recruit neutrals),
   Flagellian Dialectics (convert rivals) and Flag Simulacra.
 - **The Burn** comes at 14:00. The effigy burns and capture pressure escalates every two
-  minutes until someone wins.
+  minutes. If more than one camp still stands at **Dawn** (30:00), the camp holding the most
+  Hearths completes the Survey and wins.
 
 ### The Crystal is real quasicrystal physics
 

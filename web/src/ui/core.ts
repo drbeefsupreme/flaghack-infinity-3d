@@ -9,7 +9,7 @@ import type { V2 } from '../sim/math';
 import type { FactionId } from '../sim/types';
 import type { World } from '../sim/world';
 
-export type BannerTone = 'epic' | 'good' | 'danger' | 'tide' | 'burn' | 'chakra';
+export type BannerTone = 'epic' | 'good' | 'danger' | 'tide' | 'burn' | 'chakra' | 'dawn';
 
 export interface BannerSpec {
   title: string;
@@ -19,7 +19,15 @@ export interface BannerSpec {
   color?: string;
   /** Seconds on screen (default 3). */
   dur?: number;
+  /** Match-ending moments: replace whatever is showing and drop the queue. */
+  urgent?: boolean;
 }
+
+/**
+ * Seconds the dawn crowning banner plays over the live burn; the end screen holds back for
+ * exactly this long so the banner is seen before the cards come up.
+ */
+export const DAWN_BANNER_S = 3.6;
 
 export interface UiHost {
   readonly app: AppApi;

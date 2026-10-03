@@ -97,7 +97,7 @@ export type PilotTask =
   | { kind: 'hold' }
   | { kind: 'plant'; node: number }
   | { kind: 'pull'; flagId: EntityId }
-  | { kind: 'restock' }
+  | { kind: 'restock'; hearthId: EntityId }
   | { kind: 'harvest'; pileId: EntityId }
   | { kind: 'align' }
   | { kind: 'gcc' }

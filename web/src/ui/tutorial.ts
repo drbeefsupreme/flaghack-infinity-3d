@@ -4,6 +4,7 @@
  * chakra). Lessons are recorded whenever they happen, in any order; the card always shows
  * the first unlearned one. Progress and dismissal persist in localStorage ('fh.tutorial.v1').
  */
+import { AVATAR, PIECE } from '../sim/constants';
 import type { GameEvent } from '../sim/events';
 import { JOBS } from '../sim/types';
 import type { World } from '../sim/world';
@@ -28,7 +29,7 @@ const STEPS: readonly Step[] = [
   {
     id: 'plant',
     title: 'Plant your first Flag',
-    text: `Walk onto a Ley Node and press ${kbd('E')} to plant, or ${kbd('Q')} to throw. A thrown Flag plants itself on a node where it lands. You carry ten.`,
+    text: `Walk onto a Ley Node and press ${kbd('E')} to plant, or ${kbd('Q')} to throw. A thrown Flag plants itself on a node where it lands. You carry ${AVATAR.quiver}.`,
   },
   {
     id: 'ley',
@@ -58,7 +59,7 @@ const STEPS: readonly Step[] = [
   {
     id: 'wall',
     title: 'Raise a wall',
-    text: `In action view press ${kbd('Z')} and click to raise a Tarp Wall for 10 lumber. Walls shield your loop Flags.`,
+    text: `In action view press ${kbd('Z')} and click to raise a Tarp Wall for ${PIECE.cost} lumber. Walls shield your loop Flags.`,
   },
   {
     id: 'building',

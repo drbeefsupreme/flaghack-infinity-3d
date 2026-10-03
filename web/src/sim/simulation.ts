@@ -36,29 +36,50 @@ export class Simulation {
     const dt = SIM_DT;
     w.tick++;
     w.time += dt;
-    this.run('commands', () => applyCommands(w));
+    // Direct calls with a running timestamp: wrapping each system in a closure would
+    // allocate ~17 functions per tick (~1.5M per match) just to measure them.
+    let t = performance.now();
+    applyCommands(w);
+    t = this.lap('commands', t);
     if (w.phase !== 'playing') return;
-    this.run('avatars', () => updateAvatars(w, dt));
-    this.run('hippies', () => updateHippies(w, dt));
-    this.run('projectiles', () => updateProjectiles(w, dt));
-    this.run('pings', () => updatePings(w, dt));
-    this.run('economy', () => updateEconomy(w, dt));
-    this.run('buildings', () => updateBuildings(w, dt));
-    this.run('pieces', () => updatePieces(w, dt));
-    this.run('gcc', () => updateGcc(w, dt));
-    this.run('abilities', () => updateAbilities(w, dt));
-    this.run('drugs', () => updateDrugs(w, dt));
-    this.run('survey', () => updateSurvey(w, dt));
-    this.run('crystals', () => updateCrystals(w, dt));
-    this.run('instability', () => updateInstability(w, dt));
-    this.run('tides', () => updateTides(w, dt));
-    this.run('capture', () => updateCapture(w, dt));
-    this.run('victory', () => updateVictory(w, dt));
+    updateAvatars(w, dt);
+    t = this.lap('avatars', t);
+    updateHippies(w, dt);
+    t = this.lap('hippies', t);
+    updateProjectiles(w, dt);
+    t = this.lap('projectiles', t);
+    updatePings(w, dt);
+    t = this.lap('pings', t);
+    updateEconomy(w, dt);
+    t = this.lap('economy', t);
+    updateBuildings(w, dt);
+    t = this.lap('buildings', t);
+    updatePieces(w, dt);
+    t = this.lap('pieces', t);
+    updateGcc(w, dt);
+    t = this.lap('gcc', t);
+    updateAbilities(w, dt);
+    t = this.lap('abilities', t);
+    updateDrugs(w, dt);
+    t = this.lap('drugs', t);
+    updateSurvey(w, dt);
+    t = this.lap('survey', t);
+    updateCrystals(w, dt);
+    t = this.lap('crystals', t);
+    updateInstability(w, dt);
+    t = this.lap('instability', t);
+    updateTides(w, dt);
+    t = this.lap('tides', t);
+    updateCapture(w, dt);
+    t = this.lap('capture', t);
+    updateVictory(w, dt);
+    this.lap('victory', t);
   }
 
-  private run(name: string, fn: () => void): void {
-    const t0 = performance.now();
-    fn();
-    this.timings[name] = performance.now() - t0;
+  /** Record the time since `t0` under `name`; returns now as the next lap's start. */
+  private lap(name: string, t0: number): number {
+    const t1 = performance.now();
+    this.timings[name] = t1 - t0;
+    return t1;
   }
 }

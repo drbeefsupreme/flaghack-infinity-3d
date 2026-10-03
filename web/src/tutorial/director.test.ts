@@ -10,7 +10,7 @@ import type { World } from '../sim/world';
 import { COURSE } from './course';
 import { createTutorial } from './director';
 import { LESSONS } from './lessons';
-import { TRAINING_KEY } from './progress';
+import { readTrainingProgress, trainingStanding, TRAINING_KEY } from './progress';
 import { Trainee } from './testTrainee';
 import type { TutorialDriver } from './types';
 
@@ -80,6 +80,7 @@ describe('Training Burn', () => {
   });
 
   it('a trainee completes every lesson in order within the time budget', () => {
+    vi.stubGlobal('localStorage', memoryStorage());
     const burn = newBurn();
     const trainee = new Trainee(burn.world, burn.session, burn.driver);
     const started: Record<string, number> = {};
@@ -103,6 +104,7 @@ describe('Training Burn', () => {
     // Conquest overwrote the training camp; the trainee's own camp never fell.
     expect(burn.world.factions[TRAINING_CAMP].alive).toBe(false);
     expect(burn.world.suddenDeath).toBe(true);
+    expect(trainingStanding(readTrainingProgress())).toBe('whole');
     // Every staged drill really ran (a failed staging would let its lesson through at once).
     for (const id of ['survey', 'implied', 'phason', 'command', 'crystal', 'defense', 'conquest']) {
       expect(finished[id] - started[id]).toBeGreaterThan(1);
@@ -175,6 +177,17 @@ describe('Training Burn', () => {
     expect(again.driver.state.lesson.id).toBe('flag');
     expect(again.driver.state.sealsEarned).toEqual(['arrival']);
     expect(again.driver.state.lessons[0].status).toBe('done');
+  });
+
+  it('a course walked with skipped lessons graduates without making the Seal whole', () => {
+    vi.stubGlobal('localStorage', memoryStorage());
+    const burn = newBurn();
+    for (let i = 0; i < COURSE.length; i++) burn.driver.skipLesson();
+    expect(burn.driver.state.phase).toBe('graduated');
+    expect(burn.driver.state.sealsEarned).toEqual([]);
+    const progress = readTrainingProgress();
+    expect(progress).toEqual({ graduated: true, seals: 0, total: COURSE.length });
+    expect(trainingStanding(progress)).toBe('walked');
   });
 
   it('graduation still completes when the camp is already at its population cap', () => {

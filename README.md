@@ -94,8 +94,10 @@ run `node dist-server/main.js --password …` in `web/`.
 3. The first player to join leads. The leader picks the NPC difficulty and a seed (or a fresh
    random burn), then starts. NPCs take the empty camps.
 4. If someone drops, their vexillomancer stands still for 5 seconds, then an NPC plays the camp
-   until they return. Reloading the page rejoins the same seat. During a burn, a spectator can
-   take over any camp an NPC is playing.
+   until they return. A dropped connection reconnects by itself. After a page reload, choose
+   Join again in the same tab: the handle is remembered, the password has to be typed again (the
+   page removes it from the address bar), and the same seat comes back. During a burn, a
+   spectator can take over any camp an NPC is playing.
 
 ### LAN and firewall
 

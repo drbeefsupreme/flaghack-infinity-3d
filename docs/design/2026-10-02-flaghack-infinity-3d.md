@@ -512,11 +512,12 @@ Rules:
   During a burn a spectator, or a player whose camp fell, can take over any NPC-held camp
   that still stands ("Play a camp"); the host announces it in chat and its log.
 - **Drops.** A dropped player's vexillomancer stands still; after 5 s an NPC steers the
-  camp until they return. The reclaim token (16 random bytes, kept per tab in
-  `sessionStorage`) restores the same seat after a reload or a dropped connection while the
-  same host process runs; clients retry for up to 60 s. Tokens and the match live only in
-  the host's memory: a restarted host starts a fresh lobby, and retrying clients join it as
-  new players.
+  camp until they return. Dropped connections retry by themselves for up to 60 s; after a
+  reload the player joins again from the same tab (the `#pw=` password is stripped from the
+  address bar on load, so it is typed again). Either way the reclaim token (16 random bytes,
+  kept per tab in `sessionStorage`) restores the same seat while the same host process runs.
+  Tokens and the match live only in the host's memory: a restarted host starts a fresh
+  lobby, and retrying clients join it as new players.
 - **Security.** The password is the only gate: SHA-256 digests compared with
   `timingSafeEqual`; the share link's `#pw=` fragment never reaches the server. Wrong
   passwords: 5 per minute per address (IPv6 per /64) and 30 per minute per socket peer;

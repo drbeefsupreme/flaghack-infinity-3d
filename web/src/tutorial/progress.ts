@@ -63,3 +63,12 @@ export function readTrainingProgress(): TrainingProgress {
   const record = loadTraining();
   return { graduated: record.graduated, seals: record.seals.length, total: COURSE.length };
 }
+
+/** Where the trainee stands, for the title screen. Graduating with skipped lessons is 'walked', never 'whole'. */
+export type TrainingStanding = 'new' | 'started' | 'walked' | 'whole';
+
+export function trainingStanding(p: TrainingProgress): TrainingStanding {
+  if (p.seals === p.total) return 'whole';
+  if (p.graduated) return 'walked';
+  return p.seals > 0 ? 'started' : 'new';
+}

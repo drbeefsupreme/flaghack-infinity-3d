@@ -10,7 +10,7 @@
 import { MAX_NAME_LENGTH, PROTOCOL_VERSION } from '../net/protocol';
 import type { HostInfo } from '../net/protocol';
 import type { World } from '../sim/world';
-import { readTrainingProgress } from '../tutorial/progress';
+import { readTrainingProgress, trainingStanding } from '../tutorial/progress';
 import { DIFFICULTIES, DIFFICULTY_INFO } from './catalog';
 import type { UiHost, UiPart } from './core';
 import { button, el, html, setClass, setDisabled, setText, show } from './dom';
@@ -285,15 +285,17 @@ export class TitleScreen implements UiPart {
   private showTraining(): void {
     const p = readTrainingProgress();
     show(this.trainBadge, !p.graduated);
-    const sub =
-      p.seals === p.total
+    const standing = trainingStanding(p);
+    setText(
+      this.trainSub,
+      standing === 'whole'
         ? 'Seal of Flagistan whole'
-        : p.graduated
+        : standing === 'walked'
           ? `Course walked · Seals ${p.seals}/${p.total}`
-          : p.seals > 0
+          : standing === 'started'
             ? `Seals ${p.seals}/${p.total}`
-            : 'Survey 101 with the Vexillosaint';
-    setText(this.trainSub, sub);
+            : 'Survey 101 with the Vexillosaint',
+    );
   }
 
   /** Host mode: the join panel leads; the solo menu steps back to a compact row. */

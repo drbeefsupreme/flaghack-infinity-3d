@@ -61,9 +61,27 @@ export function population(world: World, f: FactionId): number {
   return n;
 }
 
-/** Hearth stock above HOARD_THRESHOLD: the faction's hippies lose attention faster. Refreshed every tick. */
+/**
+ * Hearth stock above HOARD_THRESHOLD: the faction's hippies lose attention faster. The economy
+ * system tallies it every tick (hippies, which run first, read the previous tick's tally); a
+ * replicated mirror never steps the economy, so a tally older than that is retaken here.
+ */
 export function isHoarding(world: World, f: FactionId): boolean {
-  return econ(world).hoarding[f];
+  const st = econ(world);
+  if (st.stockTick < world.tick - 1) tallyStock(world, st);
+  return st.hoarding[f];
+}
+
+/** Stock per faction (Flags held at its Hearths) and the hoarding flags derived from it. */
+function tallyStock(world: World, st: EconState): void {
+  st.stock.fill(0);
+  for (const fl of world.flags.values()) {
+    if (fl.state !== 'stock') continue;
+    const hearth = world.buildings.get(fl.holder);
+    if (hearth && hearth.faction !== -1) st.stock[hearth.faction]++;
+  }
+  for (const f of FACTION_IDS) st.hoarding[f] = st.stock[f] > HOARD_THRESHOLD;
+  st.stockTick = world.tick;
 }
 
 /** Flags in one Hearth's stock. */
@@ -218,17 +236,9 @@ function tendPiles(world: World, st: EconState, dt: number): void {
 export function updateEconomy(world: World, dt: number): void {
   const st = econ(world);
   st.population.fill(0);
-  st.stock.fill(0);
   for (const h of world.hippies.values()) if (h.faction !== -1) st.population[h.faction]++;
-  for (const fl of world.flags.values()) {
-    if (fl.state !== 'stock') continue;
-    const hearth = world.buildings.get(fl.holder);
-    if (hearth && hearth.faction !== -1) st.stock[hearth.faction]++;
-  }
-  for (const f of FACTION_IDS) {
-    st.popCap[f] = popCap(world, f);
-    st.hoarding[f] = st.stock[f] > HOARD_THRESHOLD;
-  }
+  tallyStock(world, st);
+  for (const f of FACTION_IDS) st.popCap[f] = popCap(world, f);
 
   for (const b of world.buildings.values()) {
     const f = b.faction;

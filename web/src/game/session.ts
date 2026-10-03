@@ -158,6 +158,8 @@ export class Session {
   spectator = false;
   /** Online: player handles by seat (nameplates, Hearth rail, feed). Empty offline. */
   playerNames: Partial<Record<FactionId, string>> = {};
+  /** Online spectator / fallen camp: the faction whose vexillomancer the camera follows ([ and ] cycle), else null. */
+  followFaction: FactionId | null = null;
   /** World objective markers (tutorial). Owned by the tutorial director; cleared on new match. */
   markers: ObjectiveMarker[] = [];
   private feedId = 1;

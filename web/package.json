@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:server": "vite build --ssr server/main.ts",
+    "host": "vite build --logLevel warn && vite build --ssr server/main.ts --logLevel warn && node --enable-source-maps dist-server/main.js",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -19,11 +21,13 @@
     "@fontsource/cinzel-decorative": "^5.3.0",
     "@fontsource/rubik": "^5.3.0",
     "@fontsource/stardos-stencil": "^5.3.0",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "@types/three": "^0.186.0",
+    "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"

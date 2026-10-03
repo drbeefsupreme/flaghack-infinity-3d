@@ -7,4 +7,5 @@ export_presets.cfg
 *.log
 web/node_modules/
 web/dist/
+web/dist-server/
 web/.vite/

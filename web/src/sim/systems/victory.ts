@@ -129,6 +129,8 @@ export function dominanceOrder(world: World): FactionId[] {
  */
 export function updateVictory(world: World, dt: number): void {
   if (world.phase !== 'playing') return;
+  // The Training Burn runs on its lessons' clock; the director stages its Burn and never crowns anyone.
+  if (world.options.mode === 'tutorial') return;
   if (!world.suddenDeath && world.time >= BURN_TIME) startBurn(world);
   if (world.suddenDeath) announceEscalation(world);
 

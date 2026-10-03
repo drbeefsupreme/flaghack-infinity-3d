@@ -1,9 +1,10 @@
 /**
  * Actors: every Flag (planted / loose / thrown / quiver bundles / over-the-shoulder), the four
- * vexillomancer avatars, the instanced hippie crowd, D.E.G.E.N. status badges, dropped
- * beacons and unit rings. Publishes ctx.shared.unitAnchors (head positions by entity id,
- * vectors reused across frames). Flags and hippies draw at two levels of detail, and only
- * actors near the camera cast shadows (see lod.ts): about 20 draws regardless of counts.
+ * vexillomancer avatars with their online nameplates, the instanced hippie crowd, D.E.G.E.N.
+ * status badges, dropped beacons and unit rings. Publishes ctx.shared.unitAnchors (head
+ * positions by entity id, vectors reused across frames). Flags and hippies draw at two levels
+ * of detail, and only actors near the camera cast shadows (see lod.ts): about 20 draws
+ * regardless of counts.
  * Owner: RenderActors agent.
  */
 import type * as THREE from 'three';
@@ -15,6 +16,7 @@ import { BeaconRenderer } from './beaconRenderer';
 import { FlagRenderer } from './flagRenderer';
 import { ActorView } from './lod';
 import { HippieRenderer } from './hippieRenderer';
+import { Nameplates } from './nameplates';
 import { StatusIcons, UnitRings } from './overlays';
 
 export class ActorsRenderer implements RenderModule {
@@ -24,6 +26,7 @@ export class ActorsRenderer implements RenderModule {
   private readonly flags: FlagRenderer;
   private readonly rings: UnitRings;
   private readonly icons: StatusIcons;
+  private readonly plates: Nameplates;
   private readonly avatars: AvatarRenderer;
   private readonly hippies: HippieRenderer;
   private readonly beacons: BeaconRenderer;
@@ -35,7 +38,8 @@ export class ActorsRenderer implements RenderModule {
     this.flags = new FlagRenderer(ctx, this.view);
     this.rings = new UnitRings(ctx.scene);
     this.icons = new StatusIcons(ctx.scene);
-    this.avatars = new AvatarRenderer(ctx, this.view, this.flags, this.rings, this.anchors);
+    this.plates = new Nameplates(ctx.scene, ctx.world.factions);
+    this.avatars = new AvatarRenderer(ctx, this.view, this.flags, this.rings, this.plates, this.anchors);
     this.hippies = new HippieRenderer(ctx, this.view, this.flags, this.rings, this.icons, this.anchors);
     this.beacons = new BeaconRenderer(ctx, this.rings, this.icons);
   }
@@ -47,12 +51,15 @@ export class ActorsRenderer implements RenderModule {
     this.flags.begin();
     this.rings.begin();
     this.icons.begin();
+    this.plates.begin(ctx.session);
     this.avatars.update(dt);
     this.hippies.update(dt);
     this.beacons.update();
     this.flags.end();
     this.rings.end(ctx.time);
-    this.icons.end(ctx.time, ctx.session.viewBlend > 0.5 ? 1 : 0);
+    const command = ctx.session.viewBlend > 0.5 ? 1 : 0;
+    this.icons.end(ctx.time, command);
+    this.plates.end(ctx.renderer, command, ctx.daylight);
   }
 
   onEvent(e: GameEvent): void {
@@ -65,6 +72,7 @@ export class ActorsRenderer implements RenderModule {
     this.flags.dispose();
     this.rings.dispose();
     this.icons.dispose();
+    this.plates.dispose();
     this.avatars.dispose();
     this.hippies.dispose();
     this.beacons.dispose();

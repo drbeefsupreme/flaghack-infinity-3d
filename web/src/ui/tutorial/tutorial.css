@@ -1,0 +1,1023 @@
+/*
+ * Training Burn teacher UI: the Vexillosaint's transmission panel under the clock, objectives,
+ * the course track, the Seal of Flagistan, lesson highlights, off-screen marker arrows and the
+ * graduation screen. Same visual language as ui.css (brass and wood, Cinzel/Rubik).
+ */
+
+/* ── Mentor panel ────────────────────────────────────────────────────────── */
+.top-center > .tb-panel {
+  order: 2;
+}
+
+.tb-panel {
+  position: relative;
+  width: 650px;
+  margin-top: 2px;
+  padding: 2px 8px 6px;
+  color: var(--cream);
+  animation: tb-in 0.4s ease-out;
+}
+.tb-panel[data-mode='tracker'] {
+  width: 480px;
+}
+.tb-panel[data-mode='dock'] {
+  width: 470px;
+  padding-bottom: 4px;
+}
+
+.tb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  margin-bottom: 7px;
+  padding: 0 2px 4px;
+  border-bottom: 1px solid rgba(200, 151, 63, 0.35);
+}
+.tb-panel:not([data-mode='dialog']) .tb-head {
+  padding-right: 46px;
+}
+.tb-kicker {
+  flex: none;
+  font: 700 10px var(--font-display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brass);
+  white-space: nowrap;
+}
+.tb-title {
+  min-width: 0;
+  overflow: hidden;
+  font: 700 16px var(--font-display);
+  letter-spacing: 0.04em;
+  color: var(--flag);
+  text-shadow: 0 0 10px rgba(255, 212, 0, 0.3), 0 1px 0 #3a2500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tb-tools {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+.tb-tool {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(200, 151, 63, 0.5);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--cream);
+  font-size: 15px;
+  cursor: pointer;
+}
+.tb-tool:hover {
+  background: rgba(255, 212, 0, 0.16);
+  color: var(--flag);
+}
+.tb-tool.on {
+  border-color: #ffd400;
+  background: linear-gradient(180deg, #ffe45a, #e8b400);
+  color: #1d1305;
+}
+.tb-tool.tb-leave:hover {
+  border-color: #b33a3a;
+  color: #ffb3a8;
+}
+
+.tb-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* The transmission: a brass bezel with drifting scanlines and an on-air lamp. */
+.tb-portrait {
+  position: relative;
+  flex: none;
+  width: 92px;
+  height: 100px;
+  overflow: hidden;
+  border: 2px solid var(--brass);
+  border-radius: 8px;
+  background: #0e0803;
+  box-shadow: 0 0 0 1px #120a03, 0 0 16px rgba(255, 212, 0, 0.28);
+}
+.tb-portrait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(180deg, rgba(255, 240, 200, 0.07) 0 1px, transparent 1px 3px),
+    radial-gradient(circle at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55));
+  animation: tb-scan 7s linear infinite;
+}
+.tb-onair {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff4a3d;
+  box-shadow: 0 0 6px #ff4a3d;
+  animation: fh-pulse 1.4s ease-in-out infinite;
+}
+.tb-portrait.speaking {
+  box-shadow: 0 0 0 1px #120a03, 0 0 22px rgba(255, 212, 0, 0.55);
+}
+
+.tb-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tb-plate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+.tb-name {
+  font: 700 13px var(--font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brass-hi);
+}
+.tb-sub {
+  font: 400 11px var(--font-ui);
+  color: var(--cream-dim);
+}
+
+.tb-line {
+  min-height: 4.5em;
+  font: 400 15px/1.5 var(--font-ui);
+  color: var(--cream);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+.tb-line strong {
+  font-weight: 700;
+  color: var(--flag);
+}
+.tb-line.narrator {
+  font: 400 14.5px/1.5 var(--font-display);
+  color: var(--cream-dim);
+}
+.tb-line kbd {
+  font-size: 11px;
+}
+.tw-ghost,
+.tw-cap.tw-off {
+  visibility: hidden;
+}
+
+.tb-award {
+  font: 700 12px var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--flag);
+  text-shadow: 0 0 10px rgba(255, 212, 0, 0.55);
+  animation: tb-in 0.5s ease-out 0.6s backwards;
+}
+
+.tb-dfoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.tb-count {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  color: var(--cream-dim);
+}
+.tb-next {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.tb-next kbd {
+  margin: 0 0 0 4px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+.tb-panel.ready .tb-next {
+  animation: tb-ready 1.6s ease-in-out infinite;
+}
+
+/* Objectives: the tick draws itself, the box fills, the row gets a sweep of gold. */
+.tb-objs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tb-obj {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 13.5px;
+  line-height: 1.35;
+  background: linear-gradient(100deg, transparent 38%, rgba(255, 212, 0, 0.42) 50%, transparent 62%) no-repeat;
+  background-size: 300% 100%;
+  background-position: 120% 0;
+}
+.tb-obj strong {
+  color: var(--flag);
+}
+.tb-obj kbd {
+  font-size: 10.5px;
+}
+.tb-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+.tb-check svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.tb-cb {
+  fill: rgba(0, 0, 0, 0.45);
+  stroke: var(--brass);
+  stroke-width: 1.4;
+  transition: fill 0.25s, stroke 0.25s;
+}
+.tb-ck {
+  fill: none;
+  stroke: #1d1305;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  transition: stroke-dashoffset 0.35s 0.12s ease-out;
+}
+.tb-obj.done .tb-cb {
+  fill: var(--flag);
+  stroke: #fff2a8;
+}
+.tb-obj.done .tb-ck {
+  stroke-dashoffset: 0;
+}
+.tb-obj.done .tb-obj-t {
+  color: var(--cream-dim);
+  text-decoration: line-through rgba(255, 212, 0, 0.55);
+}
+.tb-obj-main {
+  flex: 1;
+  min-width: 0;
+}
+.tb-obj-prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+.tb-obj-prog .bar {
+  flex: 1;
+  height: 6px;
+}
+.tb-obj-v {
+  min-width: 34px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--brass-hi);
+}
+
+.tb-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 1px solid rgba(111, 243, 255, 0.35);
+  border-radius: 5px;
+  background: rgba(111, 243, 255, 0.08);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #dff9ff;
+}
+.tb-hint-ic {
+  flex: none;
+  margin-top: 1px;
+  font-size: 15px;
+  color: var(--tide);
+}
+.tb-hint strong {
+  color: #fff;
+}
+.tb-hint kbd {
+  font-size: 10.5px;
+}
+
+.tb-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid rgba(179, 58, 58, 0.6);
+  border-radius: 5px;
+  background: rgba(60, 10, 10, 0.45);
+  font-size: 12px;
+}
+.tb-confirm-q {
+  margin-right: auto;
+}
+
+.tb-keys {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--cream-dim);
+}
+.tb-keys kbd {
+  padding: 0 5px;
+  font-size: 10px;
+}
+.tb-keys-sep {
+  width: 10px;
+}
+
+/* Course track: one pennant per lesson, gold once sealed. */
+.tb-track {
+  display: flex;
+  gap: 3px;
+  margin-right: auto;
+}
+.tb-pip {
+  width: 14px;
+  height: 9px;
+  padding: 0;
+  border: none;
+  background: rgba(200, 151, 63, 0.38);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  cursor: pointer;
+}
+.tb-pip:hover {
+  background: rgba(255, 230, 120, 0.7);
+}
+.tb-pip.done {
+  background: var(--flag);
+}
+.tb-pip.cur {
+  background: #fff6c4;
+  animation: fh-pulse 1.4s ease-in-out infinite;
+}
+.tb-pip.locked {
+  background: rgba(200, 151, 63, 0.2);
+  cursor: default;
+}
+
+.tb-lessons {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 3;
+  width: 500px;
+  padding: 8px 10px 10px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(200, 151, 63, 0.6);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(30, 20, 10, 0.97), rgba(16, 10, 5, 0.97));
+  box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.12), 0 10px 26px rgba(0, 0, 0, 0.6);
+  animation: tb-in 0.25s ease-out;
+}
+.tb-lessons-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tb-lessons-head .panel-title {
+  margin: 0;
+}
+.tb-lessons-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--rows, 6), auto);
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 6px;
+}
+.tb-lrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--cream);
+  font: 400 12.5px/1.2 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.tb-lrow:hover {
+  border-color: rgba(255, 212, 0, 0.45);
+  background: rgba(255, 212, 0, 0.08);
+}
+.tb-lrow.cur {
+  border-color: rgba(255, 212, 0, 0.75);
+  background: rgba(255, 212, 0, 0.1);
+}
+.tb-lrow.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Status pennant: brass when reached, gold once sealed, pulsing for the lesson underway. */
+.tb-lrow-s {
+  flex: none;
+  width: 13px;
+  height: 9px;
+  background: rgba(200, 151, 63, 0.45);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.tb-lrow.done .tb-lrow-s {
+  background: var(--flag);
+}
+.tb-lrow.cur .tb-lrow-s {
+  background: #fff6c4;
+  animation: fh-pulse 1.4s ease-in-out infinite;
+}
+.tb-lrow-n {
+  flex: none;
+  min-width: 14px;
+  font-size: 12px;
+  color: var(--brass-hi);
+}
+.tb-lrow-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tb-lrow-t {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tb-lrow-seal {
+  font: 400 10.5px var(--font-display);
+  color: var(--brass);
+}
+
+/* Tracker and dock: a medallion beside the latest remark and the objectives. */
+.tb-panel:not([data-mode='dialog']) .tb-portrait {
+  width: 46px;
+  height: 50px;
+  border-radius: 50% / 46%;
+}
+.tb-panel[data-mode='dock'] .tb-portrait {
+  width: 36px;
+  height: 39px;
+}
+.tb-panel:not([data-mode='dialog']) .tb-onair {
+  display: none;
+}
+.tb-panel:not([data-mode='dialog']) .tb-plate {
+  display: none;
+}
+.tb-panel:not([data-mode='dialog']) .tb-line {
+  min-height: 0;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 212, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.4;
+  color: #f7ecd0;
+}
+.tb-panel.quiet:not([data-mode='dialog']) .tb-line,
+.tb-panel[data-mode='dock'] .tb-line {
+  display: none;
+}
+.tb-panel[data-mode='dock'] .tb-obj {
+  padding: 2px 4px;
+  font-size: 12.5px;
+}
+/* Outside the dialog the footer keeps only the course track, under everything else. */
+.tb-panel:not([data-mode='dialog']) .tb-dfoot {
+  order: 10;
+  margin-top: 2px;
+}
+.tb-panel:not([data-mode='dialog']) .tb-count,
+.tb-panel:not([data-mode='dialog']) .tb-next,
+.tb-panel[data-mode='dock'] .tb-dfoot {
+  display: none;
+}
+.tb-panel[data-mode='dock'] .tb-head {
+  min-height: 22px;
+  margin-bottom: 4px;
+}
+.tb-panel[data-mode='dock'] .tb-kw {
+  display: none;
+}
+
+/* ── Seal of Flagistan ───────────────────────────────────────────────────── */
+.tb-seal {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  margin: 2px 2px 0 0;
+  cursor: pointer;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6));
+  transition: width 0.45s ease, height 0.45s ease, filter 0.45s ease;
+}
+.tb-panel[data-phase='complete'] .tb-seal {
+  width: 128px;
+  height: 128px;
+  filter: drop-shadow(0 0 14px rgba(255, 212, 0, 0.6)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6));
+}
+/* Outside the dialog the Seal rides the panel's corner like a wax seal, clear of the body. */
+.tb-panel:not([data-mode='dialog']) .tb-seal {
+  position: absolute;
+  top: -17px;
+  right: -15px;
+  width: 54px;
+  height: 54px;
+  margin: 0;
+}
+.tb-panel[data-mode='dock'] .tb-seal {
+  top: -15px;
+  width: 46px;
+  height: 46px;
+}
+.seal-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.seal-plate {
+  fill: #170f06;
+  stroke: var(--brass);
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+.seal-engrave {
+  fill: none;
+  stroke: rgba(200, 151, 63, 0.3);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+/* Fragments fly in as a whole (seal.ts animates the group around its own centre). */
+.sf {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sf-ghost {
+  fill: rgba(255, 212, 0, 0.05);
+  stroke: rgba(200, 151, 63, 0.6);
+  stroke-width: 1.6;
+  stroke-dasharray: 4 3;
+  stroke-linejoin: round;
+  transition: opacity 0.4s;
+}
+.sf-fill {
+  opacity: 0;
+  stroke: #2a1a06;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  transition: opacity 0.3s;
+}
+.sf-flag .sf-fill {
+  stroke-width: 1.4;
+}
+.sf.on .sf-fill {
+  opacity: 1;
+}
+.sf.on .sf-ghost {
+  opacity: 0;
+}
+.seal-burst {
+  fill: none;
+  stroke: #fff6c4;
+  stroke-width: 3;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* ── Lesson highlights (rules generated from TUTORIAL_TARGETS in highlights.ts) ── */
+@keyframes tb-hl {
+  0%,
+  100% {
+    outline-color: rgba(255, 212, 0, 0.95);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 16px 3px rgba(255, 212, 0, 0.6);
+  }
+  50% {
+    outline-color: rgba(255, 246, 196, 0.45);
+    outline-offset: 6px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 28px 9px rgba(255, 212, 0, 0.28);
+  }
+}
+
+/* ── Off-screen objective arrows ─────────────────────────────────────────── */
+.tb-ptrs {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.tb-ptr {
+  --c: #ffd400;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+.tb-ptr-arrow {
+  position: absolute;
+  top: -18px;
+  left: -18px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--c);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20, 13, 5, 0.9) 55%, rgba(20, 13, 5, 0.65));
+  box-shadow: 0 0 12px var(--c), 0 2px 6px rgba(0, 0, 0, 0.6);
+  color: var(--c);
+}
+.tb-ptr-arrow svg {
+  width: 22px;
+  height: 22px;
+  animation: tb-nudge 1.1s ease-in-out infinite;
+}
+.tb-ptr-tag {
+  position: absolute;
+  top: 23px;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  padding: 2px 8px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(200, 151, 63, 0.6);
+  border-radius: 10px;
+  background: rgba(16, 10, 5, 0.88);
+  font: 700 11px var(--font-ui);
+  white-space: nowrap;
+  color: var(--cream);
+  text-shadow: 0 1px 2px #000;
+}
+.tb-ptr.low .tb-ptr-tag {
+  top: auto;
+  bottom: 23px;
+}
+.tb-ptr.at-l .tb-ptr-tag {
+  left: -18px;
+  transform: none;
+}
+.tb-ptr.at-r .tb-ptr-tag {
+  right: -18px;
+  left: auto;
+  transform: none;
+}
+.tb-ptr-d {
+  font-size: 11px;
+  color: var(--c);
+}
+
+/* ── Graduation ──────────────────────────────────────────────────────────── */
+/* Above the pause menu (the cursor may only be free there), below the loading veil. */
+.tb-grad {
+  z-index: 4;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 32%, rgba(70, 46, 8, 0.62), rgba(5, 3, 1, 0.94) 68%);
+}
+/* Centred on the Seal; the rest of the box is positioned too, so it paints over the rays. */
+.tb-grad-rays {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1700px;
+  height: 1700px;
+  margin: -850px 0 0 -850px;
+  background: repeating-conic-gradient(rgba(255, 212, 0, 0.11) 0deg 5deg, transparent 5deg 15deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 55%);
+  mask-image: radial-gradient(circle, #000 0%, transparent 55%);
+  animation: fh-spin 120s linear infinite;
+}
+.tb-grad-box {
+  width: 780px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.tb-grad-box > * {
+  position: relative;
+}
+.tb-grad-kicker {
+  padding-left: 0.5em;
+  font: 700 13px var(--font-stencil);
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--brass-hi);
+  animation: tb-in 0.6s ease-out;
+}
+.tb-grad-sealwrap {
+  position: relative;
+  width: 290px;
+  height: 290px;
+  margin: 2px 0;
+}
+.tb-grad-halo {
+  position: absolute;
+  inset: 0;
+  animation: fh-spin 80s linear infinite reverse;
+}
+.tb-gh {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.tb-gh-ring {
+  fill: none;
+  stroke: rgba(255, 212, 0, 0.4);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+.tb-gh-pole {
+  stroke: #d2a85a;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.tb-gh-cloth {
+  fill: var(--flag);
+  stroke: #7a5a10;
+  stroke-width: 0.7;
+}
+.tb-grad-seal {
+  position: absolute;
+  inset: 38px;
+  filter: drop-shadow(0 0 24px rgba(255, 212, 0, 0.55)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7));
+}
+.tb-grad-title {
+  margin: 0 0 6px;
+  font: 700 46px/1.05 var(--font-ornate);
+  color: var(--flag);
+  text-shadow: 0 0 24px rgba(255, 212, 0, 0.5), 0 3px 0 #5a3a00;
+  animation: tb-in 0.8s ease-out 1.8s backwards;
+}
+.tb-grad-lore {
+  max-width: 660px;
+  margin: 0 0 14px;
+  font: 400 15.5px/1.5 var(--font-display);
+  color: var(--cream);
+  animation: tb-in 0.8s ease-out 2.2s backwards;
+}
+.tb-grad-mentor {
+  width: 620px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(200, 151, 63, 0.5);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  text-align: left;
+}
+.tb-grad-mentor .tb-portrait {
+  width: 64px;
+  height: 70px;
+}
+.tb-grad-say {
+  flex: 1;
+  min-width: 0;
+}
+.tb-grad-name {
+  margin-bottom: 2px;
+  font: 700 11px var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass-hi);
+}
+.tb-grad-say .tb-line {
+  min-height: 3em;
+  font-size: 14px;
+}
+.tb-grad-stats {
+  margin-top: 10px;
+  font: 700 12px var(--font-display);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+.tb-grad-buttons .btn-primary kbd {
+  margin: 0 0 0 6px;
+  padding: 0 5px;
+  font-size: 10.5px;
+}
+.tb-grad-buttons .btn-primary.ready {
+  animation: tb-ready 1.6s ease-in-out infinite;
+}
+
+/* ── The Vexillosaint (portrait.ts) ──────────────────────────────────────── */
+.vx {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.vx-halo {
+  transform-origin: 60px 56px;
+  animation: fh-spin 48s linear infinite;
+}
+.vx-ring {
+  fill: none;
+  stroke: rgba(255, 212, 0, 0.4);
+  stroke-width: 0.8;
+}
+.vx-ring2 {
+  fill: none;
+  stroke: rgba(255, 212, 0, 0.25);
+  stroke-width: 0.6;
+  stroke-dasharray: 1 3;
+}
+.vx-hpole {
+  stroke: #d2a85a;
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+.vx-hcloth {
+  fill: #ffd400;
+  stroke: #7a5a10;
+  stroke-width: 0.35;
+}
+.vx-fold {
+  fill: none;
+  stroke: rgba(90, 58, 10, 0.45);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+.vx-emb {
+  fill: #ffd400;
+  stroke: #ffd400;
+  stroke-width: 0.6;
+}
+.vx-brow {
+  fill: none;
+  stroke: #e8e2d0;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.vx-body {
+  transform-origin: 60px 130px;
+  animation: tb-breathe 4.8s ease-in-out infinite;
+}
+.vx-head {
+  animation: tb-bob 4.8s ease-in-out infinite;
+}
+.vx-eyes {
+  transform-origin: 60px 58.4px;
+  animation: tb-blink 5.3s infinite;
+}
+.vx-mouth {
+  transform-origin: 60px 69.6px;
+}
+.speaking .vx-mouth {
+  animation: tb-talk 0.18s ease-in-out infinite alternate;
+}
+.vx-glint {
+  fill: none;
+  stroke: #fffbe0;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 5 70;
+  animation: tb-glint 3.2s linear infinite;
+}
+.vx-waves ellipse {
+  fill: none;
+  stroke: rgba(255, 230, 120, 0.85);
+  stroke-width: 0.8;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tb-wave 2.7s ease-out infinite;
+}
+.vx-waves ellipse:nth-child(2) {
+  animation-delay: 0.9s;
+}
+.vx-waves ellipse:nth-child(3) {
+  animation-delay: 1.8s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx-halo,
+  .vx-body,
+  .vx-head,
+  .vx-eyes,
+  .vx-glint,
+  .vx-waves ellipse,
+  .tb-portrait::after,
+  .tb-ptr-arrow svg,
+  .tb-grad-rays,
+  .tb-grad-halo {
+    animation: none;
+  }
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
+@keyframes tb-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes tb-ready {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 212, 0, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(255, 212, 0, 0.55);
+  }
+}
+@keyframes tb-scan {
+  to {
+    background-position: 0 36px, 0 0;
+  }
+}
+@keyframes tb-nudge {
+  0%,
+  100% {
+    transform: translateX(1px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+}
+@keyframes tb-breathe {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.018);
+  }
+}
+@keyframes tb-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.9px);
+  }
+}
+@keyframes tb-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+@keyframes tb-talk {
+  from {
+    transform: scaleY(0.7);
+  }
+  to {
+    transform: scaleY(2.4);
+  }
+}
+@keyframes tb-glint {
+  to {
+    stroke-dashoffset: -75;
+  }
+}
+@keyframes tb-wave {
+  0% {
+    opacity: 0;
+    transform: translateY(2px) scale(0.5);
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-9px) scale(1.4);
+  }
+}

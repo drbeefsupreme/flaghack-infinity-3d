@@ -11,7 +11,7 @@ import { spawnProjectile } from '../factory';
 import { angleDiff, clamp, TAU } from '../math';
 import type { V3 } from '../math';
 import { NEUTRAL } from '../types';
-import type { Avatar, AvatarAction, FactionId, Flag, Pile } from '../types';
+import type { Avatar, AvatarAction, AvatarInput, FactionId, Flag, Pile } from '../types';
 import type { World } from '../world';
 import { isFlagProtected } from './abilities';
 import { damageEntity, knockback } from './combat';
@@ -44,6 +44,8 @@ const PUSH_LEASH = 2.5;
 const PUSH_ORBIT_RATE = 2.4;
 /** The cart may move slightly faster than pushSpeed to stay ahead of its pusher. */
 const PUSH_CATCHUP = 1.25;
+/** How far the pusher may sink into a wedged cart before letting go (two ticks of push pace). */
+const PUSH_WEDGE_SLACK = 0.15;
 /** Respawn ring distance from the Hearth's edge. */
 const RESPAWN_GAP = 2.3;
 /** After an empty-stock restock attempt, wait this long before trying again. */
@@ -86,13 +88,18 @@ export function throwVelocity(yaw: number, pitch: number, out: V3): V3 {
   return out;
 }
 
+/**
+ * Latest control state for the sender's vexillomancer. Remote humans are untrusted: non-finite
+ * numbers keep the previous aim (or stop), and only literal `true` presses jump / sprint.
+ * stepAvatarMotion normalizes move length and clamps pitch itself.
+ */
 export function cmdAvatarInput(world: World, c: CommandOf<'avatarInput'>): void {
   const dst = world.avatarOf(c.faction).input;
   const src = c.input;
   dst.moveX = Number.isFinite(src.moveX) ? src.moveX : 0;
   dst.moveZ = Number.isFinite(src.moveZ) ? src.moveZ : 0;
-  dst.jump = src.jump;
-  dst.sprint = src.sprint;
+  dst.jump = src.jump === true;
+  dst.sprint = src.sprint === true;
   if (Number.isFinite(src.yaw)) dst.yaw = src.yaw;
   if (Number.isFinite(src.pitch)) dst.pitch = src.pitch;
 }
@@ -262,20 +269,18 @@ export function updateAvatars(world: World, dt: number): void {
 }
 
 function updateAvatar(world: World, av: Avatar, mind: AvatarMind, dt: number): void {
-  // Elimination (victory.ts) leaves the vexillomancer Flagless for good.
-  if (!world.factions[av.faction].alive) return;
-  if (av.koUntil > 0) {
-    if (world.time < av.koUntil) return;
-    respawnAvatar(world, av, mind);
-    if (av.koUntil > 0) return;
+  const alive = world.factions[av.faction].alive;
+  if (alive && av.koUntil > 0 && world.time >= av.koUntil) respawnAvatar(world, av, mind);
+  if (av.koUntil > 0 || !alive) {
+    // Flagless (for good once eliminated): no control or actions, but the body still settles.
+    stepAvatarMotion(world, av, av.input, dt);
+    return;
   }
   pruneEffects(world, av);
   const stunned = hasEffect(world, av, 'stun');
-  av.yaw = av.input.yaw;
-  av.pitch = clamp(av.input.pitch, -AVATAR.pitchLimit, AVATAR.pitchLimit);
   // The cart moves first so the pusher walks into the space it just left.
   updatePush(world, av, dt, stunned);
-  move(world, av, dt, stunned);
+  stepAvatarMotion(world, av, av.input, dt);
   progressAction(world, av, stunned);
   restock(world, av, mind);
   if (av.hp < AVATAR.maxHp && world.time - av.lastHurtAt >= AVATAR.regenDelay) {
@@ -283,22 +288,48 @@ function updateAvatar(world: World, av: Avatar, mind: AvatarMind, dt: number): v
   }
 }
 
-function move(world: World, av: Avatar, dt: number, stunned: boolean): void {
-  const inp = av.input;
-  let wx = inp.moveX;
-  let wz = inp.moveZ;
-  const wl = Math.hypot(wx, wz);
-  if (wl > 1) {
-    wx /= wl;
-    wz /= wl;
+/**
+ * The avatar fields the motion step reads or writes. Client prediction keeps a copy of these
+ * filled from the host's latest snapshot (net/mirror's AvatarKinematics is assignable).
+ */
+export type AvatarMotionState = Pick<
+  Avatar,
+  'pos' | 'vel' | 'yaw' | 'pitch' | 'onGround' | 'koUntil' | 'action' | 'effects' | 'pushing'
+>;
+
+/**
+ * One tick of vexillomancer movement: THE motion code path, shared by the host sim
+ * (updateAvatars) and client-side prediction (which replays unacked inputs through it), so the
+ * two cannot drift. Identical inputs on identical state give bit-identical results in one engine.
+ *
+ * Reads `input` (never copied into av.input), and from `av`: pos, vel, onGround; koUntil (down:
+ * input and aim are ignored, the body still falls); action (align / channel root it); effects
+ * (stun roots it, knockback slides it, speed effects scale it, expiry judged at world.time);
+ * pushing (speed capped to the cart's pace, the pushed cart's own shape is passed through).
+ * From `world`: only `time` and `collision`.
+ * Writes only av.pos, av.vel, av.onGround, av.yaw and av.pitch: no events, no RNG, no scratch,
+ * no allocation.
+ */
+export function stepAvatarMotion(world: World, av: AvatarMotionState, input: AvatarInput, dt: number): void {
+  const down = av.koUntil > 0;
+  if (!down) {
+    av.yaw = input.yaw;
+    av.pitch = clamp(input.pitch, -AVATAR.pitchLimit, AVATAR.pitchLimit);
   }
-  const rooted = isRooted(av);
-  if (rooted || stunned) {
-    wx = 0;
-    wz = 0;
+  const held = down || isRooted(av) || hasEffect(world, av, 'stun');
+  let wx = 0;
+  let wz = 0;
+  if (!held) {
+    wx = input.moveX;
+    wz = input.moveZ;
+    const wl = Math.hypot(wx, wz);
+    if (wl > 1) {
+      wx /= wl;
+      wz /= wl;
+    }
   }
   if (!hasEffect(world, av, 'knockback')) {
-    let speed = (inp.sprint ? AVATAR.sprintSpeed : AVATAR.runSpeed) * speedMultiplier(world, av);
+    let speed = (input.sprint ? AVATAR.sprintSpeed : AVATAR.runSpeed) * speedMultiplier(world, av);
     if (av.pushing >= 0) speed = Math.min(speed, GCC.pushSpeed);
     const a = AVATAR.accel * (av.onGround ? 1 : AVATAR.airControl) * dt;
     let dvx = wx * speed - av.vel.x;
@@ -315,12 +346,14 @@ function move(world: World, av: Avatar, dt: number, stunned: boolean): void {
     av.vel.x *= k;
     av.vel.z *= k;
   }
-  if (inp.jump && av.onGround && !rooted && !stunned) {
+  if (input.jump && av.onGround && !held) {
     av.vel.y = AVATAR.jumpSpeed;
     av.onGround = false;
   }
   av.vel.y -= AVATAR.gravity * dt;
-  const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight);
+  // The pushed cart leads its pusher; a client's copy of it lags, so it never blocks the pusher.
+  const ignore = av.pushing >= 0 ? av.pushing : undefined;
+  const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight, ignore);
   av.onGround = res.onGround;
   const lim = MAP_HALF - AVATAR.radius;
   if (av.pos.x > lim || av.pos.x < -lim) {
@@ -495,16 +528,20 @@ function updatePush(world: World, av: Avatar, dt: number, stunned: boolean): voi
   const dx = g.pos.x - av.pos.x;
   const dz = g.pos.z - av.pos.z;
   const d = Math.hypot(dx, dz);
-  if (d > standoff + PUSH_LEASH) {
+  // The pusher passes through the cart's shape (stepAvatarMotion), so a cart wedged against
+  // something is let go once the pusher has walked into it, and the cart blocks the pusher again.
+  if (d > standoff + PUSH_LEASH || d < BUILDINGS.gcc.radius + AVATAR.radius - PUSH_WEDGE_SLACK) {
     stopPushing(world, av);
     return;
   }
   // The vexillomancer outranks a hippie pusher.
   g.gcc.pushedBy = av.id;
-  // The cart orbits round to the facing direction and is held at arm's length in front.
-  const cur = d > 1e-3 ? Math.atan2(dx, dz) : av.yaw;
+  // The cart orbits round to the aim (the motion step sets av.yaw after this) and is held at
+  // arm's length in front.
+  const face = av.input.yaw;
+  const cur = d > 1e-3 ? Math.atan2(dx, dz) : face;
   const turn = PUSH_ORBIT_RATE * dt;
-  const ang = cur + clamp(angleDiff(cur, av.yaw), -turn, turn);
+  const ang = cur + clamp(angleDiff(cur, face), -turn, turn);
   let mx = av.pos.x + Math.sin(ang) * standoff - g.pos.x;
   let mz = av.pos.z + Math.cos(ang) * standoff - g.pos.z;
   const ml = Math.hypot(mx, mz);

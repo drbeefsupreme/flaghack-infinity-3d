@@ -4,6 +4,7 @@
  */
 import type { World } from '../sim/world';
 import { KEYMAP } from './catalog';
+import { matchScreen } from './core';
 import type { UiHost, UiPart } from './core';
 import { button, el, escapeHtml, html, show } from './dom';
 import { keycaps } from './codex';
@@ -40,7 +41,7 @@ export class HelpOverlay implements UiPart {
 
   update(_world: World | null, _now: number): void {
     const s = this.host.app.session;
-    show(this.root, s.panels.help && s.screen !== 'title');
+    show(this.root, s.panels.help && matchScreen(s.screen));
   }
 
   dispose(): void {

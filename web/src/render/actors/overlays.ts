@@ -61,7 +61,7 @@ void main() {
 `;
 
 /** Growable set of instanced attributes behind one InstancedBufferGeometry. */
-class InstanceBatch {
+export class InstanceBatch {
   readonly geometry: THREE.InstancedBufferGeometry;
   readonly attrs: THREE.InstancedBufferAttribute[];
   private readonly sizes: readonly number[];
@@ -141,7 +141,10 @@ export class UnitRings {
 
   push(x: number, y: number, z: number, radius: number, color: THREE.Color, intensity: number, style: number, phase: number): void {
     const i = this.batch.next();
-    const [a, b, c] = this.batch.attrs;
+    const attrs = this.batch.attrs;
+    const a = attrs[0];
+    const b = attrs[1];
+    const c = attrs[2];
     a.array[i * 4] = x;
     a.array[i * 4 + 1] = y;
     a.array[i * 4 + 2] = z;
@@ -627,7 +630,10 @@ export class StatusIcons {
   /** A status badge (`mode` 0) or additive glow sprite (`mode` 1). */
   push(x: number, y: number, z: number, size: number, cell: number, alpha: number, ring: number, tint: THREE.Color, mode: number): void {
     const i = this.batch.next();
-    const [a, b, c] = this.batch.attrs;
+    const attrs = this.batch.attrs;
+    const a = attrs[0];
+    const b = attrs[1];
+    const c = attrs[2];
     a.array[i * 4] = x;
     a.array[i * 4 + 1] = y;
     a.array[i * 4 + 2] = z;

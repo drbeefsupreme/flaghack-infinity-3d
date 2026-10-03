@@ -56,7 +56,9 @@ export function gccBlocker(world: World, f: FactionId, action: GccAction): strin
   if (av.koUntil > world.time) return 'Flagless: wait for your vexillomancer to return.';
   const reach = GCC_REACH + BUILDINGS.gcc.radius;
   if ((av.pos.x - g.pos.x) ** 2 + (av.pos.z - g.pos.z) ** 2 > reach * reach) return `Stand at your Command Center (within ${GCC_REACH} m).`;
-  if (econ(world).dialectics[f]) return 'The Dialectics are in session.';
+  // channelUntil is set for exactly as long as the Dialectics run (tendDialectics clears it),
+  // and unlike economy scratch it replicates, so mirrors give the same answer.
+  if (g.gcc.channelUntil > world.time) return 'The Dialectics are in session.';
   // Gifts and simulacra are instant; the Dialectics channel cannot start over another channel.
   if (action === 'dialectics' && (av.action.kind === 'align' || av.action.kind === 'channel')) return 'Already channelling: finish it first.';
   const ready = fac.cooldowns[action];

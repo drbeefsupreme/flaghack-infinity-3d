@@ -47,6 +47,7 @@ import type {
   HippieStatus,
   JobKind,
 } from '../sim/types';
+import type { TutorialTarget } from '../tutorial/types';
 import type { IconName } from './icons';
 
 export interface ChakraInfo {
@@ -63,6 +64,8 @@ export interface ChakraInfo {
   /** What changes per level (L1, L2, L3). */
   levels: readonly [string, string, string];
   icon: IconName;
+  /** Training Burn highlight id of its action-bar slot. */
+  target: TutorialTarget;
 }
 
 export const CHAKRA_INFO: Record<ChakraId, ChakraInfo> = {
@@ -76,6 +79,7 @@ export const CHAKRA_INFO: Record<ChakraId, ChakraInfo> = {
     summary: `Signifiers in range drop their work, rush the target and do the job it calls for (pull, plant, attack, defend) at +25% speed for ${ABILITY.beacon.duration} s.`,
     levels: [`${ABILITY.beacon.radius[0]} m radius`, `${ABILITY.beacon.radius[1]} m radius`, 'Every Signifier on the burn'],
     icon: 'hoist',
+    target: 'ability-1',
   },
   fly: {
     key: '2',
@@ -87,6 +91,7 @@ export const CHAKRA_INFO: Record<ChakraId, ChakraInfo> = {
     summary: `Signifiers within ${ABILITY.march.radius} m gain +${Math.round(ABILITY.march.mag * 100)}% move and work speed. Afterwards they lose ${ABILITY.march.attentionCost} attention.`,
     levels: [`${ABILITY.march.duration[0]} s march`, `${ABILITY.march.duration[1]} s march`, `${ABILITY.march.duration[2]} s march`],
     icon: 'fly',
+    target: 'ability-2',
   },
   canton: {
     key: '3',
@@ -102,6 +107,7 @@ export const CHAKRA_INFO: Record<ChakraId, ChakraInfo> = {
       `${ABILITY.stabilize.radius[2]} m dome, and your Flags inside cannot be pulled`,
     ],
     icon: 'canton',
+    target: 'ability-3',
   },
   field: {
     key: '4',
@@ -117,6 +123,7 @@ export const CHAKRA_INFO: Record<ChakraId, ChakraInfo> = {
       `Every flippable node within ${ABILITY.phason.radius[2]} m`,
     ],
     icon: 'field',
+    target: 'ability-4',
   },
   finial: {
     key: '5',
@@ -132,6 +139,7 @@ export const CHAKRA_INFO: Record<ChakraId, ChakraInfo> = {
       `${ABILITY.omega.radius[2]} m wave, and your quiver plants itself on free nodes`,
     ],
     icon: 'finial',
+    target: 'ability-5',
   },
 };
 
@@ -144,6 +152,8 @@ export interface DrugInfo {
   effect: string;
   risk: string;
   icon: IconName;
+  /** Training Burn highlight id of its action-bar slot. */
+  target: TutorialTarget;
 }
 
 export const DRUG_INFO: Record<DrugId, DrugInfo> = {
@@ -154,6 +164,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     effect: `Vexillicrocus tea. For ${DRUG.duration.saffron} s every Signifier you have gains +${Math.round(DRUG.saffronMag * 100)}% work and move speed, and you gain +${DRUG.saffronRitualPerSec} Ritual/s.`,
     risk: `Then a ${DRUG.crashTime} s crash (−${Math.round(DRUG.crashMag * 100)}% speed). Each Signifier has a ${Math.round(DRUG.overstimChance * 100)}% chance to wander off overstimulated.`,
     icon: 'saffron',
+    target: 'drug-6',
   },
   dust: {
     key: '7',
@@ -162,6 +173,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points, strain and enemy Simulacra. Your throws snap to nodes up to ${AVATAR.throwSnapRadiusDust} m away.`,
     risk: `The screen distorts, the minimap fills with noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} False Flags appear that are not there.`,
     icon: 'dust',
+    target: 'drug-7',
   },
   acidcop: {
     key: '8',
@@ -170,6 +182,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     effect: `For ${DRUG.duration.acidcop} s you see every rival's Signifiers, what they are doing, their planned nodes, and their vexillomancer through walls.`,
     risk: `Paranoia: your Signifiers lose attention ${HIPPIE_AI.paranoiaDrainMult}× as fast, and phantom pursuers show up on your minimap.`,
     icon: 'acidcop',
+    target: 'drug-8',
   },
 };
 
@@ -217,15 +230,17 @@ export interface ToolInfo {
   /** Lumber per use (0 = free). */
   cost: number;
   icon: IconName;
+  /** Training Burn highlight id of its tool-strip slot (the Flag tool has none). */
+  target?: TutorialTarget;
 }
 
 export const TOOL_INFO: readonly ToolInfo[] = [
   { tool: 'flag', key: 'F', name: 'Flag', cost: 0, icon: 'flag' },
-  { tool: 'wall', key: 'Z', name: 'Tarp Wall', cost: PIECE.cost, icon: 'wall' },
-  { tool: 'floor', key: 'X', name: 'Deck', cost: PIECE.cost, icon: 'floor' },
-  { tool: 'ramp', key: 'C', name: 'Ramp', cost: PIECE.cost, icon: 'ramp' },
-  { tool: 'demolish', key: 'V', name: 'Demolish', cost: -PIECE.refund, icon: 'demolish' },
-  { tool: 'building', key: 'B', name: 'Camp building', cost: 0, icon: 'workshop' },
+  { tool: 'wall', key: 'Z', name: 'Tarp Wall', cost: PIECE.cost, icon: 'wall', target: 'tool-wall' },
+  { tool: 'floor', key: 'X', name: 'Deck', cost: PIECE.cost, icon: 'floor', target: 'tool-floor' },
+  { tool: 'ramp', key: 'C', name: 'Ramp', cost: PIECE.cost, icon: 'ramp', target: 'tool-ramp' },
+  { tool: 'demolish', key: 'V', name: 'Demolish', cost: -PIECE.refund, icon: 'demolish', target: 'tool-demolish' },
+  { tool: 'building', key: 'B', name: 'Camp building', cost: 0, icon: 'workshop', target: 'tool-building' },
 ];
 
 export interface GccInfo {
@@ -233,6 +248,8 @@ export interface GccInfo {
   cooldown: number;
   effect: string;
   icon: IconName;
+  /** Training Burn highlight id of its Command Table button. */
+  target: TutorialTarget;
 }
 
 export const GCC_INFO: Record<GccAction, GccInfo> = {
@@ -241,18 +258,21 @@ export const GCC_INFO: Record<GccAction, GccInfo> = {
     cooldown: GCC.giftCooldown,
     effect: `At your cart: spend 1 Flag to recruit the selected neutral Signifier within ${GCC.giftRadius} m.`,
     icon: 'gift',
+    target: 'gcc-gift',
   },
   dialectics: {
     name: GCC_ACTION_NAMES.dialectics,
     cooldown: GCC.dialecticsCooldown,
     effect: `At your cart: a ${GCC.dialecticsChannel} s debate converts up to ${GCC.dialecticsMax} enemy Signifiers within ${GCC.dialecticsRadius} m.`,
     icon: 'dialectics',
+    target: 'gcc-dialectics',
   },
   simulacra: {
     name: GCC_ACTION_NAMES.simulacra,
     cooldown: GCC.simulacraCooldown,
     effect: `At your cart: spend 1 Flag to plant it on two nodes at once. When an enemy comes within ${GCC.simulacraObserveRadius} m of either, it collapses onto one.`,
     icon: 'simulacra',
+    target: 'gcc-simulacra',
   },
 };
 
@@ -268,14 +288,30 @@ export interface PlanToolInfo {
   name: string;
   hint: string;
   icon: IconName;
+  /** Training Burn highlight id of its plan-tool button (Select and Clear have none). */
+  target?: TutorialTarget;
 }
 
 export const PLAN_TOOLS: readonly PlanToolInfo[] = [
   { tool: 'select', key: 'Esc', name: 'Select', hint: 'Drag to select Signifiers. Right-click to give orders.', icon: 'select' },
-  { tool: 'node', key: 'N', name: 'Node', hint: 'Click nodes to add them to the plan or remove them.', icon: 'node' },
-  { tool: 'enclose', key: 'E', name: 'Enclose', hint: 'Click a point, such as an enemy Hearth, to plan the cheapest loop around it.', icon: 'enclose' },
-  { tool: 'pentacle', key: 'P', name: 'Pentacle', hint: 'Click a revealed Crystal focus to plan its five neighbours.', icon: 'pentacle' },
-  { tool: 'ring', key: 'R', name: 'Ring', hint: 'Plan a wider ring around your home Survey.', icon: 'ring' },
+  { tool: 'node', key: 'N', name: 'Node', hint: 'Click nodes to add them to the plan or remove them.', icon: 'node', target: 'plan-node' },
+  {
+    tool: 'enclose',
+    key: 'E',
+    name: 'Enclose',
+    hint: 'Click a point, such as an enemy Hearth, to plan the cheapest loop around it.',
+    icon: 'enclose',
+    target: 'plan-enclose',
+  },
+  {
+    tool: 'pentacle',
+    key: 'P',
+    name: 'Pentacle',
+    hint: 'Click a revealed Crystal focus to plan its five neighbours.',
+    icon: 'pentacle',
+    target: 'plan-pentacle',
+  },
+  { tool: 'ring', key: 'R', name: 'Ring', hint: 'Plan a wider ring around your home Survey.', icon: 'ring', target: 'plan-ring' },
   { tool: 'clear', key: '⌫', name: 'Clear', hint: 'Erase your whole Survey plan.', icon: 'clear' },
 ];
 
@@ -283,14 +319,31 @@ export interface JobInfo {
   name: string;
   desc: string;
   icon: IconName;
+  /** Training Burn highlight id of its priorities row. */
+  target: TutorialTarget;
 }
 
 export const JOB_INFO: Record<JobKind, JobInfo> = {
-  survey: { name: 'Survey', desc: 'Fetch Flags and plant your planned nodes.', icon: 'survey' },
-  gather: { name: 'Gather', desc: 'Chop piles and haul lumber to the Hearth.', icon: 'gather' },
-  defend: { name: 'Defend', desc: 'Guard the Hearth, answer SOS calls and pull enemy Flags out of your Survey.', icon: 'defend' },
-  raid: { name: 'Raid', desc: 'Steal the enemy Flags that threaten your Hearth, then enemy boundary Flags.', icon: 'raid' },
-  ritual: { name: 'Ritual', desc: `Drum at a Drum Circle for +${DRUM_RITUAL_PER_SEC} Ritual/s per drummer.`, icon: 'drum' },
+  survey: { name: 'Survey', desc: 'Fetch Flags and plant your planned nodes.', icon: 'survey', target: 'priority-survey' },
+  gather: { name: 'Gather', desc: 'Chop piles and haul lumber to the Hearth.', icon: 'gather', target: 'priority-gather' },
+  defend: {
+    name: 'Defend',
+    desc: 'Guard the Hearth, answer SOS calls and pull enemy Flags out of your Survey.',
+    icon: 'defend',
+    target: 'priority-defend',
+  },
+  raid: {
+    name: 'Raid',
+    desc: 'Steal the enemy Flags that threaten your Hearth, then enemy boundary Flags.',
+    icon: 'raid',
+    target: 'priority-raid',
+  },
+  ritual: {
+    name: 'Ritual',
+    desc: `Drum at a Drum Circle for +${DRUM_RITUAL_PER_SEC} Ritual/s per drummer.`,
+    icon: 'drum',
+    target: 'priority-ritual',
+  },
 };
 
 export type StatusTone = 'survey' | 'labour' | 'guard' | 'raid' | 'idle' | 'lost' | 'down';
@@ -431,6 +484,14 @@ export const KEYMAP: readonly KeyGroup[] = [
       ['F1', 'This help'],
       ['L', 'Lattice overlay'],
       ['Esc', 'Pause'],
+    ],
+  },
+  {
+    title: 'Online burn',
+    keys: [
+      ['Enter', 'Chat to every Signifier'],
+      ['O hold', 'Standings: camps, Signifiers, ping'],
+      ['[ ]', 'Spectating: change the camp you follow'],
     ],
   },
 ];

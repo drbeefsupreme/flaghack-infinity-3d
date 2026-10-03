@@ -4,6 +4,7 @@
  * modules and operate on a Brain.
  * Owner: AI agent.
  */
+import { FACTION_DEFS, SIM_HZ } from '../sim/constants';
 import type { CaptureStage, ChakraId, EntityId, FactionId, GccAction } from '../sim/types';
 import type { World } from '../sim/world';
 import type { ThrowAim } from './ballistics';
@@ -139,10 +140,21 @@ export class Brain {
   readonly persona: Persona;
   readonly skill: Skill;
 
-  nextPerceiveAt: number;
-  nextDecideAt: number;
-  nextPowersAt: number;
-  nextBuildAt: number;
+  /** This faction's tick within every cadence (no two factions think on the same tick), and
+   * the director's interval in ticks for its difficulty. */
+  readonly phase: number;
+  readonly decideTicks: number;
+  /** Next sim tick of each cadence: perception, decisions, powers, builder. */
+  nextPerceiveTick = 0;
+  nextDecideTick = 0;
+  nextPowersTick = 0;
+  nextBuildTick = 0;
+  /** The camp has been taken in hand (home ring adopted, a departed human's followers freed),
+   * and the first decision has been made with every rival sized up. */
+  adopted = false;
+  briefed = false;
+  /** Perception scratch: own units and buildings that can see rival hippies. */
+  readonly observers: { x: number; z: number }[] = [];
 
   view: View;
   posture: Posture = 'economy';
@@ -188,17 +200,15 @@ export class Brain {
 
   pilot: PilotState;
 
-  constructor(world: World, f: FactionId, slot: number) {
+  constructor(world: World, f: FactionId, phase: number) {
     this.world = world;
     this.f = f;
-    const fac = world.factions[f];
-    this.persona = PERSONAS[fac.personality];
-    this.skill = SKILLS[fac.difficulty];
-    // Stagger the factions' heavy passes across ticks.
-    this.nextPerceiveAt = world.time + 0.05 + slot * 0.13;
-    this.nextDecideAt = this.nextPerceiveAt + 0.02;
-    this.nextPowersAt = this.nextPerceiveAt + 1;
-    this.nextBuildAt = this.nextPerceiveAt + 2;
+    // A seat plays its faction's temperament whoever held it before: a human seat's
+    // FactionState says 'player', but Jaguar taken over from a human is still the Warden.
+    this.persona = PERSONAS[FACTION_DEFS[f].personality];
+    this.skill = SKILLS[world.factions[f].difficulty];
+    this.phase = phase;
+    this.decideTicks = Math.max(1, Math.round(this.skill.decide * SIM_HZ));
     this.view = emptyView();
     this.pilot = {
       task: { kind: 'home' },
@@ -232,6 +242,12 @@ export class Brain {
 
   intel(e: FactionId): RivalIntel | undefined {
     return this.view.rivals.find((r) => r.id === e);
+  }
+
+  /** Every living rival's loop has been planned (or found impossible) at least once. */
+  sizedUp(): boolean {
+    for (const r of this.view.rivals) if (r.alive && r.loopAt === -Infinity) return false;
+    return this.view.rivals.length > 0;
   }
 }
 

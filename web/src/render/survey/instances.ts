@@ -43,3 +43,51 @@ export class InstanceSet {
     }
   }
 }
+
+/**
+ * One instanced geometry drawn twice: normally, and only where it is hidden behind opaque
+ * geometry (depth GREATER; the material is compiled with FH_OCCLUDED), so a marker stays
+ * findable through walls at a fraction of its strength. Transparent layers write no depth,
+ * so only opaque occluders (props, buildings, units) trigger the second draw.
+ */
+export class XrayMeshes {
+  private readonly scene: THREE.Scene;
+  private readonly front: THREE.Mesh;
+  private readonly behind: THREE.Mesh;
+  private readonly frontMat: THREE.ShaderMaterial;
+  private readonly behindMat: THREE.ShaderMaterial;
+
+  constructor(
+    scene: THREE.Scene,
+    geo: THREE.BufferGeometry,
+    frontMat: THREE.ShaderMaterial,
+    behindMat: THREE.ShaderMaterial,
+    renderOrder: number,
+  ) {
+    this.scene = scene;
+    this.frontMat = frontMat;
+    this.behindMat = behindMat;
+    behindMat.depthFunc = THREE.GreaterDepth;
+    this.front = new THREE.Mesh(geo, frontMat);
+    this.behind = new THREE.Mesh(geo, behindMat);
+    this.front.frustumCulled = false;
+    this.behind.frustumCulled = false;
+    this.front.renderOrder = renderOrder;
+    this.behind.renderOrder = renderOrder;
+    this.front.visible = false;
+    this.behind.visible = false;
+    scene.add(this.front, this.behind);
+  }
+
+  set visible(on: boolean) {
+    this.front.visible = on;
+    this.behind.visible = on;
+  }
+
+  /** Removes both meshes and disposes both materials; the geometry belongs to the caller. */
+  dispose(): void {
+    this.scene.remove(this.front, this.behind);
+    this.frontMat.dispose();
+    this.behindMat.dispose();
+  }
+}

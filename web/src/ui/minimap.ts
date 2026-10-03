@@ -13,6 +13,7 @@ import type { V2 } from '../sim/math';
 import type { CaptureStage, FactionState, PingKind } from '../sim/types';
 import type { World } from '../sim/world';
 import { STATUS_INFO, TONE_COLOR } from './catalog';
+import { matchScreen, tutorialTarget } from './core';
 import type { UiHost, UiPart } from './core';
 import { button, el, fmtCountdown, setClass, setText, show } from './dom';
 
@@ -119,6 +120,7 @@ export class Minimap implements UiPart {
   constructor(host: UiHost, parent: HTMLElement) {
     this.host = host;
     this.root = el('div', 'mm', parent);
+    tutorialTarget(this.root, 'minimap');
     const frame = el('div', 'mm-box', this.root);
     frame.style.width = `${FRAME_W}px`;
     frame.style.height = `${FRAME_H}px`;
@@ -192,7 +194,7 @@ export class Minimap implements UiPart {
   /** 10 Hz: visibility, interactivity and the mesh plaque text. */
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
-    const visible = s.screen !== 'title' && world !== null;
+    const visible = matchScreen(s.screen) && world !== null;
     show(this.root, visible);
     if (!visible || !world) return;
     setClass(this.root, 'ix', s.view === 'command' || !s.pointerLocked);
@@ -224,7 +226,7 @@ export class Minimap implements UiPart {
   draw(world: World | null, now: number): void {
     const ctx = this.ctx;
     const s = this.host.app.session;
-    if (!ctx || !world || s.screen === 'title') return;
+    if (!ctx || !world || !matchScreen(s.screen)) return;
     if (this.needsResize) {
       const rect = this.canvas.getBoundingClientRect();
       if (rect.width <= 0) return;

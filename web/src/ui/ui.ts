@@ -1,40 +1,49 @@
 /**
- * DOM UI root: title screen, HUD (Flags/stock frame, lumber, ritual, hippies, attention,
- * clock, tide/Burn timers, ability bar, drug slots, build keys, C.M.I.), D.E.G.E.N. minimap +
- * roster, Hearth rail, event feed, crosshair/prompt/channel ring, Command View panels (plan
- * tools, priorities, selection orders, build menu), chakra ritual screen, codex (Liber HH),
- * pause/settings, end screen, contextual tutorial hints.
+ * DOM UI root: title screen (with the host's join panel), the online lobby, HUD (Flags/stock
+ * frame, lumber, ritual, hippies, attention, clock, tide/Burn timers, ability bar, drug slots,
+ * build keys, C.M.I.), D.E.G.E.N. minimap + roster, Hearth rail, event feed, crosshair/prompt/
+ * channel ring, Command View panels (plan tools, priorities, selection orders, build menu),
+ * chakra ritual screen, codex (Liber HH), pause/settings, end screen, and online in-match
+ * chat, standings (hold O), connection pill and host notices.
  * Owner: UI agent.
  *
  * Update discipline: events only touch part state; the DOM is written at <= 10 Hz and the
  * minimap canvas at <= 15 Hz. The only per-frame write is the drag-select rectangle. The root
  * never takes pointer events; only real widgets (class `ix`) do, so pointer lock and canvas
- * input stay with the controls.
+ * input stay with the controls. Online, the UI owns two keys outside the game's keymap: Enter
+ * (chat) and O (hold for the standings), both ignored while a text field has the keyboard.
  */
 import type { AppApi } from '../game/app';
 import type { Screen } from '../game/session';
 import type { GameEvent, Severity } from '../sim/events';
 import type { V2 } from '../sim/math';
+import type { FactionId } from '../sim/types';
 import type { World } from '../sim/world';
 import { ActionBar } from './actionbar';
 import { Banners } from './banners';
 import { ChakraScreen } from './chakras';
+import { ChatOverlay } from './chat';
 import { Codex } from './codex';
 import { CommandPanels } from './command';
 import type { BannerSpec, UiHost, UiLayout, UiPart } from './core';
+import { matchScreen } from './core';
 import { el, setClass } from './dom';
 import { EndScreen } from './endscreen';
 import { FeedPart } from './feed';
 import { HelpOverlay } from './help';
 import { HudPart, PerfOverlay } from './hud';
+import { LobbyScreen } from './lobby';
 import { Minimap } from './minimap';
+import { NetHud } from './netstatus';
 import { PauseMenu } from './pause';
 import { HearthRail } from './rail';
 import { Roster } from './roster';
+import { Scoreboard } from './scoreboard';
+import { SeatChooser } from './seats';
 import { SettingsPanel } from './settings';
 import { UiSfx } from './sfx';
 import { TitleScreen } from './title';
-import { Tutorial } from './tutorial';
+import { TutorialOverlay } from './tutorial/index';
 import { LoadingVeil } from './veil';
 import './ui.css';
 
@@ -59,6 +68,12 @@ export class GameUI {
   private minimap: Minimap;
   private banners: Banners;
   private veil: LoadingVeil;
+  private chat: ChatOverlay;
+  private lobby: LobbyScreen;
+  private scoreboard: Scoreboard;
+  /** Training Burn mentor, pointers and graduation (TutorialUI agent); its typewriter runs every frame. */
+  private tutorialOverlay: TutorialOverlay;
+  private seats: SeatChooser;
   private sfx: UiSfx;
   /** Last blocked-action reason posted, so a hammered button does not flood the feed. */
   private lastBlocked = { reason: '', at: -Infinity };
@@ -98,7 +113,7 @@ export class GameUI {
     const host: UiHost = {
       app,
       banner: (b: BannerSpec) => {
-        if (this.app.session.screen !== 'title') this.banners.push(b);
+        if (matchScreen(this.app.session.screen)) this.banners.push(b);
       },
       post: (text: string, severity: Severity, pos?: V2) => this.app.session.post(text, severity, pos),
       flash: (pos: V2, color: string) => this.minimap.flash(pos, color),
@@ -109,6 +124,7 @@ export class GameUI {
         this.lastBlocked = { reason, at: now };
         this.app.session.post(reason, 'warn');
       },
+      chooseSeat: (f: FactionId | null) => this.seats.open(f),
     };
 
     this.hud = new HudPart(host, layout);
@@ -116,13 +132,19 @@ export class GameUI {
     this.minimap = new Minimap(host, layout.colRight);
     const command = new CommandPanels(host, layout);
     const roster = new Roster(host, layout.colRight);
-    const tutorial = new Tutorial(host, layout.topCenter);
     const bar = new ActionBar(host, layout.bottomCenter);
     const feed = new FeedPart(host, layout.bottomLeft);
+    this.chat = new ChatOverlay(host, layout.bottomLeft);
+    const net = new NetHud(host, layout);
     const perf = new PerfOverlay(host, layout.bottomRight, () => this.uiMs);
-    this.parts.push(this.hud, rail, this.minimap, command, roster, tutorial, bar, feed, perf, this.banners);
+    this.tutorialOverlay = new TutorialOverlay(host, layout);
+    this.parts.push(this.hud, rail, this.minimap, command, roster, bar, feed, this.chat, net, perf, this.banners, this.tutorialOverlay);
+    this.lobby = new LobbyScreen(host, layout.overlay);
+    this.scoreboard = new Scoreboard(host, layout.overlay);
     this.parts.push(
       new TitleScreen(host, layout.overlay),
+      this.lobby,
+      this.scoreboard,
       new EndScreen(host, layout.overlay),
       new PauseMenu(host, layout.overlay),
       new ChakraScreen(host, layout.overlay),
@@ -130,9 +152,14 @@ export class GameUI {
       new Codex(host, layout.overlay),
       new SettingsPanel(host, layout.overlay),
     );
+    // Last in the overlay: taking a camp is asked over the pause menu and the end cards alike.
+    this.seats = new SeatChooser(host, layout.overlay);
+    this.parts.push(this.seats);
 
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKey);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
     this.onResize();
   }
 
@@ -158,13 +185,16 @@ export class GameUI {
     if (s.screen !== this.screen) this.onScreen(this.screen, s.screen, t0);
 
     this.hud.frame();
+    this.tutorialOverlay.frame(t0);
     if (t0 - this.lastTick >= TICK_MS) {
       this.lastTick = t0;
       const root = this.rootEl;
       setClass(root, 'scr-title', s.screen === 'title');
+      setClass(root, 'scr-lobby', s.screen === 'lobby');
       setClass(root, 'scr-playing', s.screen === 'playing');
       setClass(root, 'scr-paused', s.screen === 'paused');
       setClass(root, 'scr-ended', s.screen === 'ended');
+      setClass(root, 'spectator', s.spectator && matchScreen(s.screen));
       setClass(root, 'view-command', s.view === 'command');
       setClass(root, 'modal-open', s.panels.codex || s.panels.settings || s.panels.chakras || s.panels.help);
       for (const p of this.parts) p.update(world, t0);
@@ -189,6 +219,8 @@ export class GameUI {
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
     this.sfx.dispose();
     for (const p of this.parts) p.dispose?.();
     this.parts = [];
@@ -202,7 +234,8 @@ export class GameUI {
 
   private onScreen(prev: Screen | null, next: Screen, now: number): void {
     const panels = this.app.session.panels;
-    if (next === 'title' || (prev === 'title' && next === 'playing')) {
+    const menu = (sc: Screen | null): boolean => sc === 'title' || sc === 'lobby';
+    if (menu(next) || (menu(prev) && next === 'playing')) {
       // A fresh burn or the attract loop: nothing from the last session stays open.
       panels.chakras = false;
       panels.codex = false;
@@ -224,10 +257,15 @@ export class GameUI {
   };
 
   /**
-   * Escape outside of play (title / pause / end), where the controls do not listen. In play the
-   * controls close any open panel on Escape (in their next update), so only the sound is ours.
+   * Escape outside of play (title / lobby / pause / end), where the controls do not listen. In
+   * play the controls close any open panel on Escape (in their next update), so only the sound
+   * is ours. Online, Enter opens the chat and O shows the standings while held.
    */
   private onKey = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Enter' || ev.code === 'KeyO') {
+      this.onOnlineKey(ev);
+      return;
+    }
     if (ev.key !== 'Escape' || ev.repeat) return;
     const s = this.app.session;
     const p = s.panels;
@@ -242,4 +280,35 @@ export class GameUI {
     this.sfx.back();
     ev.preventDefault();
   };
+
+  /** Enter / O while no text field has the keyboard (fields handle their own keys). */
+  private onOnlineKey(ev: KeyboardEvent): void {
+    if (!this.app.net || ev.isComposing || typingIn(ev.target)) return;
+    if (ev.code === 'KeyO') {
+      if (ev.repeat || !matchScreen(this.app.session.screen)) return;
+      this.scoreboard.setHeld(true);
+      // Show at once rather than on the next 10 Hz tick: holding a key wants an instant answer.
+      this.scoreboard.update(this.app.world, performance.now());
+      return;
+    }
+    // Enter on a focused button presses it; only a free keyboard opens the chat.
+    if (ev.repeat || ev.target instanceof HTMLButtonElement) return;
+    if (this.chat.openInput() || this.lobby.focusChat()) ev.preventDefault();
+  }
+
+  private onKeyUp = (ev: KeyboardEvent): void => {
+    if (ev.code !== 'KeyO') return;
+    this.scoreboard.setHeld(false);
+    this.scoreboard.update(this.app.world, performance.now());
+  };
+
+  /** Alt-tab mid-hold never delivers the keyup. */
+  private onBlur = (): void => {
+    this.scoreboard.setHeld(false);
+  };
+}
+
+/** A text field (or editable element) has the keyboard: its keys are typing, not commands. */
+function typingIn(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
 }

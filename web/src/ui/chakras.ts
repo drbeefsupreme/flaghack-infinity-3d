@@ -11,6 +11,7 @@ import { CHAKRAS } from '../sim/types';
 import type { ChakraId } from '../sim/types';
 import type { World } from '../sim/world';
 import { ALIGN_NOTE, CHAKRA_INFO } from './catalog';
+import { matchScreen, tutorialTarget } from './core';
 import type { UiHost, UiPart } from './core';
 import { button, el, escapeHtml, html, setClass, setDisabled, setText, setVar, show } from './dom';
 import { ICONS, iconSvg } from './icons';
@@ -101,6 +102,7 @@ export class ChakraScreen implements UiPart {
     this.host = host;
     this.root = el('div', 'modal chakras ix is-off', parent);
     const box = el('div', 'modal-box frame chakra-box', this.root);
+    tutorialTarget(box, 'chakras-panel');
     const head = el('div', 'modal-head', box);
     el('h2', '', head, 'The Five Flag Chakras');
     this.ritual = el('span', 'modal-meta num', head, '');
@@ -143,6 +145,7 @@ export class ChakraScreen implements UiPart {
       },
       'confirm',
     );
+    tutorialTarget(this.alignBtn, 'align-button');
     const bar = el('div', 'bar align-bar is-off', detail);
     this.progressFill = el('i', '', bar);
     this.progress = bar;
@@ -159,7 +162,7 @@ export class ChakraScreen implements UiPart {
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
     const fac = world?.factions[s.playerFaction];
-    const open = s.panels.chakras && s.screen !== 'title' && !!world && !!fac;
+    const open = s.panels.chakras && matchScreen(s.screen) && !s.spectator && !!world && !!fac;
     show(this.root, open);
     if (open && !this.wasOpen) this.lastReject = '';
     this.wasOpen = open;

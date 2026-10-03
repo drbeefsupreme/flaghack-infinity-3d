@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR, HIPPIE, SIM_DT } from '../../constants';
+import { AVATAR, HIPPIE, LEVEL_HEIGHT, SIM_DT } from '../../constants';
 import type { GameEvent } from '../../events';
 import { spawnFlag, spawnHippie, spawnZone } from '../../factory';
 import { planEnclosure } from '../../lattice/planner';
 import type { V3 } from '../../math';
 import { createMatch } from '../../setup';
 import { Simulation } from '../../simulation';
-import type { Avatar, FactionId, Hippie, JobKind } from '../../types';
+import type { Avatar, AvatarInput, FactionId, Hippie, JobKind } from '../../types';
 import type { World } from '../../world';
-import { throwOrigin, throwVelocity } from '../avatars';
+import { stepAvatarMotion, throwOrigin, throwVelocity } from '../avatars';
+import type { AvatarMotionState } from '../avatars';
 import { damageEntity } from '../combat';
+import { applyEffect } from '../effects';
 import { canPlantAt, depositToStock, plantFlag } from '../flags';
+import { canBuildPiece } from '../pieces';
 import { updateSurvey } from '../survey';
 
 interface Match {
@@ -256,6 +259,114 @@ describe('vexillomancer avatar', () => {
     expect(av.hp).toBe(AVATAR.maxHp);
     expect(Math.hypot(av.pos.x - hearth.pos.x, av.pos.z - hearth.pos.z)).toBeLessThan(12);
     expect(m.events.some((e) => e.t === 'respawn' && e.id === av.id)).toBe(true);
+  });
+
+  it('stepAvatarMotion on a copy replays the sim avatar bit-for-bit (client prediction)', () => {
+    const m = match('units-motion');
+    const world = m.world;
+    // Only the vexillomancer under test moves here (a passing hippie's shove lands after its step).
+    world.hippies.clear();
+    const lat = world.lattice;
+    const av = world.avatarOf(0);
+    // Open grass with a ramp up onto a deck: walk up, hop on the deck, sprint off its far edge.
+    const spot = lat.nodes[openNode(world, 12, { x: 0, z: 60 })];
+    placeAvatar(av, spot.x, spot.z);
+    const site = lat.facets
+      .filter((fc) => fc.thick && !fc.boundary)
+      .sort((a, b) => (a.cx - spot.x) ** 2 + (a.cz - spot.z) ** 2 - ((b.cx - spot.x) ** 2 + (b.cz - spot.z) ** 2))
+      .flatMap((fc) => [0, 1, 2, 3].map((e) => ({ fc, e, deck: fc.neighbors[(e + 2) % 4] })))
+      .find(
+        ({ fc, e, deck }) =>
+          deck >= 0 && canBuildPiece(world, 0, 'ramp', -1, fc.id, 0, e).ok && canBuildPiece(world, 0, 'floor', -1, deck, 0, -1).ok,
+      );
+    if (!site) throw new Error('no ramp site');
+    const { fc, e } = site;
+    const node = (k: number) => lat.nodes[fc.nodes[k % 4]];
+    const lowX = (node(e).x + node(e + 1).x) / 2;
+    const lowZ = (node(e).z + node(e + 1).z) / 2;
+    const highX = (node(e + 2).x + node(e + 3).x) / 2;
+    const highZ = (node(e + 2).z + node(e + 3).z) / 2;
+    const span = Math.hypot(highX - lowX, highZ - lowZ);
+    const dx = (highX - lowX) / span;
+    const dz = (highZ - lowZ) / span;
+    placeAvatar(av, lowX - dx * 3, lowZ - dz * 3);
+    world.submit({ t: 'build', faction: 0, kind: 'ramp', edge: -1, facet: fc.id, level: 0, rampEdge: e });
+    run(m, SIM_DT);
+    // A level-0 deck stands on stilts at LEVEL_HEIGHT, flush with the level-0 ramp's top.
+    world.submit({ t: 'build', faction: 0, kind: 'floor', edge: -1, facet: site.deck, level: 0, rampEdge: -1 });
+    run(m, SIM_DT);
+    expect(world.pieces.size).toBe(2);
+    const yaw0 = Math.atan2(dx, dz);
+    input(m, 0, { yaw: yaw0 });
+    run(m, 0.2);
+
+    // What the client predictor holds: its own kinematics plus the host's word on the rest.
+    const copy: AvatarMotionState = {
+      pos: { ...av.pos },
+      vel: { ...av.vel },
+      yaw: av.yaw,
+      pitch: av.pitch,
+      onGround: av.onGround,
+      koUntil: av.koUntil,
+      action: av.action,
+      effects: av.effects,
+      pushing: av.pushing,
+    };
+    const motion = (a: AvatarMotionState) => [a.pos.x, a.pos.y, a.pos.z, a.vel.x, a.vel.y, a.vel.z, a.yaw, a.pitch, a.onGround];
+    let peak = 0;
+    let airborneHigh = false;
+    let landedAfterDeck = false;
+    const tick = (i: number, inp: AvatarInput): void => {
+      world.submit({ t: 'avatarInput', faction: 0, input: inp });
+      m.sim.step();
+      world.drainEvents();
+      copy.koUntil = av.koUntil;
+      copy.action = av.action;
+      copy.effects = av.effects;
+      copy.pushing = av.pushing;
+      stepAvatarMotion(world, copy, inp, SIM_DT);
+      expect({ tick: i, motion: motion(copy) }).toEqual({ tick: i, motion: motion(av) });
+      peak = Math.max(peak, av.pos.y);
+      if (av.pos.y > 2.5 && !av.onGround) airborneHigh = true;
+      if (peak > 3 && av.pos.y === 0 && av.onGround) landedAfterDeck = true;
+    };
+
+    for (let i = 0; i < 300; i++) {
+      const t = i * SIM_DT;
+      let yaw = yaw0;
+      if (t >= 2.2 && t < 3.6) yaw = yaw0 + (t - 2.2) * 2;
+      else if (t >= 3.6) yaw = yaw0 + 2.8 - Math.PI / 4;
+      const moving = t >= 0.2 && t < 4.4;
+      // Mid-run stun window (the host's effects reach the predictor through the snapshot).
+      if (i === 180) applyEffect(world, av, 'stun', 0.4);
+      tick(i, {
+        moveX: moving ? Math.sin(yaw) : 0,
+        moveZ: moving ? Math.cos(yaw) : 0,
+        jump: i === 100 || i === 200 || i === 240,
+        sprint: (t > 1.2 && t < 2.2) || (t > 3.6 && t < 4.2),
+        yaw,
+        pitch: -0.1 + 0.3 * Math.sin(t),
+      });
+    }
+    expect(peak).toBeGreaterThan(LEVEL_HEIGHT);
+    expect(airborneHigh).toBe(true);
+    expect(landedAfterDeck).toBe(true);
+
+    // Flagless in mid-air: no control and frozen aim, but the body falls to the ground.
+    tick(300, { moveX: 1, moveZ: 0, jump: true, sprint: false, yaw: 0, pitch: 0 });
+    for (let i = 301; i < 318; i++) tick(i, { moveX: 1, moveZ: 0, jump: false, sprint: false, yaw: 0, pitch: 0 });
+    expect(av.onGround).toBe(false);
+    damageEntity(world, av.id, AVATAR.maxHp * 2, -1);
+    // The KO is a host-side discontinuity: the predictor re-seeds from the snapshot.
+    copy.pos = { ...av.pos };
+    copy.vel = { ...av.vel };
+    copy.onGround = av.onGround;
+    const koAt = { x: av.pos.x, z: av.pos.z, yaw: av.yaw };
+    for (let i = 318; i < 390; i++) tick(i, { moveX: 0, moveZ: 1, jump: true, sprint: true, yaw: 1 + i * 0.01, pitch: 0.4 });
+    expect(av.onGround).toBe(true);
+    expect(av.pos.x).toBe(koAt.x);
+    expect(av.pos.z).toBe(koAt.z);
+    expect(av.yaw).toBe(koAt.yaw);
   });
 });
 

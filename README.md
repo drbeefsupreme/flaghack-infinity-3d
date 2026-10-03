@@ -5,7 +5,9 @@ that runs in the browser (three.js + TypeScript). You are a vexillomancer at a b
 throw, plant, pull and steal yellow Survey Flags on an invisible aperiodic **Ley Lattice**,
 build Fortnite-speed structures, and command hippies from the **Geomantic Command Center**.
 You conquer rival camps by enclosing their Flag Hearth inside your Survey until it is
-**overwritten**. The last vexillomancer with a Hearth wins.
+**overwritten**. The last vexillomancer with a Hearth wins. Play solo against three NPC
+rivals, or [host a burn](#hosting-a-multiplayer-burn) on your own machine that up to four
+friends join from their browsers with a password.
 
 > Under no conditions should you attempt to play a game that claims to be Flaghack.
 
@@ -26,8 +28,13 @@ At the title, pick a rival difficulty (Chill / Normal / Hard / Vexillosaint) and
 - **DJ Scarecrow**: a raider who steals Flags early.
 - **President Jaguar**: a warden who hoards Flags and builds one huge enclosure.
 
-A first-match tutorial walks through the loop. **Liber HH** (J) explains every rule in lore
-voice.
+New here? Start with the **Training Burn** on the title screen. The Vexillosaint, speaking
+from your Geomantic Command Center, walks you through twelve short lessons: moving, planting
+and throwing Flags, Ley Lines, the Survey, implied Flags, the turning Crystal, the Command
+table, building, Crystals and chakras, defending a Hearth, the Overwrite, and the cart's Flag
+Gifts. Each lesson awards a fragment of the **Seal of Flagistan**. Progress is saved in the
+browser. The lesson panel restarts, skips or revisits any lesson; in the field, Tab frees the
+cursor so you can click it. In a real burn, **Liber HH** (J) explains every rule in lore voice.
 
 ### Controls
 
@@ -43,6 +50,94 @@ voice.
 | G / H / P / T | Rally Signifiers, send followers, D.E.G.E.N. ping, Retransmit "TAKE A SHOT" |
 | Tab | Command View: select and order Signifiers, plan Surveys (N/E/P/R = Node/Enclose/Pentacle/Ring), set camp priorities |
 | K / J / F1 / L / Esc | Chakras, Liber HH, help, lattice overlay, pause |
+
+## Hosting a multiplayer burn
+
+Up to four vexillomancers share one burn, more can watch, and NPCs take the empty camps. One
+machine hosts: it runs the only simulation and serves the game. Everyone else plays in a
+browser; nobody else installs anything.
+
+### Quick start
+
+From the repo root:
+
+```sh
+./host.sh --password saffron-pentacle-42
+```
+
+`host.sh` checks Node.js (22, or 20.19+), installs the dependencies when they are missing, builds
+the client and the host, and starts it on port 8787. In `web/`, `npm run host -- --password …`
+does the same. Leave out `--password` and the host makes one up from four lore words and two
+digits. On start it prints:
+
+- the local and LAN addresses;
+- the password;
+- a share link like `http://192.168.1.20:8787/#pw=saffron-pentacle-42`. The page fills in the
+  password from the `#pw=` part, which browsers never send to the server.
+
+| Option | |
+|---|---|
+| `--password <pw>` | What players type to join. `FLAGHACK_PASSWORD=…` works too. |
+| `--port <n>` | HTTP + WebSocket port (default 8787). |
+| `--name "<name>"` | Server name shown in the lobby (default `<hostname>'s burn`). |
+| `--bind <address>` | Listen on one address only, e.g. `127.0.0.1` (default: every interface). |
+| `--help` | Usage. |
+
+Ctrl+C ends the burn: the host tells everyone before it closes. To restart without rebuilding,
+run `node dist-server/main.js --password …` in `web/`.
+
+### What friends do
+
+1. Open the share link (or a LAN address, then type the password) and pick a handle.
+2. The first four players take the camps in join order; later arrivals watch. Seats can be
+   swapped in the lobby.
+3. The first player to join leads. The leader picks the NPC difficulty and a seed (or a fresh
+   random burn), then starts. NPCs take the empty camps.
+4. If someone drops, their vexillomancer stands still for 5 seconds, then an NPC plays the camp
+   until they return. Reloading the page rejoins the same seat. During a burn, a spectator can
+   take over any camp an NPC is playing.
+
+### LAN and firewall
+
+Anyone on the same network can use a printed LAN address. On Ubuntu with the ufw firewall
+enabled, open the port first: `sudo ufw allow 8787/tcp`. Plain `http://` is fine: the game uses
+nothing that browsers reserve for HTTPS.
+
+### Over the internet
+
+- **Port forwarding:** on your router, forward TCP 8787 to the host machine's LAN address. Then
+  share `http://<your public IP>:8787/#pw=…`.
+- **No port forwarding:** run a
+  [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/)
+  next to the host: `cloudflared tunnel --url http://localhost:8787`. Share the
+  `https://….trycloudflare.com` address it prints, plus `#pw=…`. The page switches to secure
+  WebSockets by itself.
+
+The password is the only gate, so choose a long one when the host is reachable from the internet.
+A made-up one has about 34 bits. Wrong guesses are throttled to 5 per minute per address (per /64
+network for IPv6). A tunnel brings every player in from the host machine itself, so the host can
+only tell them apart behind cloudflared, by the `CF-Connecting-IP` header Cloudflare sets. Through
+other tunnels (`ssh -R`, bore, playit, ngrok) players share one budget of 5 wrong guesses a minute,
+and a forged header buys an attacker at most 30 a minute through any one tunnel. A burn sends each
+player about 30 KB/s, compressed.
+
+### Developing against a host
+
+`npm run dev` (port 5173) forwards `/api` and `/ws` to a host on port 8787, so a dev page can
+join a local `npm run host`. `npx vitest run server` tests the host over real sockets.
+
+### Troubleshooting
+
+- **"Port 8787 is already in use":** another host (or another program) has the port. Stop it, or
+  pass `--port 8788`.
+- **Friends on the LAN can't connect:** check the firewall (`sudo ufw status`) and share the LAN
+  address, not `localhost`. Guest and office Wi-Fi often isolate devices from each other.
+- **"Reload the page":** the page and the host come from different builds. Reload, and the host
+  serves the matching client.
+- **"Too many wrong passwords":** wait a minute, then try again.
+- **Node.js too old:** install Node 22, e.g. with `nvm install 22`.
+- **Lag:** once a minute, the host's terminal logs tick times and frame sizes. Wired connections
+  help the most.
 
 ## How it plays
 
@@ -89,7 +184,7 @@ voice.
 
 ```sh
 cd web
-npm test               # vitest: lattice/planner/survey/capture/units/economy/map + 3 headless all-AI matches
+npm test               # vitest: sim rules, AI, net replication, the host over real sockets, the Training Burn course, headless all-AI matches
 npm run typecheck
 npm run eval:sim -- --seconds 300   # sim perf eval: p95 tick ms, all-AI match (--seed, --top N, --probes, --json)
 bun bench/nav-eval.ts  # replayed nav workload benchmark
@@ -111,9 +206,15 @@ harness `/ratchet` hill-climb. In the browser console, `window.fh` stages scenar
 - `render/`: three.js presentation. It covers environment and post FX, actors
   (Flags, avatars, hippies), structures (GCC, Hearths, pieces), and the Survey layer
   plus VFX.
-- `game/`: app loop, input, cameras, Command View, build mode.
-- `ui/`: DOM HUD and screens.
+- `game/`: app loop (local and online drivers), input, cameras, Command View, build mode.
+- `ui/`: DOM HUD and screens, including the online lobby, chat and the Training Burn mentor
+  (`ui/tutorial/`).
 - `audio/`: procedural WebAudio with no audio files.
+- `net/`: multiplayer protocol, input validation, snapshot codec, the client's mirror world,
+  playback interpolation and avatar prediction.
+- `tutorial/`: the Training Burn director, course and lesson scripts.
+- `../server/`: the Node host (HTTP + WebSocket on one port; lobby, authoritative match, NPC
+  seats). `npm run build:server` bundles it to `web/dist-server/`.
 
 ## Docs
 

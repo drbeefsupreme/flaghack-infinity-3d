@@ -4,10 +4,12 @@
  * the orchestrator calls at ~10 Hz.
  */
 import type { AppApi } from '../game/app';
+import type { Screen } from '../game/session';
 import type { GameEvent, Severity } from '../sim/events';
 import type { V2 } from '../sim/math';
 import type { FactionId } from '../sim/types';
 import type { World } from '../sim/world';
+import type { TutorialTarget } from '../tutorial/types';
 
 export type BannerTone = 'epic' | 'good' | 'danger' | 'tide' | 'burn' | 'chakra' | 'dawn';
 
@@ -44,6 +46,8 @@ export interface UiHost {
    * The control must also be marked aria-disabled so it sounds the error blip, not its action.
    */
   blocked(reason: string): void;
+  /** Online watchers: open the camp chooser; with a camp, straight to taking it over. */
+  chooseSeat(f: FactionId | null): void;
 }
 
 export interface UiPart {
@@ -74,8 +78,25 @@ export interface UiLayout {
   overlay: HTMLElement;
 }
 
-/** Faction display name, tolerant of out-of-range ids from partially built worlds. */
-export function factionName(world: World, f: FactionId | null): string {
+/** A match is on screen (HUD, rail, minimap, chat): playing, its pause menu or its end cards. */
+export function matchScreen(screen: Screen): boolean {
+  return screen === 'playing' || screen === 'paused' || screen === 'ended';
+}
+
+/**
+ * Display name of a camp: online, the handle of the human holding the seat (`names` =
+ * session.playerNames); otherwise the character's name. Tolerant of out-of-range ids from
+ * partially built worlds.
+ */
+export function factionName(world: World, f: FactionId | null, names?: Partial<Record<FactionId, string>>): string {
   if (f === null) return 'the Crystal';
-  return world.factions[f]?.name ?? 'a rival';
+  return names?.[f] ?? world.factions[f]?.name ?? 'a rival';
+}
+
+/**
+ * Tag an element the Training Burn mentor can point at (`data-tutorial`); the tutorial UI pulses
+ * the ids its lesson highlights. Typed against TUTORIAL_TARGETS so the two lists cannot drift.
+ */
+export function tutorialTarget(node: HTMLElement, id: TutorialTarget): void {
+  node.dataset.tutorial = id;
 }

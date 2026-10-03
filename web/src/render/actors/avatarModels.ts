@@ -120,6 +120,8 @@ export interface AvatarStyle {
   hunch: number;
   /** Möbius band spin (rad/s); 0 for characters without one. */
   bandSpin: number;
+  /** Top of the head or headgear in the bind pose (m): nameplates float above it. */
+  crown: number;
 }
 
 export interface AvatarRig {
@@ -361,9 +363,11 @@ function buildBeef(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): AvatarS
   quiver(b, bones, 0x6b4424);
   staff(b, bones, 0x9a6a3c, 0.7, 0, 0xe8c050, 0);
   // A cyan tassel under the finial.
-  b.with(part('staff', cyan, 0.5, 0, 0.6)).add(new THREE.BoxGeometry(0.012, 0.16, 0.012).translate(0.03, STAFF_TOP - 0.1, 0),
-  bones.staff.matrixWorld,);
-  return { idle: 'mystic', hunch: 0, bandSpin: 0.9 };
+  b.with(part('staff', cyan, 0.5, 0, 0.6)).add(
+    new THREE.BoxGeometry(0.012, 0.16, 0.012).translate(0.03, STAFF_TOP - 0.1, 0),
+    bones.staff.matrixWorld,
+  );
+  return { idle: 'mystic', hunch: 0, bandSpin: 0.9, crown: 2.74 };
 }
 
 function buildCrow(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): AvatarStyle {
@@ -444,7 +448,7 @@ function buildCrow(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): AvatarS
   }
   quiver(b, bones, 0x2a1a14);
   staff(b, bones, 0x1a1a1f, 0.3, 0.2, 0xff2040, 1.0);
-  return { idle: 'bird', hunch: 0.14, bandSpin: 0 };
+  return { idle: 'bird', hunch: 0.14, bandSpin: 0, crown: 1.93 };
 }
 
 function buildScarecrow(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): AvatarStyle {
@@ -529,9 +533,11 @@ function buildScarecrow(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): Av
   b.with(part('hat', lime, 0.4, 0, beatGlow(1.5))).seg([0, 1.815, 0], [0, 1.855, 0], 0.155, 0.153, 12);
   quiver(b, bones, 0x5a3a1e);
   staff(b, bones, 0x7a5a32, 0.85, 0, lime, 1.2);
-  b.with(part('staff', 0x1a1a1a, 0.4, 0.5)).add(new THREE.TorusGeometry(0.06, 0.008, 4, 14).rotateX(Math.PI / 2).translate(0, STAFF_TOP + 0.06, 0),
-  bones.staff.matrixWorld,);
-  return { idle: 'groove', hunch: 0.05, bandSpin: 0 };
+  b.with(part('staff', 0x1a1a1a, 0.4, 0.5)).add(
+    new THREE.TorusGeometry(0.06, 0.008, 4, 14).rotateX(Math.PI / 2).translate(0, STAFF_TOP + 0.06, 0),
+    bones.staff.matrixWorld,
+  );
+  return { idle: 'groove', hunch: 0.05, bandSpin: 0, crown: 1.94 };
 }
 
 function buildJaguar(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): AvatarStyle {
@@ -595,7 +601,7 @@ function buildJaguar(b: MeshBuilder, bones: Record<BoneName, THREE.Bone>): Avata
   }
   quiver(b, bones, 0x3a1a2a);
   staff(b, bones, gold, 0.3, 0.85, 0xa45cff, 0.9);
-  return { idle: 'stately', hunch: -0.06, bandSpin: 0 };
+  return { idle: 'stately', hunch: -0.06, bandSpin: 0, crown: 1.97 };
 }
 
 const BUILDERS: Record<FactionId, (b: MeshBuilder, bones: Record<BoneName, THREE.Bone>) => AvatarStyle> = {

@@ -315,9 +315,19 @@ export class CollisionWorld {
   /**
    * Move a vertical-cylinder character by vel*dt with sliding, stepping (≤ stepHeight),
    * gravity-free (caller integrates gravity into vel.y). Mutates pos and vel.
+   * Shapes tagged `ignoreTag` are skipped for push-out, ceilings and support (a vexillomancer
+   * pushing the GCC cart passes through the cart's own shape).
    * Returns a shared result object, valid until the next call.
    */
-  moveCharacter(pos: V3, vel: V3, dt: number, radius: number, height: number, stepHeight: number): MoveResult {
+  moveCharacter(
+    pos: V3,
+    vel: V3,
+    dt: number,
+    radius: number,
+    height: number,
+    stepHeight: number,
+    ignoreTag?: number,
+  ): MoveResult {
     const res = this.result;
     res.hitWall = false;
     const tdx = vel.x * dt;
@@ -326,12 +336,21 @@ export class CollisionWorld {
     const steps = Math.max(1, Math.ceil(Math.max(Math.hypot(tdx, tdz), Math.abs(tdy)) / SUBSTEP));
     // Margin covers the body plus push-outs that carry it slightly outside the swept box.
     const m = radius + 0.3;
-    const count = this.gather(
+    let count = this.gather(
       Math.min(pos.x, pos.x + tdx) - m,
       Math.min(pos.z, pos.z + tdz) - m,
       Math.max(pos.x, pos.x + tdx) + m,
       Math.max(pos.z, pos.z + tdz) + m,
     );
+    if (ignoreTag !== undefined) {
+      // Compact the candidates in place so push-out, ceiling and support all skip the tag.
+      let kept = 0;
+      for (let k = 0; k < count; k++) {
+        const id = this.cand[k];
+        if (this.shapes[id].tag !== ignoreTag) this.cand[kept++] = id;
+      }
+      count = kept;
+    }
     const h = dt / steps;
     let onGround = false;
     for (let step = 0; step < steps; step++) {

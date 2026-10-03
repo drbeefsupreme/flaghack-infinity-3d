@@ -121,7 +121,11 @@ export function choose(b: Brain): Choice {
     if (softened) {
       options.push({ posture: 'opportunist', target: r.id, score: P.opportunism * (0.95 + r.ourPressure / 200) * late });
     }
-    if (now < P.attackFrom && !burning) continue;
+    // The temperament's patience only governs starting an assault. A siege already under way
+    // (our loop holds or presses their Hearth, or half our wall stands) is pressed on: a camp
+    // taken over from a human keeps the human's siege.
+    const underWay = r.attacker === b.f || r.ourPressure > 0 || r.loopCost * 2 <= r.loop.length;
+    if (now < P.attackFrom && !burning && !underWay) continue;
     let score = P.attack * (0.75 + 0.35 * Math.max(0, 1 - r.loopCost / 45));
     if (!r.homeIntact) score += 0.2;
     if (attackedUsRecently(b, r)) score += 0.15;

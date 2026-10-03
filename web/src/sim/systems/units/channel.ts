@@ -15,8 +15,7 @@ export function breakChannel(world: World, av: Avatar): void {
   if (a.kind === 'align' || a.kind === 'channel' || a.kind === 'pull') av.action = IDLE;
 }
 
-/** Align and the dialectics channel root the vexillomancer in place. */
-export function isRooted(av: Avatar): boolean {
-  const a = av.action;
-  return a.kind === 'align' || (a.kind === 'channel' && a.what === 'dialectics');
+/** Aligning a chakra and channelling (Flagellian Dialectics) root the vexillomancer in place. */
+export function isRooted(av: Pick<Avatar, 'action'>): boolean {
+  return av.action.kind === 'align' || av.action.kind === 'channel';
 }

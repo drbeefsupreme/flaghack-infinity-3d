@@ -11,7 +11,7 @@ const H = AVATAR.height;
 const STEP = AVATAR.stepHeight;
 
 /** Drive a character like the avatar system does: set horizontal velocity, integrate gravity. */
-function walk(world: CollisionWorld, pos: V3, vx: number, vz: number, seconds: number) {
+function walk(world: CollisionWorld, pos: V3, vx: number, vz: number, seconds: number, ignoreTag?: number) {
   const vel = { x: vx, y: 0, z: vz };
   let hitWall = false;
   let onGround = false;
@@ -19,7 +19,7 @@ function walk(world: CollisionWorld, pos: V3, vx: number, vz: number, seconds: n
     vel.x = vx;
     vel.z = vz;
     vel.y -= AVATAR.gravity * SIM_DT;
-    const r = world.moveCharacter(pos, vel, SIM_DT, R, H, STEP);
+    const r = world.moveCharacter(pos, vel, SIM_DT, R, H, STEP, ignoreTag);
     hitWall ||= r.hitWall;
     onGround = r.onGround;
   }
@@ -227,6 +227,42 @@ describe('CollisionWorld', () => {
     w.addSlab(dx, dz, LEVEL_HEIGHT, 0.25, 5);
     expect(w.blockedCircle(0, 6, 1, 0, 2)).toBe(false);
     expect(w.blockedCircle(0, 6, 1, 3, 4)).toBe(true);
+  });
+
+  it('moves a character through shapes tagged ignoreTag while every other shape still blocks', () => {
+    const w = new CollisionWorld();
+    // Push-out: walk through the tagged wall, stop at the untagged one behind it.
+    w.addBox(0, 5, 3, 0.1, 0, 0, LEVEL_HEIGHT, 7);
+    w.addBox(0, 10, 3, 0.1, 0, 0, LEVEL_HEIGHT, 8);
+    const walker = { x: 0, y: 0, z: 0 };
+    expect(walk(w, walker, 0, 8, 2, 7).hitWall).toBe(true);
+    expect(walker.z).toBeGreaterThan(5 + 0.1 + R);
+    expect(walker.z).toBeLessThanOrEqual(10 - 0.1 - R + 1e-6);
+
+    // Ceiling: the tagged lower deck lets the head through; the untagged one above stops it.
+    const [dx, dz] = rect(26, -4, 34, 4);
+    w.addSlab(dx, dz, 2.6, 0.25, 5);
+    w.addSlab(dx, dz, 3.0, 0.25, 6);
+    const jumper = { x: 30, y: 0, z: 0 };
+    const vel: V3 = { x: 0, y: AVATAR.jumpSpeed, z: 0 };
+    let peak = 0;
+    for (let i = 0; i < 60; i++) {
+      vel.y -= AVATAR.gravity * SIM_DT;
+      w.moveCharacter(jumper, vel, SIM_DT, R, H, STEP, 5);
+      peak = Math.max(peak, jumper.y);
+    }
+    expect(peak + H).toBeGreaterThan(2.6 - 0.25);
+    expect(peak + H).toBeLessThanOrEqual(3.0 - 0.25 + 1e-6);
+
+    // Support: standing on a tagged box top drops you to the ground; an untagged one holds you.
+    w.addBox(60, 0, 1, 1, 0, 0, 1.2, 9);
+    w.addBox(70, 0, 1, 1, 0, 0, 1.2, 10);
+    const onTagged = { x: 60, y: 1.2, z: 0 };
+    const onOther = { x: 70, y: 1.2, z: 0 };
+    expect(walk(w, onTagged, 0, 0, 0.5, 9).onGround).toBe(true);
+    expect(onTagged.y).toBe(0);
+    expect(walk(w, onOther, 0, 0, 0.5, 9).onGround).toBe(true);
+    expect(onOther.y).toBeCloseTo(1.2, 6);
   });
 
   it('removes shapes and recycles their ids', () => {

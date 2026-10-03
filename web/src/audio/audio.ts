@@ -9,10 +9,14 @@
  * around the listener (5 Hz) and smoothed, music + ambience follow it, finished voices free.
  */
 import type { AppApi } from '../game/app';
+import type { NetSession, NetStatus } from '../net/session';
+import type { ChatLine } from '../net/protocol';
 import type { GameEvent } from '../sim/events';
 import type { World } from '../sim/world';
 import { Ambience } from './ambience';
+import { Cues } from './cues';
 import { AudioEngine } from './engine';
+import { MENTOR_CHARS_PER_SEC, MentorVoice } from './mentor';
 import { Music } from './music';
 import { Sfx, type Perspective } from './sfx';
 import { approach, createSoundscape, measure, type Soundscape } from './soundscape';
@@ -43,6 +47,20 @@ interface Parts {
   sfx: Sfx;
   music: Music;
   ambience: Ambience;
+  mentor: MentorVoice;
+  cues: Cues;
+}
+
+/** What the online watcher last saw of `app.net` (sounds fire on changes only). */
+interface NetSeen {
+  net: NetSession;
+  version: number;
+  status: NetStatus;
+  reconnecting: boolean;
+  inMatch: boolean;
+  lastChat: ChatLine | null;
+  /** Connected players other than us. */
+  others: Set<string>;
 }
 
 export class GameAudio {
@@ -58,6 +76,9 @@ export class GameAudio {
   /** Audio main-thread time accumulated this frame, and its smoothed average. */
   private jsMs = 0;
   private jsMsAvg = 0;
+  private netSeen: NetSeen | null = null;
+  /** Scratch set for the per-change player diff (swapped with NetSeen.others). */
+  private othersScratch = new Set<string>();
 
   constructor(app: AppApi) {
     this.app = app;
@@ -74,7 +95,14 @@ export class GameAudio {
   unlock(): void {
     if (!this.parts) {
       const engine = new AudioEngine();
-      this.parts = { engine, sfx: new Sfx(engine), music: new Music(engine), ambience: new Ambience(engine) };
+      this.parts = {
+        engine,
+        sfx: new Sfx(engine),
+        music: new Music(engine),
+        ambience: new Ambience(engine),
+        mentor: new MentorVoice(engine),
+        cues: new Cues(engine),
+      };
     }
     const ctx = this.parts.engine.ctx;
     if (ctx.state !== 'running') void ctx.resume();
@@ -96,8 +124,10 @@ export class GameAudio {
     const t0 = performance.now();
     const { engine, music, ambience, sfx } = parts;
     const session = this.app.session;
-    const title = session.screen === 'title';
+    // The lobby gets the calm title variant of the music too.
+    const title = session.screen === 'title' || session.screen === 'lobby';
     engine.setVolumes(session.settings, session.screen === 'paused', title ? 0.55 : 1);
+    this.watchNet(parts.cues);
     const cam = this.app.renderer.camera;
     engine.setListener(cam.position.x, cam.position.y, cam.position.z, cam.matrixWorld.elements);
 
@@ -143,7 +173,8 @@ export class GameAudio {
 
   /** New match or back to title: per-match musical state resets, perspective follows the player. */
   private syncWorld(w: World, parts: Parts): void {
-    const title = this.app.session.screen === 'title';
+    const screen = this.app.session.screen;
+    const title = screen === 'title' || screen === 'lobby';
     if (w !== this.world) {
       this.world = w;
       parts.music.reset();
@@ -204,28 +235,134 @@ export class GameAudio {
     };
   }
 
+  /** Parts when audio is unlocked and running, else null (every cue is a no-op then). */
+  private ready(): Parts | null {
+    return this.parts && this.parts.engine.ctx.state === 'running' ? this.parts : null;
+  }
+
+  /**
+   * Online sounds come from `app.net` changes, so the UI never has to call them: chat lines
+   * from others, players connecting/leaving, the link dropping/returning, the burn starting.
+   * The first look at a session only records state (joining a full lobby is silent).
+   */
+  private watchNet(cues: Cues): void {
+    const net = this.app.net;
+    if (!net) {
+      this.netSeen = null;
+      return;
+    }
+    const seen = this.netSeen;
+    if (seen && seen.net === net && seen.version === net.version) return;
+    const others = this.othersScratch;
+    others.clear();
+    for (const p of net.lobby?.players ?? []) if (p.connected && p.id !== net.playerId) others.add(p.id);
+    const inMatch = net.lobby?.phase === 'playing';
+    const lastChat = net.chat.length ? net.chat[net.chat.length - 1] : null;
+    if (!seen || seen.net !== net) {
+      this.othersScratch = new Set<string>();
+      this.netSeen = { net, version: net.version, status: net.status, reconnecting: net.reconnecting, inMatch, lastChat, others };
+      return;
+    }
+    let chatFromOthers = false;
+    for (let i = net.chat.length - 1; i >= 0 && net.chat[i] !== seen.lastChat; i--) {
+      const line = net.chat[i];
+      if (line.from !== null && line.playerId !== net.playerId) chatFromOthers = true;
+    }
+    let joined = false;
+    for (const id of others) if (!seen.others.has(id)) joined = true;
+    let left = false;
+    for (const id of seen.others) if (!others.has(id)) left = true;
+
+    const dropped = (net.reconnecting && !seen.reconnecting) || (net.status === 'closed' && seen.status !== 'closed' && net.error !== null && !seen.reconnecting);
+    if (dropped) cues.connectionLost();
+    else if (!net.reconnecting && seen.reconnecting && net.status !== 'closed') cues.reconnected();
+    if (inMatch && !seen.inMatch) cues.matchStarting();
+    if (joined) cues.playerJoined();
+    if (left && !dropped) cues.playerLeft();
+    if (chatFromOthers) cues.chatBlip();
+
+    this.othersScratch = seen.others;
+    seen.others = others;
+    seen.version = net.version;
+    seen.status = net.status;
+    seen.reconnecting = net.reconnecting;
+    seen.inMatch = inMatch;
+    seen.lastChat = lastChat;
+  }
+
+  // ── Training Burn (for ui/tutorial and tutorial/*) ─────────────────────────
+  /**
+   * The Vexillosaint speaks `text` (markup ignored) as warm procedural babble, one syllable
+   * per ~2.5 visible characters, timed to a typewriter revealing `charsPerSecond` visible
+   * characters per second. Replaces any line still being spoken; the music dips under it.
+   * Returns the spoken length in seconds (0 before unlock or when there are no words).
+   */
+  mentorSpeak(text: string, charsPerSecond = MENTOR_CHARS_PER_SEC): number {
+    return this.ready()?.mentor.speak(text, charsPerSecond) ?? 0;
+  }
+
+  /** Cut the Vexillosaint off (line skipped, lesson changed, tutorial closed). */
+  mentorStop(): void {
+    this.parts?.mentor.stop();
+  }
+
+  /** A Seal of Flagistan is earned for lesson `index` (0-based; the fanfare climbs with it). */
+  sealAwarded(index: number): void {
+    this.ready()?.cues.sealAwarded(index);
+  }
+
+  /** The Seal of Flagistan is whole: the Training Burn is complete. */
+  graduation(): void {
+    this.ready()?.cues.graduation();
+  }
+
+  // ── Online burn (played automatically from app.net; public for other callers) ──
+  chatBlip(): void {
+    this.ready()?.cues.chatBlip();
+  }
+
+  playerJoined(): void {
+    this.ready()?.cues.playerJoined();
+  }
+
+  playerLeft(): void {
+    this.ready()?.cues.playerLeft();
+  }
+
+  connectionLost(): void {
+    this.ready()?.cues.connectionLost();
+  }
+
+  reconnected(): void {
+    this.ready()?.cues.reconnected();
+  }
+
+  matchStarting(): void {
+    this.ready()?.cues.matchStarting();
+  }
+
   // ── UI blips (for ui/*) ────────────────────────────────────────────────────
   uiHover(): void {
-    if (this.parts?.engine.ctx.state === 'running') this.parts.sfx.uiHover();
+    this.ready()?.sfx.uiHover();
   }
 
   uiClick(): void {
-    if (this.parts?.engine.ctx.state === 'running') this.parts.sfx.uiClick();
+    this.ready()?.sfx.uiClick();
   }
 
   uiConfirm(): void {
-    if (this.parts?.engine.ctx.state === 'running') this.parts.sfx.uiConfirm();
+    this.ready()?.sfx.uiConfirm();
   }
 
   uiBack(): void {
-    if (this.parts?.engine.ctx.state === 'running') this.parts.sfx.uiBack();
+    this.ready()?.sfx.uiBack();
   }
 
   uiToggle(on: boolean): void {
-    if (this.parts?.engine.ctx.state === 'running') this.parts.sfx.uiToggle(on);
+    this.ready()?.sfx.uiToggle(on);
   }
 
   uiError(): void {
-    if (this.parts?.engine.ctx.state === 'running') this.parts.sfx.uiError();
+    this.ready()?.sfx.uiError();
   }
 }

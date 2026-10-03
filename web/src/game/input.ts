@@ -115,6 +115,11 @@ export class Input {
     return this.held.has('ControlLeft') || this.held.has('ControlRight');
   }
 
+  /** A text field (chat, forms) has the keyboard: the game keeps its hands off. */
+  get typing(): boolean {
+    return isTypingTarget(document.activeElement);
+  }
+
   buttonPressed(b: number): boolean {
     return this.btnPressed[b];
   }
@@ -132,6 +137,10 @@ export class Input {
 
   requestLock(): void {
     if (this.locked || this.disposed || document.pointerLockElement === this.canvas) return;
+    // Outside a user gesture (an online match starting from a host message) the browser refuses
+    // the lock; that must not read as "pointer lock unavailable" here, so wait for the next click.
+    const activation = navigator.userActivation;
+    if (activation && !activation.isActive) return;
     try {
       const result: unknown = this.canvas.requestPointerLock();
       if (result instanceof Promise) result.catch(() => this.lockFailed());

@@ -233,6 +233,18 @@ export function destroyPiece(world: World, p: Piece): void {
 }
 
 function removePiece(world: World, p: Piece): void {
+  const info = econ(world).pieceInfo.get(p.id);
+  const pos = info ? { x: info.x, y: info.y, z: info.z } : { x: 0, y: 0, z: 0 };
+  detachPiece(world, p);
+  world.emit({ t: 'pieceDestroyed', pieceId: p.id, kind: p.kind, faction: p.faction, pos });
+}
+
+/**
+ * Take a piece out of the world: collision, nav blocking, slot index and the pieces map. No
+ * event, no cascade, no refund. Replicated mirrors (net/mirror.ts) use it to follow the host,
+ * which already decided what fell.
+ */
+export function detachPiece(world: World, p: Piece): void {
   const st = econ(world);
   for (const id of p.shapeIds) world.collision.remove(id);
   p.shapeIds.length = 0;
@@ -244,11 +256,18 @@ function removePiece(world: World, p: Piece): void {
     const key = slotKey(p.facet, p.level);
     if (st.facetSlots.get(key) === p.id) st.facetSlots.delete(key);
   }
-  const info = st.pieceInfo.get(p.id);
   st.pieceInfo.delete(p.id);
   world.pieces.delete(p.id);
-  const pos = info ? { x: info.x, y: info.y, z: info.z } : { x: 0, y: 0, z: 0 };
-  world.emit({ t: 'pieceDestroyed', pieceId: p.id, kind: p.kind, faction: p.faction, pos });
+}
+
+/**
+ * Put a piece into the world as the host built it: pieces map, slot index and collision/nav
+ * shapes on the current lattice. No lumber, no support check, no event (net/mirror.ts).
+ */
+export function attachPiece(world: World, p: Piece): void {
+  world.pieces.set(p.id, p);
+  indexPiece(world, p);
+  registerPieceShapes(world, p);
 }
 
 /** Pieces whose support may have depended on `p` (same slot ids; may include still-supported ones). */

@@ -221,3 +221,29 @@ export function choir(
   g.connect(out);
   return end;
 }
+
+/** Brass: detuned saws through a lowpass whose cutoff swells with the note. */
+export function brass(
+  ctx: BaseAudioContext,
+  out: AudioNode,
+  t: number,
+  freqs: readonly number[],
+  a: number,
+  h: number,
+  d: number,
+  peak: number,
+  bright: number,
+): void {
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.Q.value = 2;
+  lp.frequency.setValueAtTime(250, t);
+  lp.frequency.linearRampToValueAtTime(bright, t + a + 0.05);
+  lp.frequency.setTargetAtTime(bright * 0.45, t + a + 0.05, h + d * 0.3);
+  lp.connect(out);
+  const env = { a, h, d, peak: peak / freqs.length };
+  for (const f of freqs) {
+    tone(ctx, lp, t, { type: 'sawtooth', f, detune: -8, env, vib: 6, vibRate: 5 });
+    tone(ctx, lp, t, { type: 'sawtooth', f, detune: 8, env });
+  }
+}

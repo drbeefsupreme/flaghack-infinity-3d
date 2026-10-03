@@ -9,13 +9,13 @@
 import { Vector3 } from 'three';
 import type { Command, CommandOf } from '../sim/commands';
 import { ALIGN_TIME, AVATAR, BUILDINGS, LEY_EDGE, PIECE } from '../sim/constants';
-import { clamp, wrapAngle } from '../sim/math';
+import { angleDiff, clamp, wrapAngle } from '../sim/math';
 import type { V3 } from '../sim/math';
 import { isFlagProtected } from '../sim/systems/abilities';
 import { throwOrigin } from '../sim/systems/avatars';
 import { isCollapsed } from '../sim/systems/buildings';
 import { canPlantAt, nearestPlantableNode } from '../sim/systems/flags';
-import { CHAKRA_ABILITY, CHAKRAS, DRUGS } from '../sim/types';
+import { CHAKRA_ABILITY, CHAKRAS, DRUGS, FACTION_IDS } from '../sim/types';
 import type { Avatar, Building, BuildingKind, EntityId, FactionId, Flag, PieceKind } from '../sim/types';
 import type { World } from '../sim/world';
 import { MAX_RANGE_PITCH, solveThrowPitch, ThrowPredictor } from './aim';
@@ -54,6 +54,10 @@ const TOSS_DIST = 0.3;
 const TOSS_PITCH = -1.2;
 /** Starting action-camera orbit pitch for a new match. */
 const START_PITCH = 0.32;
+/** Spectators: the table's opening overview height, how fast it glides after a followed avatar, and the chase cam's turn rate. */
+const SPECTATE_HEIGHT = 200;
+const FOLLOW_GLIDE = 4;
+const CHASE_TURN = 3;
 
 /** Keys the game owns while playing (default browser behaviour suppressed, except Esc). */
 const GAME_KEYS: Record<string, true> = {
@@ -100,6 +104,9 @@ const GAME_KEYS: Record<string, true> = {
   Backquote: true,
   Backspace: true,
   Escape: true,
+  // Spectators and fallen camps: cycle the followed vexillomancer.
+  BracketLeft: true,
+  BracketRight: true,
 };
 /** Build tool keys: press again (or F) to put the tool away. */
 const TOOL_KEYS: Record<string, ToolKind> = { KeyZ: 'wall', KeyX: 'floor', KeyC: 'ramp', KeyV: 'demolish' };
@@ -156,6 +163,11 @@ function panelOpen(s: Session): boolean {
 /** The local player commands a seat in this world (not the attract burn, not an online spectator). */
 function seated(world: World, s: Session): boolean {
   return !s.spectator && world.options.humans.includes(s.playerFaction);
+}
+
+/** Watching rather than playing: an online spectator, or a seat whose camp has fallen. */
+function watching(world: World, s: Session): boolean {
+  return s.spectator || (seated(world, s) && !world.factions[s.playerFaction].alive);
 }
 
 export class Controls {
@@ -231,11 +243,11 @@ export class Controls {
     input.capturesKey = (code) => app.session.screen === 'playing' && GAME_KEYS[code] === true;
     input.onLockLost = () => {
       const s = app.session;
-      if (s.screen === 'playing' && s.view === 'action' && !panelOpen(s) && !this.spectating()) app.setPaused(true);
+      if (s.screen === 'playing' && s.view === 'action' && !this.cursorWanted(s) && !this.spectating()) app.setPaused(true);
     };
     input.onCanvasDown = () => {
       const s = app.session;
-      if (s.screen !== 'playing' || s.view !== 'action' || panelOpen(s) || input.locked || input.lockUnavailable || this.spectating()) return false;
+      if (s.screen !== 'playing' || s.view !== 'action' || this.cursorWanted(s) || input.locked || input.lockUnavailable || this.spectating()) return false;
       input.requestLock(); // this click only grabs the pointer
       return true;
     };
@@ -263,32 +275,33 @@ export class Controls {
     if (fresh || s.screen !== this.screen) this.screenChanged(s);
     const f = s.playerFaction;
     const av = world.avatars.get(world.factions[f].avatarId);
-    const playing = s.screen === 'playing' && seated(world, s) && av !== undefined;
-    const spectating = playing && !world.factions[f].alive;
-    if (playing && av && this.freshWorld) this.beginMatch(s, av);
+    const inPlay = s.screen === 'playing' && av !== undefined && (seated(world, s) || s.spectator);
+    const watcher = inPlay && watching(world, s);
+    // A text field (chat) has the keyboard: keys held when it opened must not keep the vexillomancer running.
+    const typing = this.input.typing;
+    if (typing) this.input.clear();
+    if (inPlay && av && this.freshWorld) this.beginMatch(s, av);
 
-    if (playing && av) {
-      this.toggles(s, av, spectating);
+    if (inPlay && av) {
+      this.toggles(world, s, av, watcher);
       if (s.view !== this.view) {
-        if (s.view === 'command') this.enterCommand(s, av, null);
+        if (s.view === 'command') this.enterCommand(s, watcher ? null : av.pos, null);
         else this.exitCommand(s);
       }
-      if ((s.view === 'command' || panelOpen(s) || spectating) && this.input.locked) this.input.exitLock();
+      if ((s.view === 'command' || watcher || typing || this.cursorWanted(s)) && this.input.locked) this.input.exitLock();
       s.pointerLocked = this.input.locked;
       if (s.view === 'command') this.command.controlCamera(s, dt);
-      else if (!spectating) this.look(s);
+      else if (!watcher) this.look(s);
+      if (watcher) this.spectate(world, s, dt);
     }
     this.animateBlend(s, dt);
-    this.updateCamera(world, s, av, dt);
-    if (playing && av && !spectating) {
+    this.updateCamera(world, s, av, watcher, dt);
+    if (inPlay && av && !watcher && !typing) {
       this.pick(world, s, av);
       this.targetedKeys(s, av);
       if (s.view === 'action') this.actionFrame(world, s, av, dt);
       else this.commandFrame(world, s, av);
-    } else {
-      if (spectating) this.spectate(s);
-      this.idle(s);
-    }
+    } else this.idle(s);
     this.input.endFrame();
   }
 
@@ -359,6 +372,17 @@ export class Controls {
     s.view = 'action';
     s.viewBlend = 0;
     this.view = 'action';
+    s.followFaction = null;
+    if (s.spectator) {
+      // A spectator starts over the table, looking down on the whole burn.
+      s.view = 'command';
+      s.viewBlend = 1;
+      this.view = 'command';
+      s.camera.cmdX = 0;
+      s.camera.cmdZ = 0;
+      s.camera.cmdHeight = SPECTATE_HEIGHT;
+      this.rig.snapCommand(s.camera);
+    }
     this.freshWorld = true;
     this.rig.resetFollow();
     this.command.reset(s);
@@ -371,25 +395,93 @@ export class Controls {
   }
 
   /**
-   * The player's camp has fallen but the burn plays on for the rivals: the camera still works
-   * (orbit over the fallen vexillomancer, Command View pan/zoom), the pointer stays free for the
-   * end-screen buttons, and no gameplay input reaches the sim.
+   * Watching instead of playing: an online spectator, or a camp that has fallen while the burn
+   * plays on. The camera still works (orbit or chase cam, Command View pan/zoom, [ and ] cycle
+   * the followed vexillomancer), the pointer stays free for the menus, and no gameplay input
+   * reaches the sim.
    */
   private spectating(): boolean {
     const w = this.app.world;
-    return w !== null && seated(w, this.app.session) && !w.factions[this.app.session.playerFaction].alive;
+    return w !== null && watching(w, this.app.session);
   }
 
-  /** Spectator frame: Esc backs out of the Command View, else opens the pause menu; tools stay down. */
-  private spectate(s: Session): void {
-    if (this.input.wasPressed('Escape')) {
-      if (s.view === 'command') this.exitCommand(s);
+  /** A modal wants the mouse (panels, the Training Burn's graduation): no lock, no auto-pause. */
+  private cursorWanted(s: Session): boolean {
+    return panelOpen(s) || this.app.tutorial?.state.phase === 'graduated';
+  }
+
+  /**
+   * Spectator frame. Esc lets go of the followed vexillomancer, else backs out of the table (a
+   * fallen camp's orbit) or opens the menu. The table glides after the followed avatar until a
+   * hand pans it; the chase cam turns with the followed avatar's facing.
+   */
+  private spectate(world: World, s: Session, dt: number): void {
+    const inp = this.input;
+    if (inp.wasPressed('BracketRight')) this.cycleFollow(world, s, 1);
+    if (inp.wasPressed('BracketLeft')) this.cycleFollow(world, s, -1);
+    let target = this.followed(world, s);
+    if (inp.wasPressed('Escape')) {
+      if (target) {
+        s.followFaction = null;
+        target = null;
+      } else if (s.view === 'command' && !s.spectator) this.exitCommand(s);
       else this.app.setPaused(true);
+    }
+    const cam = s.camera;
+    if (s.view === 'command') {
+      const panning = inp.isDown('KeyW') || inp.isDown('KeyA') || inp.isDown('KeyS') || inp.isDown('KeyD') || inp.isDown('ArrowUp') || inp.isDown('ArrowDown') || inp.isDown('ArrowLeft') || inp.isDown('ArrowRight') || inp.buttons[MMB];
+      if (target && panning) {
+        s.followFaction = null;
+        target = null;
+      }
+      if (target) {
+        const k = Math.min(1, dt * FOLLOW_GLIDE);
+        cam.cmdX += (target.pos.x - cam.cmdX) * k;
+        cam.cmdZ += (target.pos.z - cam.cmdZ) * k;
+      }
+    } else if (target) {
+      const k = Math.min(1, dt * CHASE_TURN);
+      cam.yaw = wrapAngle(cam.yaw + angleDiff(cam.yaw, target.yaw) * k);
+      cam.pitch += (START_PITCH - cam.pitch) * k;
+    } else if (s.spectator) {
+      // Nobody left to stand behind: back over the table.
+      this.enterCommand(s, null, null);
     }
     s.selection.clear();
     if (s.planPreview.length > 0) s.planPreview = [];
     s.planTool = 'select';
     s.tool = 'flag';
+  }
+
+  /** A faction whose vexillomancer can be followed: still in the burn, with a body. */
+  private followable(world: World, f: FactionId): Avatar | null {
+    const fac = world.factions[f];
+    if (!fac.alive) return null;
+    return world.avatars.get(fac.avatarId) ?? null;
+  }
+
+  /** The followed vexillomancer, letting go when its camp has fallen. */
+  private followed(world: World, s: Session): Avatar | null {
+    if (s.followFaction === null) return null;
+    const av = this.followable(world, s.followFaction);
+    if (!av) s.followFaction = null;
+    return av;
+  }
+
+  private cycleFollow(world: World, s: Session, dir: 1 | -1): void {
+    const n = FACTION_IDS.length;
+    const from = s.followFaction ?? (dir > 0 ? n - 1 : 0);
+    for (let i = 1; i <= n; i++) {
+      const f = FACTION_IDS[(from + dir * i + n) % n];
+      if (!this.followable(world, f)) continue;
+      if (f !== s.followFaction) {
+        s.followFaction = f;
+        // Glide to the new subject instead of cutting.
+        this.rig.startTransition(0.7);
+      }
+      return;
+    }
+    s.followFaction = null;
   }
 
   /** First playing frame of a match: camera behind the vexillomancer, facing the burn. */
@@ -410,7 +502,7 @@ export class Controls {
       // Keys belong to the burn now, not to the menu button that started it.
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       // Resume / Begin: the click that got us here still counts as a gesture.
-      if (s.view === 'action' && !panelOpen(s) && !this.spectating()) this.input.requestLock();
+      if (s.view === 'action' && !this.cursorWanted(s) && !this.spectating()) this.input.requestLock();
     } else this.input.exitLock();
   }
 
@@ -424,7 +516,7 @@ export class Controls {
     this.lastDemolish = -1;
   }
 
-  private toggles(s: Session, av: Avatar, spectating: boolean): void {
+  private toggles(world: World, s: Session, av: Avatar, watcher: boolean): void {
     const inp = this.input;
     const p = s.panels;
     if (inp.wasPressed('Escape') && panelOpen(s)) {
@@ -434,25 +526,34 @@ export class Controls {
       p.settings = false;
       inp.consume('Escape');
     }
-    if (inp.wasPressed('KeyK') && !spectating) p.chakras = !p.chakras;
+    if (inp.wasPressed('KeyK') && !watcher) p.chakras = !p.chakras;
     if (inp.wasPressed('KeyJ')) p.codex = !p.codex;
     if (inp.wasPressed('F1')) p.help = !p.help;
     if (inp.wasPressed('KeyL')) s.showLattice = !s.showLattice;
     if (inp.wasPressed('Backquote')) s.debug = !s.debug;
     if (inp.wasPressed('Tab')) {
-      if (s.view === 'action') this.enterCommand(s, av, null);
-      else this.exitCommand(s);
+      if (s.view === 'action') {
+        const target = watcher ? this.followed(world, s) : av;
+        this.enterCommand(s, target ? target.pos : null, null);
+      } else {
+        // A spectator's chase cam needs someone to chase.
+        if (s.spectator && s.followFaction === null) this.cycleFollow(world, s, 1);
+        if (!s.spectator || s.followFaction !== null) this.exitCommand(s);
+      }
     }
   }
 
-  private enterCommand(s: Session, av: Avatar, gcc: Building | null): void {
+  /** Enter the Command View centred on `at` (null keeps the table where it was) or dive through a GCC. */
+  private enterCommand(s: Session, at: { x: number; z: number } | null, gcc: Building | null): void {
     this.view = 'command';
     s.view = 'command';
     this.dive = gcc;
     const cam = s.camera;
-    const at = gcc ? gcc.pos : av.pos;
-    cam.cmdX = at.x;
-    cam.cmdZ = at.z;
+    const centre = gcc ? gcc.pos : at;
+    if (centre) {
+      cam.cmdX = centre.x;
+      cam.cmdZ = centre.z;
+    }
     if (gcc) cam.cmdHeight = DIVE_CMD_HEIGHT;
     this.rig.snapCommand(cam);
     this.input.exitLock();
@@ -481,7 +582,7 @@ export class Controls {
 
   private look(s: Session): void {
     const inp = this.input;
-    if ((!inp.locked && !inp.lockUnavailable) || panelOpen(s)) return;
+    if ((!inp.locked && !inp.lockUnavailable) || this.cursorWanted(s)) return;
     const k = LOOK_SPEED * s.settings.mouseSensitivity * (s.aim.active ? AIM_LOOK_SCALE : 1);
     const cam = s.camera;
     cam.yaw = wrapAngle(cam.yaw - inp.dx * k);
@@ -494,10 +595,10 @@ export class Controls {
     s.viewBlend = target > s.viewBlend ? Math.min(target, s.viewBlend + step) : Math.max(target, s.viewBlend - step);
   }
 
-  private updateCamera(world: World, s: Session, av: Avatar | undefined, dt: number): void {
+  private updateCamera(world: World, s: Session, av: Avatar | undefined, watcher: boolean, dt: number): void {
     const rig = this.rig;
     const f = s.playerFaction;
-    if (s.screen === 'title' || !seated(world, s) || !av) {
+    if (s.screen === 'title' || s.screen === 'lobby' || !av || !(seated(world, s) || s.spectator)) {
       rig.setMode('title', 1.6);
       rig.updateTitle(world, f, dt);
     } else if (s.screen === 'ended') {
@@ -505,8 +606,10 @@ export class Controls {
       rig.updateEnded(world, f, dt);
     } else {
       rig.setMode('play', 1.8);
-      const sprinting = Math.hypot(av.vel.x, av.vel.z) > AVATAR.runSpeed + 0.5;
-      rig.updatePlay(world, av, f, s.camera, s.viewBlend, this.dive, s.aim.active, sprinting, dt);
+      // Watchers ride along with whoever they follow; a fallen camp otherwise orbits its own body.
+      const subject = (watcher ? this.followed(world, s) : null) ?? av;
+      const sprinting = Math.hypot(subject.vel.x, subject.vel.z) > AVATAR.runSpeed + 0.5;
+      rig.updatePlay(world, subject, subject.faction, s.camera, s.viewBlend, this.dive, s.aim.active && !watcher, sprinting, dt);
     }
     // Camera trauma: VFX adds it, the camera spends it (muted over the tactical table).
     const shared = this.app.renderer.ctx?.shared;
@@ -903,7 +1006,7 @@ export class Controls {
     if (inp.wasReleased('KeyE')) {
       if (this.eMode === 'pull' && av.action.kind === 'pull') this.queue.push({ t: 'pull', faction: f, flagId: -1 });
       if (this.eMode === 'gcc' && !this.gccFired && this.eGcc && this.gccInReach(av, this.eGcc)) {
-        this.enterCommand(s, av, this.eGcc);
+        this.enterCommand(s, av.pos, this.eGcc);
       }
       this.eMode = 'none';
       this.eGcc = null;

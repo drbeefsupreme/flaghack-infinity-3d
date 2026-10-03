@@ -4,7 +4,7 @@
  * crystallized/enclosed facets (translucent faction-tinted crystal glass with sweeping fill
  * on surveyChanged), plan ghost Flags, implied Flags (ghost yellow with halo), focus points
  * (when revealed), interference moiré on unstable facets, phason flip animations, Hearth
- * stage rings and containment beams, and the throw arc.
+ * stage rings and containment beams, the throw arc, and tutorial objective markers.
  * Owner: RenderSurvey agent.
  *
  * Every layer reads lattice/survey state from the data textures in SurveyData; this module
@@ -29,6 +29,7 @@ import { HearthFeature } from './hearthRings';
 import { ImpliedPlanFeature } from './impliedPlan';
 import { LatticeLayer } from './latticeLayer';
 import { LeyLayer } from './leyLayer';
+import { ObjectiveFeature } from './objectives';
 import { PhasonFeature } from './phasonFx';
 import { SpriteLayer } from './sprites';
 import { SurveyData } from './surveyData';
@@ -59,6 +60,7 @@ export class SurveyRenderer implements RenderModule {
   private readonly aim: AimFeature;
   private readonly phason: PhasonFeature;
   private readonly crystals: CrystalLayer;
+  private readonly objectives: ObjectiveFeature;
   private readonly res = new THREE.Vector2();
   private readonly viewDir = new THREE.Vector3();
   private grid = 1;
@@ -93,6 +95,7 @@ export class SurveyRenderer implements RenderModule {
     this.hearths = new HearthFeature(world, session, d);
     this.aim = new AimFeature(world, session);
     this.phason = new PhasonFeature(world, d, this.lattice, this.u);
+    this.objectives = new ObjectiveFeature(scene, world, session, d, this.u, ctx.shared);
   }
 
   onEvent(e: GameEvent): void {
@@ -197,6 +200,9 @@ export class SurveyRenderer implements RenderModule {
     this.sprites.commit();
     this.xray.commit();
     this.aimGhosts.commit();
+    // Pixels per metre at 1 m of view distance, for markers that keep a minimum screen size.
+    const projScale = ctx.camera.projectionMatrix.elements[5] * 0.5 * this.res.y;
+    this.objectives.update(now, ctx.camera, projScale, this.res, u.uPx.value);
   }
 
   /**
@@ -241,6 +247,7 @@ export class SurveyRenderer implements RenderModule {
     this.xray.dispose();
     this.aimGhosts.dispose();
     this.crystals.dispose();
+    this.objectives.dispose();
     this.decalMat.dispose();
     this.data.dispose();
   }

@@ -33,6 +33,7 @@ import { generateMap } from './map/mapgen';
 import { dist2, distToSegment } from './math';
 import { NavGrid } from './nav/navgrid';
 import { CollisionWorld } from './physics/collision';
+import { setupTrainingBurn } from './scenarios/tutorial';
 import { registerBuildingShape } from './systems/buildings';
 import { canPlantAt, plantFlag } from './systems/flags';
 import { geometryOwners, updateSurvey } from './systems/survey';
@@ -85,6 +86,7 @@ export function createMatch(options: MatchOptions): World {
     const at = map.neutralSpawns[i % map.neutralSpawns.length];
     spawnHippie(world, -1, { x: at.x + world.rng.range(-3, 3), z: at.z + world.rng.range(-3, 3) });
   }
+  if (options.mode === 'tutorial') setupTrainingBurn(world);
   updateSurvey(world, 0);
   // Setup is not play: renderers/UI build their first frame from World state, so the burst of
   // planting and ley-line events (and the planting stats) from the home rings is discarded.

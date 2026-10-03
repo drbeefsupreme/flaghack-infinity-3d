@@ -1,7 +1,8 @@
 /**
  * Browser-console debug API (window.fh). Lets developers and automated smoke tests stage
  * scenarios: fast-forward the sim, grant resources, call sim systems directly.
- * Presentation/dev only; gameplay code never imports this module.
+ * Presentation/dev only; gameplay code never imports this module. Online the host owns the
+ * burn: the mutators refuse (the mirror would silently drift from the host).
  */
 import * as factory from '../sim/factory';
 import * as geometry from '../sim/lattice/geometry';
@@ -16,6 +17,13 @@ import * as tides from '../sim/systems/tides';
 import type { FactionId } from '../sim/types';
 import type { App } from './app';
 
+/** Mutating the mirror of a host's burn would only desync this screen from the truth. */
+function refuseOnline(app: App): boolean {
+  if (!app.online) return false;
+  console.warn('fh: the host owns this burn; local mutators are disabled online.');
+  return true;
+}
+
 export function installDebug(app: App): void {
   const fh = {
     app,
@@ -24,6 +32,16 @@ export function installDebug(app: App): void {
     },
     get session() {
       return app.session;
+    },
+    /** Online session (null offline), its mirror and the local avatar predictor. */
+    get net() {
+      return app.net;
+    },
+    get mirror() {
+      return app.mirror;
+    },
+    get predictor() {
+      return app.predictor;
     },
     factory,
     geometry,
@@ -37,12 +55,13 @@ export function installDebug(app: App): void {
     pieces,
     /** Run AI + simulation synchronously for `seconds` of game time (events discarded). */
     advance(seconds: number): void {
+      if (refuseOnline(app)) return;
       app.fastForward(seconds);
     },
     /** Grant resources to a faction (default: player). */
     give(res: { lumber?: number; ritual?: number; flags?: number }, faction: FactionId = 0): void {
       const w = app.world;
-      if (!w) return;
+      if (!w || refuseOnline(app)) return;
       const f = w.factions[faction];
       f.lumber += res.lumber ?? 0;
       f.ritual += res.ritual ?? 0;
@@ -58,7 +77,7 @@ export function installDebug(app: App): void {
      */
     encircle(faction: FactionId, x: number, z: number, radius: number): number[] {
       const w = app.world;
-      if (!w) return [];
+      if (!w || refuseOnline(app)) return [];
       const lat = w.lattice;
       const held = (n: number) => w.survey.nodeFlagOwner[n] === faction;
       const loop = planner.planEnclosure(lat, {

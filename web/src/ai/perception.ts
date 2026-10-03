@@ -64,7 +64,12 @@ const LAST_HOME_WEIGHT = 0.5;
 const UNREACHABLE_FOR = 60;
 const UNREACHABLE_WEIGHT = 10;
 
-/** One heavy planning job (an enclosure plan) per tick across every NPC brain. */
+/**
+ * One heavy planning job (an enclosure plan) per tick across every NPC brain of a world. The
+ * host drives one controller per AI seat, so the budget lives with the world (world.scratch,
+ * clean for every match) rather than with a controller: four single-seat controllers then
+ * split it exactly like the brains of one four-seat controller do.
+ */
 export class Scheduler {
   private usedTick = -1;
   take(world: World): boolean {
@@ -74,7 +79,13 @@ export class Scheduler {
   }
 }
 
-const observers: { x: number; z: number }[] = [];
+export function schedulerOf(world: World): Scheduler {
+  const s = world.scratch.aiScheduler;
+  if (s instanceof Scheduler) return s;
+  const fresh = new Scheduler();
+  world.scratch.aiScheduler = fresh;
+  return fresh;
+}
 
 export function perceive(b: Brain, sched: Scheduler): void {
   const world = b.world;
@@ -149,8 +160,9 @@ function senseUnits(b: Brain, world: World, hearth: Building): void {
   const v = b.view;
   const fac = world.factions[f];
   const av = world.avatarOf(f);
+  const observers = b.observers;
   observers.length = 0;
-  if (av.koUntil <= world.time) observers.push({ x: av.pos.x, z: av.pos.z });
+  if (av.koUntil <= world.time) observers.push(av.pos);
   for (const h of world.hippies.values()) if (h.faction === f && h.koUntil <= world.time) observers.push(h.pos);
   for (const bd of world.buildings.values()) if (bd.faction === f) observers.push(bd.pos);
 
@@ -166,7 +178,7 @@ function senseUnits(b: Brain, world: World, hearth: Building): void {
       if (gcc && (h.pos.x - gcc.pos.x) ** 2 + (h.pos.z - gcc.pos.z) ** 2 <= GCC.giftRadius * GCC.giftRadius) v.neutralsNearGcc.push(h.id);
       continue;
     }
-    if (!visible(world, f, h)) continue;
+    if (!visible(world, f, h, observers)) continue;
     const dh2 = (h.pos.x - hearth.pos.x) ** 2 + (h.pos.z - hearth.pos.z) ** 2;
     const facet = world.lattice.facetAt(h.pos.x, h.pos.z);
     if (dh2 <= INTRUDER_RADIUS * INTRUDER_RADIUS || world.inSurvey(facet, f)) v.intruders.push(h.id);
@@ -175,7 +187,7 @@ function senseUnits(b: Brain, world: World, hearth: Building): void {
   }
 }
 
-function visible(world: World, f: FactionId, h: Hippie): boolean {
+function visible(world: World, f: FactionId, h: Hippie, observers: readonly { x: number; z: number }[]): boolean {
   const owner = h.faction;
   if (owner !== NEUTRAL && (world.factions[f].meshTap[owner] ?? 0) > world.time) return true;
   for (const o of observers) if ((o.x - h.pos.x) ** 2 + (o.z - h.pos.z) ** 2 <= SIGHT * SIGHT) return true;

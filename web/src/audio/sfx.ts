@@ -13,7 +13,7 @@ import type { World } from '../sim/world';
 import type { AudioEngine, VoiceHandle } from './engine';
 import { FESTIVAL_BPM } from '../sim/constants';
 import { degreeHz, midiHz, nodeDegree } from './scale';
-import { bell, choir, envelope, fm, noise, tone } from './synth';
+import { bell, brass, choir, envelope, fm, noise, tone } from './synth';
 
 /** Who "I" am for this event batch: the player faction, or none on the title screen. */
 export interface Perspective {
@@ -492,28 +492,11 @@ export class Sfx {
     for (let i = 0; i < 3; i++) bell(this.e.ctx, v.input, v.t + i * 0.09, degreeHz(degs[i] + 5), 1.3, 0.16, 3);
   }
 
-  /** Brass: detuned saws through a lowpass whose cutoff swells with the note. */
-  private brass(out: AudioNode, t: number, freqs: readonly number[], a: number, h: number, d: number, peak: number, bright: number): void {
-    const c = this.e.ctx;
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.Q.value = 2;
-    lp.frequency.setValueAtTime(250, t);
-    lp.frequency.linearRampToValueAtTime(bright, t + a + 0.05);
-    lp.frequency.setTargetAtTime(bright * 0.45, t + a + 0.05, h + d * 0.3);
-    lp.connect(out);
-    const env = { a, h, d, peak: peak / freqs.length };
-    for (const f of freqs) {
-      tone(c, lp, t, { type: 'sawtooth', f, detune: -8, env, vib: 6, vibRate: 5 });
-      tone(c, lp, t, { type: 'sawtooth', f, detune: 8, env });
-    }
-  }
-
   /** Enemy Hearth contained by us: an ominous low horn. */
   private horn(): void {
     const v = this.e.voice({ key: 'horn', dur: 2.6, gain: 0.8, wet: 0.55, priority: 3 });
     if (!v) return;
-    this.brass(v.input, v.t, [midiHz(33), midiHz(40), midiHz(45)], 0.3, 0.7, 1.4, 0.55, 1300);
+    brass(this.e.ctx, v.input, v.t, [midiHz(33), midiHz(40), midiHz(45)], 0.3, 0.7, 1.4, 0.55, 1300);
   }
 
   private captured(at: V2, weLost: boolean, weWon: boolean): void {
@@ -524,8 +507,8 @@ export class Sfx {
     bell(c, v.input, v.t, 184, 4, 0.12, 3);
     tone(c, v.input, v.t, { f: 72, f2: 28, glide: 0.9, env: { a: 0.005, d: 1.4, peak: 0.85 } });
     noise(c, v.input, v.t, { buf: this.e.pink, filter: 'lowpass', f: 320, env: { a: 0.005, d: 1.1, peak: 0.6 } });
-    if (weLost) this.brass(v.input, v.t + 0.4, [midiHz(31), midiHz(34), midiHz(38)], 0.4, 1, 2, 0.4, 900);
-    if (weWon) this.brass(v.input, v.t + 0.35, [midiHz(48), midiHz(55), midiHz(60), midiHz(64)], 0.08, 0.6, 1.4, 0.5, 2600);
+    if (weLost) brass(this.e.ctx, v.input, v.t + 0.4, [midiHz(31), midiHz(34), midiHz(38)], 0.4, 1, 2, 0.4, 900);
+    if (weWon) brass(this.e.ctx, v.input, v.t + 0.35, [midiHz(48), midiHz(55), midiHz(60), midiHz(64)], 0.08, 0.6, 1.4, 0.5, 2600);
     this.e.duck(0.45, 2);
   }
 
@@ -534,7 +517,7 @@ export class Sfx {
     if (!v) return;
     const c = this.e.ctx;
     const seq = me ? [57, 55, 52, 45] : [52, 45];
-    for (let i = 0; i < seq.length; i++) this.brass(v.input, v.t + i * 0.42, [midiHz(seq[i] - 12), midiHz(seq[i])], 0.06, 0.25, 0.5, 0.4, 1500);
+    for (let i = 0; i < seq.length; i++) brass(this.e.ctx, v.input, v.t + i * 0.42, [midiHz(seq[i] - 12), midiHz(seq[i])], 0.06, 0.25, 0.5, 0.4, 1500);
     fm(c, v.input, v.t + seq.length * 0.42, 70, 1.41, 2.5, { a: 0.004, d: 3.5, peak: 0.4 });
     this.e.duck(0.5, 2.5);
   }
@@ -547,15 +530,15 @@ export class Sfx {
     if (won) {
       const seq = [55, 60, 64, 67];
       const times = [0, 0.16, 0.32, 0.48];
-      for (let i = 0; i < 4; i++) this.brass(v.input, v.t + times[i], [midiHz(seq[i]), midiHz(seq[i] - 12)], 0.03, 0.08, 0.15, 0.5, 3000);
-      this.brass(v.input, v.t + 0.7, [midiHz(48), midiHz(60), midiHz(64), midiHz(67), midiHz(72)], 0.05, 1.6, 2.4, 0.8, 3600);
+      for (let i = 0; i < 4; i++) brass(this.e.ctx, v.input, v.t + times[i], [midiHz(seq[i]), midiHz(seq[i] - 12)], 0.03, 0.08, 0.15, 0.5, 3000);
+      brass(this.e.ctx, v.input, v.t + 0.7, [midiHz(48), midiHz(60), midiHz(64), midiHz(67), midiHz(72)], 0.05, 1.6, 2.4, 0.8, 3600);
       for (let i = 0; i < 8; i++) tone(c, v.input, v.t + 0.7 - 0.25 + i * 0.03, { f: 92, f2: 70, glide: 0.1, env: { d: 0.12, peak: 0.25 + i * 0.03 } });
       noise(c, v.input, v.t + 0.7, { buf: this.e.white, filter: 'highpass', f: 5000, env: { a: 0.005, d: 2.6, peak: 0.28 } });
       for (let i = 0; i < 6; i++) bell(c, v.input, v.t + 0.8 + i * 0.08, degreeHz(25 + i), 1.4, 0.1, 3);
     } else {
       const seq = [57, 55, 52];
-      for (let i = 0; i < 3; i++) this.brass(v.input, v.t + i * 0.55, [midiHz(seq[i])], 0.1, 0.3, 0.4, 0.35, 1400);
-      this.brass(v.input, v.t + 1.7, [midiHz(33), midiHz(45), midiHz(48), midiHz(52)], 0.4, 1.2, 2.5, 0.6, 1100);
+      for (let i = 0; i < 3; i++) brass(this.e.ctx, v.input, v.t + i * 0.55, [midiHz(seq[i])], 0.1, 0.3, 0.4, 0.35, 1400);
+      brass(this.e.ctx, v.input, v.t + 1.7, [midiHz(33), midiHz(45), midiHz(48), midiHz(52)], 0.4, 1.2, 2.5, 0.6, 1100);
     }
     this.e.duck(0.7, 4);
   }

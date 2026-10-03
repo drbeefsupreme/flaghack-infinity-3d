@@ -210,3 +210,14 @@ export function releaseGuards(b: Brain): void {
   for (const h of b.world.hippies.values()) if (h.faction === b.f && h.order && h.order.kind === 'defend') ids.push(h.id);
   if (ids.length > 0) b.world.submit({ t: 'order', faction: b.f, hippies: ids.slice(), order: null });
 }
+
+/**
+ * A camp taken over from a departed human: hippies rallied to follow the vexillomancer would
+ * trail the NPC pilot for good, so they go back to the camp's jobs. Every other order (pull,
+ * plant, gather, defend, attack, move, push) finishes on its own and is left to do so.
+ */
+export function releaseFollowers(b: Brain): void {
+  ids.length = 0;
+  for (const h of b.world.hippies.values()) if (h.faction === b.f && h.order && h.order.kind === 'follow') ids.push(h.id);
+  if (ids.length > 0) b.world.submit({ t: 'order', faction: b.f, hippies: ids.slice(), order: null });
+}

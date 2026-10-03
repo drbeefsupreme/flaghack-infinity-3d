@@ -22,6 +22,7 @@ import {
   STATUS_INFO,
 } from './catalog';
 import type { CampBuildingKind } from './catalog';
+import { tutorialTarget } from './core';
 import type { UiHost, UiLayout, UiPart } from './core';
 import { button, el, escapeHtml, fmtCountdown, html, kbd, setAttr, setClass, setDisabled, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
@@ -89,6 +90,7 @@ export class CommandPanels implements UiPart {
     // ── Survey plan tools ──
     const plan = this.panel(this.right, 'Survey plan', 'plan');
     const tools = el('div', 'plan-tools', plan);
+    tutorialTarget(tools, 'plan-tools');
     for (const info of PLAN_TOOLS) {
       const b = button(
         'plan-btn',
@@ -108,6 +110,7 @@ export class CommandPanels implements UiPart {
         info.tool === 'clear' ? 'click' : 'pick',
       );
       b.title = info.hint;
+      if (info.target) tutorialTarget(b, info.target);
       this.planButtons.set(info.tool, b);
     }
     this.planHint = el('div', 'panel-hint', plan, '');
@@ -129,9 +132,11 @@ export class CommandPanels implements UiPart {
 
     // ── Camp priorities ──
     const prio = this.panel(this.right, 'Camp priorities', 'prio');
+    tutorialTarget(prio, 'priorities');
     for (const job of JOBS) {
       const info = JOB_INFO[job];
       const row = el('div', 'job', prio);
+      tutorialTarget(row, info.target);
       row.title = info.desc;
       html('span', 'job-ic', iconSvg(info.icon), row);
       el('span', 'job-name', row, info.name);
@@ -157,6 +162,7 @@ export class CommandPanels implements UiPart {
 
     // ── Geomantic Command Center (the cart's banner) ──
     const gcc = el('div', 'panel gcc-panel', this.left);
+    tutorialTarget(gcc, 'gcc-panel');
     html(
       'div',
       'gcc-banner',
@@ -175,6 +181,7 @@ export class CommandPanels implements UiPart {
         'confirm',
       );
       b.title = info.effect;
+      tutorialTarget(b, info.target);
       return b;
     };
     /** Sim rules first (cart reach, cooldown, collapse), then the gift's own need for a target. */
@@ -241,6 +248,7 @@ export class CommandPanels implements UiPart {
 
     // ── Deck: build menu ──
     const build = this.panel(this.deck, 'Camp buildings', 'build');
+    tutorialTarget(build, 'buildings-panel');
     const grid = el('div', 'build-grid', build);
     for (const kind of CAMP_BUILDINGS) {
       const info = BUILD_INFO[kind];
@@ -318,7 +326,7 @@ export class CommandPanels implements UiPart {
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
     const fac = world?.factions[s.playerFaction];
-    const visible = s.screen === 'playing' && s.view === 'command' && !!world && !!fac && fac.alive;
+    const visible = s.screen === 'playing' && s.view === 'command' && !s.spectator && !!world && !!fac && fac.alive;
     show(this.right, visible);
     show(this.left, visible);
     show(this.deck, visible);

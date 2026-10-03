@@ -43,6 +43,8 @@ export class EconState {
   pieceLatticeVersion = 0;
 
   pileTimer = 0;
+  /** world.tick the stock/hoarding tally was taken at (-Infinity: never). */
+  stockTick = -Infinity;
   readonly hoarding: boolean[] = [false, false, false, false];
   readonly stock: number[] = [0, 0, 0, 0];
   readonly population: number[] = [0, 0, 0, 0];

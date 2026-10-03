@@ -13,6 +13,7 @@ import { CHAKRAS, DRUGS } from '../sim/types';
 import type { ChakraId, DrugId } from '../sim/types';
 import type { World } from '../sim/world';
 import { BUILD_INFO, CHAKRA_INFO, DRUG_INFO, TOOL_INFO } from './catalog';
+import { matchScreen, tutorialTarget } from './core';
 import type { UiHost, UiPart } from './core';
 import { el, escapeHtml, fmtCountdown, html, setClass, setDisabled, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
@@ -57,8 +58,10 @@ export class ActionBar implements UiPart {
     this.root = el('div', 'abar', parent);
 
     const strip = el('div', 'tools', this.root);
+    tutorialTarget(strip, 'tools');
     for (const info of TOOL_INFO) {
       const root = el('div', 'tool', strip);
+      if (info.target) tutorialTarget(root, info.target);
       root.title = info.tool === 'building' ? 'Camp building (B cycles the kind)' : info.name;
       el('span', 'tool-key', root, info.key);
       const icon = html('span', 'tool-ic', iconSvg(info.icon), root);
@@ -76,6 +79,7 @@ export class ActionBar implements UiPart {
     for (const chakra of CHAKRAS) {
       const info = CHAKRA_INFO[chakra];
       const root = el('div', 'slot ab', abil);
+      tutorialTarget(root, info.target);
       root.dataset.chakra = chakra;
       el('span', 'slot-key', root, info.key);
       html('span', 'slot-ic', iconSvg(info.icon), root);
@@ -94,6 +98,7 @@ export class ActionBar implements UiPart {
     for (const drug of DRUGS) {
       const info = DRUG_INFO[drug];
       const root = el('div', 'slot drug', drugs);
+      tutorialTarget(root, info.target);
       root.dataset.drug = drug;
       el('span', 'slot-key', root, info.key);
       html('span', 'slot-ic', iconSvg(info.icon), root);
@@ -130,7 +135,7 @@ export class ActionBar implements UiPart {
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
     const fac = world?.factions[s.playerFaction];
-    const visible = s.screen !== 'title' && !!world && !!fac && fac.alive;
+    const visible = matchScreen(s.screen) && !s.spectator && !!world && !!fac && fac.alive;
     show(this.root, visible);
     if (!visible || !world || !fac) return;
     const t = world.time;

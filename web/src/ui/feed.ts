@@ -19,7 +19,7 @@ import type { FactionId, Owner } from '../sim/types';
 import type { World } from '../sim/world';
 import { BUILDING_NAMES } from '../sim/systems/buildings';
 import { CHAKRA_INFO, DRUG_INFO } from './catalog';
-import { DAWN_BANNER_S, factionName } from './core';
+import { DAWN_BANNER_S, factionName, matchScreen, tutorialTarget } from './core';
 import type { UiHost, UiPart } from './core';
 import { el, fmtClock } from './dom';
 
@@ -57,28 +57,46 @@ export class FeedPart implements UiPart {
   private throttles = new Map<string, number>();
   private nameRx: RegExp | null = null;
   private nameColor = new Map<string, string>();
+  /** session.playerNames the tint table was built from (Controls replaces it per match). */
+  private namesFor: Partial<Record<FactionId, string>> | null = null;
 
   constructor(host: UiHost, parent: HTMLElement) {
     this.host = host;
     this.list = el('div', 'feed', parent);
+    tutorialTarget(this.list, 'feed');
   }
 
   reset(world: World): void {
     this.aggregates.clear();
     this.throttles.clear();
-    this.nameColor.clear();
-    for (const f of world.factions) this.nameColor.set(f.name, f.css);
-    const names = world.factions.map((f) => f.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    this.nameRx = names.length > 0 ? new RegExp(`(${names.join('|')})`, 'g') : null;
+    this.tintNames(world);
     for (const row of this.rows.values()) row.remove();
     this.rows.clear();
   }
 
+  /**
+   * Characters and, online, the Signifiers' handles are tinted with their camp's colour in feed
+   * lines. Longest first, so a handle inside a character's name never splits it.
+   */
+  private tintNames(world: World): void {
+    const handles = this.host.app.session.playerNames;
+    this.namesFor = handles;
+    this.nameColor.clear();
+    for (const f of world.factions) {
+      this.nameColor.set(f.name, f.css);
+      const handle = handles[f.id];
+      if (handle) this.nameColor.set(handle, f.css);
+    }
+    const names = [...this.nameColor.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    this.nameRx = names.length > 0 ? new RegExp(`(${names.join('|')})`, 'g') : null;
+  }
+
   onEvent(e: GameEvent, w: World): void {
     const s = this.host.app.session;
-    if (s.screen === 'title') return;
-    const P = s.playerFaction;
-    const name = (f: FactionId | null): string => factionName(w, f);
+    if (!matchScreen(s.screen)) return;
+    // A seatless online watcher has no camp: every line reads in the third person.
+    const P: FactionId | null = s.spectator ? null : s.playerFaction;
+    const name = (f: FactionId | null): string => factionName(w, f, s.playerNames);
     switch (e.t) {
       case 'flagPulled':
         if (e.prevOwner === P && e.faction !== P && e.faction !== -1) {
@@ -135,7 +153,7 @@ export class FeedPart implements UiPart {
         else this.host.post(`${name(e.faction)}'s Crystal shattered`, 'good', e.pos);
         break;
       case 'instability':
-        if (e.level !== 'shimmer' && w.inSurvey(e.facet, P) && this.throttle('instability', 12_000)) {
+        if (e.level !== 'shimmer' && P !== null && w.inSurvey(e.facet, P) && this.throttle('instability', 12_000)) {
           this.host.post(
             e.level === 'storm' ? 'A phason storm rages inside your Survey' : 'Crystal discharge: interference inside your Survey',
             'warn',
@@ -162,12 +180,12 @@ export class FeedPart implements UiPart {
         } else {
           const f = w.factions[e.faction];
           this.host.banner({
-            title: `${f ? f.name.toUpperCase() : 'A RIVAL'} ELIMINATED`,
-            sub: e.by === P ? 'Their Survey is yours' : e.by !== null ? `Overwritten by ${name(e.by)}` : 'The Crystal reclaims their Survey',
+            title: `${f ? name(f.id).toUpperCase() : 'A RIVAL'} ELIMINATED`,
+            sub: P !== null && e.by === P ? 'Their Survey is yours' : e.by !== null ? `Overwritten by ${name(e.by)}` : 'The Crystal reclaims their Survey',
             tone: 'epic',
             color: f?.css,
           });
-          this.host.post(`${name(e.faction)} has been eliminated`, e.by === P ? 'epic' : 'info');
+          this.host.post(`${name(e.faction)} has been eliminated`, P !== null && e.by === P ? 'epic' : 'info');
         }
         break;
       case 'burn':
@@ -184,7 +202,10 @@ export class FeedPart implements UiPart {
         if (e.reason === 'dawn') {
           this.host.banner({
             title: 'DAWN OVER THE BURN',
-            sub: e.faction === P ? 'The Survey is completed. Your Survey stands dominant.' : `${name(e.faction)}'s Survey stands dominant.`,
+            sub:
+              P !== null && e.faction === P
+                ? 'The Survey is completed. Your Survey stands dominant.'
+                : `${name(e.faction)}'s Survey stands dominant.`,
             tone: 'dawn',
             dur: DAWN_BANNER_S,
             urgent: true,
@@ -197,7 +218,7 @@ export class FeedPart implements UiPart {
         } else if (e.kind === 'hippie' && e.faction === P) {
           const who = w.hippies.get(e.id)?.name ?? 'A Signifier';
           this.bump('ko', 'warn', flat(e.pos), (n) => (n > 1 ? `${n} of your Signifiers were knocked out` : `${who} was knocked out`));
-        } else if (e.kind === 'avatar' && e.faction !== -1 && e.by !== -1 && e.by === w.factions[P]?.avatarId) {
+        } else if (e.kind === 'avatar' && P !== null && e.faction !== -1 && e.by !== -1 && e.by === w.factions[P]?.avatarId) {
           this.host.post(`You knocked ${name(e.faction)} Flagless`, 'good', flat(e.pos));
         }
         break;
@@ -301,6 +322,7 @@ export class FeedPart implements UiPart {
   }
 
   update(world: World | null, now: number): void {
+    if (world && this.host.app.session.playerNames !== this.namesFor) this.tintNames(world);
     for (const [key, a] of this.aggregates) {
       if (now - a.firstAt < AGG_WINDOW_MS) continue;
       this.host.post(a.render(a.count), a.severity, a.pos);
@@ -382,11 +404,11 @@ export class FeedPart implements UiPart {
     return o === -1 ? null : o;
   }
 
-  private onHearthStage(e: Extract<GameEvent, { t: 'hearthStage' }>, w: World, P: FactionId): void {
-    const name = (f: FactionId | null): string => factionName(w, f);
+  private onHearthStage(e: Extract<GameEvent, { t: 'hearthStage' }>, w: World, P: FactionId | null): void {
+    const name = (f: FactionId | null): string => factionName(w, f, this.host.app.session.playerNames);
     const owner = this.ownerOf(e.faction);
     const pos = w.buildings.get(e.hearthId)?.pos;
-    if (owner === P) {
+    if (P !== null && owner === P) {
       switch (e.stage) {
         case 'threatened':
           if (e.prev === 'safe') this.host.post(`Your Hearth is threatened by ${name(e.attacker)}`, 'warn', pos);
@@ -411,7 +433,7 @@ export class FeedPart implements UiPart {
         default:
           break;
       }
-    } else if (e.attacker === P && owner !== null) {
+    } else if (P !== null && e.attacker === P && owner !== null) {
       const color = w.factions[owner]?.css;
       switch (e.stage) {
         case 'threatened':

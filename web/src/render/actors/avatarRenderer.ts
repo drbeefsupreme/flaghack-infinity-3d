@@ -7,7 +7,7 @@
  * a contest aura, derived from capture's own rule since the sim treats it as passive), GCC
  * pushing, hit flinch, stun, and KO collapse → dissolve → hidden → materialize on respawn.
  * The quiver bundle on the back shows one small Flag per carried Flag. Acid Cop Vision shows
- * rival avatars through walls.
+ * rival avatars through walls. Online, each human seat's handle floats above its avatar.
  */
 import * as THREE from 'three';
 import { AVATAR, CAPTURE } from '../../sim/constants';
@@ -19,6 +19,7 @@ import { AvatarFx } from './avatarFx';
 import { BONE_NAMES, STAFF_TOP, buildAvatarRig, createAvatarMaterial, type AvatarRig, type AvatarUniforms } from './avatarModels';
 import type { FlagRenderer } from './flagRenderer';
 import type { ActorView } from './lod';
+import type { Nameplates } from './nameplates';
 import { RING, type UnitRings } from './overlays';
 import { bump, clamp01, damp, easeOutCubic, hash01, kickDip } from './util';
 
@@ -48,6 +49,10 @@ const SWING_TIME = 0.5;
 const THROW_TIME = 0.45;
 const PLANT_TIME = 0.55;
 const HIT_TIME = 0.3;
+/** Gap between the top of the headgear and a nameplate's tail (m). */
+const PLATE_CLEARANCE = 0.12;
+/** Frames between nameplate line-of-sight tests per avatar (staggered: ~10 Hz at 60 fps). */
+const PLATE_SIGHT_PERIOD = 6;
 const KO_FALL = 0.55;
 const KO_DISSOLVE = 0.7;
 const RESPAWN_TIME = 0.6;
@@ -89,6 +94,9 @@ interface AvatarVis {
   hold: number;
   /** Smoothed 0..1 weight of DJ Scarecrow's beat-locked groove (idle and standing only). */
   groove: number;
+  /** Nameplate: last line-of-sight result (0/1) and its smoothed opacity. */
+  plateSight: number;
+  plateSeen: number;
   anchor: THREE.Vector3;
 }
 
@@ -116,6 +124,7 @@ export class AvatarRenderer {
   private readonly view: ActorView;
   private readonly flags: FlagRenderer;
   private readonly rings: UnitRings;
+  private readonly plates: Nameplates;
   private readonly fx: AvatarFx;
   /** Shared by the skinned avatars: three's default depth material would switch variants. */
   private readonly depthMaterial = new THREE.MeshDepthMaterial();
@@ -124,6 +133,7 @@ export class AvatarRenderer {
   private readonly colors: THREE.Color[];
   private readonly time: THREE.IUniform<number> = { value: 0 };
   private readonly beat: THREE.IUniform<number> = { value: 0 };
+  private frame = 0;
   private readonly m1 = new THREE.Matrix4();
   private readonly m2 = new THREE.Matrix4();
   private readonly m3 = new THREE.Matrix4();
@@ -133,11 +143,19 @@ export class AvatarRenderer {
   private readonly e1 = new THREE.Euler();
   private readonly anchors: Map<EntityId, THREE.Vector3>;
 
-  constructor(ctx: RenderContext, view: ActorView, flags: FlagRenderer, rings: UnitRings, anchors: Map<EntityId, THREE.Vector3>) {
+  constructor(
+    ctx: RenderContext,
+    view: ActorView,
+    flags: FlagRenderer,
+    rings: UnitRings,
+    plates: Nameplates,
+    anchors: Map<EntityId, THREE.Vector3>,
+  ) {
     this.ctx = ctx;
     this.view = view;
     this.flags = flags;
     this.rings = rings;
+    this.plates = plates;
     this.anchors = anchors;
     this.colors = ctx.world.factions.map((f) => new THREE.Color(f.color));
     this.fx = new AvatarFx(ctx.scene, Math.max(4, ctx.world.factions.length));
@@ -177,6 +195,7 @@ export class AvatarRenderer {
     const w = ctx.world;
     const t = ctx.time;
     this.time.value = t;
+    this.frame++;
     // Beat-pulsed glow (DJ Scarecrow's headphones and EQ): attack on the kick, then decay.
     const phase = ctx.beat - Math.floor(ctx.beat);
     this.beat.value = (1 - phase) * (1 - phase) * (1 - phase);
@@ -186,7 +205,7 @@ export class AvatarRenderer {
     for (const av of w.avatars.values()) {
       const v = this.byId.get(av.id) ?? this.create(av);
       this.animate(v, av, dt);
-      this.place(v, av, acid);
+      this.place(v, av, acid, dt);
     }
     this.fx.end(t, this.colors);
   }
@@ -270,6 +289,8 @@ export class AvatarRenderer {
       channel: 0,
       hold: 0,
       groove: 0,
+      plateSight: 0,
+      plateSeen: 0,
       anchor: new THREE.Vector3(av.pos.x, av.pos.y + 1.9, av.pos.z),
     };
     this.byId.set(av.id, v);
@@ -672,7 +693,41 @@ export class AvatarRenderer {
     return false;
   }
 
-  private place(v: AvatarVis, av: Avatar, acid: boolean): void {
+  /**
+   * Clear line from the eye to a point. Map obstacles, buildings and build pieces block it
+   * (units do not), except sculptures: their movement shapes wrap open frames (pinwheels,
+   * spirals, arches) that you see straight through. CollisionWorld.raycast allocates its hit
+   * record only when something is in the way, and callers stagger these queries at ~10 Hz.
+   */
+  private inSight(x: number, y: number, z: number): boolean {
+    const w = this.ctx.world;
+    const eye = this.view.eye;
+    let ox = eye.x;
+    let oy = eye.y;
+    let oz = eye.z;
+    const dx = x - ox;
+    const dy = y - oy;
+    const dz = z - oz;
+    const d = Math.hypot(dx, dy, dz);
+    // Stop just short of the target so the deck or ramp it stands on never counts.
+    let reach = d - 0.3;
+    let ignore: number | undefined;
+    for (let pass = 0; pass < 3 && reach > 0.2; pass++) {
+      const hit = w.collision.raycast(ox, oy, oz, dx, dy, dz, reach, ignore);
+      if (!hit) return true;
+      const obstacle = hit.tag <= -1 ? w.map.obstacles[-1 - hit.tag] : undefined;
+      if (!obstacle || obstacle.kind !== 'art') return false;
+      // Continue from where the ray entered the sculpture, ignoring it.
+      ox = hit.x;
+      oy = hit.y;
+      oz = hit.z;
+      reach -= hit.dist;
+      ignore = hit.tag;
+    }
+    return reach <= 0.2;
+  }
+
+  private place(v: AvatarVis, av: Avatar, acid: boolean, dt: number): void {
     const ctx = this.ctx;
     const t = ctx.time;
     const groundAt = ctx.shared.groundOffset;
@@ -694,6 +749,22 @@ export class AvatarRenderer {
       this.rings.push(av.pos.x, av.pos.y + gy + 0.035, av.pos.z, 0.95, color, 0.85 + 0.8 * v.channel, RING.avatar, v.slot * 0.25);
       this.fx.aura(av.pos.x, av.pos.y + gy, av.pos.z, v.channel, color, 0.85);
       this.pushQuiver(v, av);
+    }
+
+    // Online nameplate: every seat with a handle; your own only from the Command View table.
+    // Plates draw over the scene, so a staggered line-of-sight test to the head keeps walls
+    // from leaking rivals' positions (Acid Cop Vision and spectators see through them).
+    const session = ctx.session;
+    const own = !session.spectator && v.slot === session.playerFaction;
+    if (!v.down && (!own || session.viewBlend > 0.5) && this.plates.has(v.slot)) {
+      if (own || acid || session.spectator) v.plateSight = 1;
+      else if ((this.frame + v.slot * 2) % PLATE_SIGHT_PERIOD === 0) v.plateSight = this.inSight(v.anchor.x, v.anchor.y, v.anchor.z) ? 1 : 0;
+      v.plateSeen += (v.plateSight - v.plateSeen) * damp(10, dt);
+      const alpha = v.plateSeen * (1 - v.u.uDissolve.value);
+      this.plates.push(v.slot, av.pos.x, av.pos.y + gy + v.rig.style.crown + PLATE_CLEARANCE, av.pos.z, alpha);
+    } else {
+      v.plateSight = 0;
+      v.plateSeen = 0;
     }
 
     // Swing trail: hand → finial, bright only through the strike.

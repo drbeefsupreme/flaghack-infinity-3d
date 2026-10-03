@@ -8,6 +8,7 @@ import { RETRANSMIT_COOLDOWN } from '../sim/constants';
 import type { EntityId, HippieStatus } from '../sim/types';
 import type { World } from '../sim/world';
 import { RETRANSMIT_INFO, STATUS_INFO } from './catalog';
+import { tutorialTarget } from './core';
 import type { UiHost, UiPart } from './core';
 import { button, el, html, setAttr, setClass, setDisabled, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
@@ -44,6 +45,7 @@ export class Roster implements UiPart {
   constructor(host: UiHost, parent: HTMLElement) {
     this.host = host;
     this.root = el('div', 'panel roster ix', parent);
+    tutorialTarget(this.root, 'degen-roster');
     const title = el('div', 'panel-title', this.root, 'D.E.G.E.N. Roster');
     el('span', 'panel-sub', title, "know what they're up to");
     button(
@@ -109,7 +111,7 @@ export class Roster implements UiPart {
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
     const fac = world?.factions[s.playerFaction];
-    const visible = s.screen === 'playing' && !!world && !!fac && fac.alive && (s.view === 'command' || s.panels.degen);
+    const visible = s.screen === 'playing' && !s.spectator && !!world && !!fac && fac.alive && (s.view === 'command' || s.panels.degen);
     show(this.root, visible);
     if (!visible || !world || !fac) return;
 

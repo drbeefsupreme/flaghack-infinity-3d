@@ -33,6 +33,10 @@ export const MAX_NAME_LENGTH = 24;
 export const MAX_CHAT_LENGTH = 280;
 /** Largest client message the host accepts (bytes); bigger frames close the socket. */
 export const MAX_CLIENT_MESSAGE_BYTES = 64 * 1024;
+/** Longest lobby map seed the host keeps (code points). */
+export const MAX_SEED_LENGTH = 64;
+/** Most commands one `input` frame may carry; the host drops bigger frames whole, so spill extras into the next frame. */
+export const MAX_FRAME_COMMANDS = 16;
 /** Seats are the four factions; further players spectate. */
 export const SEAT_COUNT = 4;
 

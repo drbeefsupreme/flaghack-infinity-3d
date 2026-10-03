@@ -7,8 +7,9 @@ supersedes-engine-decision: Godot-first (user directed a 3D three.js build on 20
 
 # Flaghack Infinity 3D
 
-A fast, 3D, single-player 1v1v1v1 vexillomantic action-strategy game in the browser
-(three.js + TypeScript, `web/`). You are a vexillomancer at a burn. You throw, plant,
+A fast, 3D 1v1v1v1 vexillomantic action-strategy game in the browser (three.js +
+TypeScript, `web/`), played solo against NPC rivals or online through a host a player runs
+on their own machine (§16). You are a vexillomancer at a burn. You throw, plant,
 pull and steal yellow Survey Flags on an invisible aperiodic **Ley Lattice**, build
 Fortnite-speed structures, command hippies from the **Geomantic Command Center**, and
 conquer rival camps by enclosing their Flag Hearth inside your Survey until it is
@@ -449,6 +450,9 @@ web/src/
               command view, build mode, session state
   ui/         DOM HUD and screens (reads World + Session, dispatches Commands)
   audio/      procedural WebAudio (consumes GameEvents + World)
+  net/        multiplayer protocol, validation, snapshot codec, mirror, interpolation, prediction
+  tutorial/   Training Burn director, course, lesson scripts (§17)
+web/server/   Node host: static client + /api/info + /ws on one port, lobby, authoritative match
 ```
 
 Rules:
@@ -469,5 +473,77 @@ Rules:
   JS split, draw calls, triangles, program-variant switches). Each yields a single score,
   so they plug into the harness `/ratchet` hill-climb. Measure on a hardware-GPU Chrome
   (`--use-angle=vulkan`); the shared headless browser is SwiftShader.
-- Tests: vitest for lattice/survey/capture/AI-planner invariants and a headless full
-  match (4 AI factions) that must reach a winner.
+- Tests: vitest for lattice/survey/capture/AI-planner invariants, a headless full
+  match (4 AI factions) that must reach a winner, per-seat AI equivalence, snapshot
+  replication (host world vs. client mirror), message validation, the host over real
+  sockets (admission, throttles, rejoin, NPC hand-over), and the whole Training Burn
+  course played by a scripted trainee.
+
+## 16. Multiplayer (host-authoritative)
+
+- **Topology.** One player runs the host (`./host.sh --password …`; Node 22 or 20.19+). It
+  serves the built client (`web/dist`), `GET /api/info` and a WebSocket at `/ws` on one port
+  (default 8787) and runs the only `Simulation`, plus `createAi(world, [f])` for every seat
+  without a connected human. Players join from a browser at the host's address; the page
+  probes `/api/info` to switch to online mode. Plain `http://` works (nothing used is
+  secure-context-only); over the internet: port forwarding or a Cloudflare quick tunnel.
+- **Why not lockstep.** The sim is deterministic only within one JS engine: `Math.sin`,
+  `Math.exp` and friends may differ in the last bit across engines, and Survey geometry
+  amplifies that into different worlds. Clients therefore never simulate a match: they
+  mirror the host.
+- **Wire** (`net/protocol.ts`, JSON, `PROTOCOL_VERSION`, permessage-deflate). On match start
+  a client gets `MatchOptions`, builds the world with `createMatch(options)`, then applies a
+  full snapshot (≈46 KB at 2:00) and delta frames at `NET_HZ` = 30 (every second sim tick):
+  changed entities, quantized Survey arrays (index/value pairs, whole above 30% change),
+  events and the seat's input ack. A frame is ≈3 KB raw, ≈1.4 KB compressed; encoding takes
+  0.2–0.4 ms on the host, applying 0.06–0.13 ms on a client.
+- **Client** (`net/client.ts`, `mirror.ts`, `interp.ts`, `predict.ts`). `NetMirror` applies
+  frames to a local `World` that only render, UI and audio read. `PlaybackClock` plays it
+  ≈2.5 frame intervals behind the host (50–250 ms, adapting to jitter) and interpolates
+  motion. The player's own vexillomancer is predicted: `AvatarPredictor` runs
+  `stepAvatarMotion` on local input and replays unacknowledged input from each host ack;
+  corrections slide over 0.12 s and snap beyond 3 m (`?predict=0` turns prediction off).
+- **Input.** Clients send input frames (avatar input + at most 16 Commands). The host
+  validates every message (`net/validate.ts`: shapes, finite numbers, ranges, lengths,
+  unknown keys), queues it per seat and stamps Commands with the seat's own faction. Each
+  seat may issue 60 Commands/s (burst 120).
+- **Lobby and seats.** The first player to join leads: NPC difficulty, seed, start, back to
+  the lobby. Seats fill in join order; later arrivals spectate and follow a camp (`[` `]`).
+  During a burn a spectator, or a player whose camp fell, can take over any NPC-held camp
+  that still stands ("Play a camp"); the host announces it in chat and its log.
+- **Drops.** A dropped player's vexillomancer stands still; after 5 s an NPC steers the
+  camp until they return. The reclaim token (16 random bytes, kept per tab in
+  `sessionStorage`) restores the same seat after a reload or a dropped connection while the
+  same host process runs; clients retry for up to 60 s. Tokens and the match live only in
+  the host's memory: a restarted host starts a fresh lobby, and retrying clients join it as
+  new players.
+- **Security.** The password is the only gate: SHA-256 digests compared with
+  `timingSafeEqual`; the share link's `#pw=` fragment never reaches the server. Wrong
+  passwords: 5 per minute per address (IPv6 per /64) and 30 per minute per socket peer;
+  `CF-Connecting-IP` is trusted only from loopback (cloudflared). Admission: 16 players;
+  16 sockets awaiting hello in total and 4 per address, cut after 10 s. Client messages
+  ≤ 64 KB; chat 280 characters, 5 lines per 5 s (system lines a player causes count);
+  seat, ready and settings changes one per 500 ms. Static files are confined to
+  `web/dist` (dot segments and dotfiles refused). Player text renders only as text nodes.
+- **Operations.** The host logs joins, denials, seat changes and once a minute the tick
+  cost against the 16.7 ms budget, frame size and NPC seats. Ctrl+C tells every client
+  that the burn is over, then exits.
+
+## 17. Training Burn (the tutorial mission)
+
+- A dedicated local match (`MatchOptions.mode = 'tutorial'`, title button "Training Burn",
+  marked Recommended until the course is walked). No AI runs and victory is off; the
+  director (`tutorial/director.ts`) stages each drill through the sim's own entry points,
+  so staged Flags, loops and grants obey the same rules as played ones.
+- The **Vexillosaint** teaches from the Geomantic Command Center in twelve lessons, each
+  briefing → live objectives (with world markers, off-screen arrows and highlighted
+  HUD elements) → debrief and a **Seal of Flagistan** fragment: Arrival, The Flag, Ley
+  Lines, The Survey, The Implied Flag, The Crystal Turns, The Command Table, Tarp and
+  Timber, Crystals and Chakras, Hold the Hearth, The Overwrite, Graduation. Objectives
+  tick from world state and events, never from UI clicks.
+- Lessons can be restarted, skipped or revisited from the panel; progress (earned seals,
+  graduated) persists in `localStorage` (`fh.training.v1`). Graduation lights The Burn
+  early as a send-off; skipped lessons stay as gaps in the Seal.
+- A scripted trainee (`tutorial/testTrainee.ts`) plays the whole course headless in
+  vitest using only Commands and the director's controls; it graduates in ≈3 minutes
+  of sim time, inside the 18-minute budget.

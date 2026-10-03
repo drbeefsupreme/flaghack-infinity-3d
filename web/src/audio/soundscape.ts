@@ -71,7 +71,7 @@ const NIGHT = 10 * 60;
 
 /** Raw (unsmoothed) targets; GameAudio smooths them into the live Soundscape. */
 export function measure(world: World, session: Session, e: AudioEngine, daylight: number | null, out: Soundscape): void {
-  out.mode = session.screen === 'title' ? 'title' : 'match';
+  out.mode = session.screen === 'title' || session.screen === 'lobby' ? 'title' : 'match';
   const playing = out.mode === 'match';
   const me = session.playerFaction;
   const fs = world.factions[me];

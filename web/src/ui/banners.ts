@@ -1,0 +1,57 @@
+/**
+ * Big centre banners for epic moments (Hearth contained, overwritten, Crystal manifested,
+ * Phason Tide, The Burn, eliminations, chakra alignment). One at a time; a short queue keeps
+ * simultaneous moments readable instead of stacking them.
+ */
+import type { World } from '../sim/world';
+import type { BannerSpec, UiPart } from './core';
+import { el } from './dom';
+
+const MAX_QUEUE = 4;
+
+export class Banners implements UiPart {
+  private layer: HTMLElement;
+  private queue: BannerSpec[] = [];
+  private current: HTMLElement | null = null;
+  private currentUntil = 0;
+
+  constructor(parent: HTMLElement) {
+    this.layer = el('div', 'banners', parent);
+  }
+
+  push(b: BannerSpec): void {
+    // Under a flood (mass captures at The Burn) the oldest pending banner yields.
+    if (this.queue.length >= MAX_QUEUE) this.queue.shift();
+    this.queue.push(b);
+  }
+
+  reset(_world: World): void {
+    this.queue.length = 0;
+    this.current?.remove();
+    this.current = null;
+  }
+
+  update(_world: World | null, now: number): void {
+    if (this.current && now >= this.currentUntil) {
+      this.current.remove();
+      this.current = null;
+    }
+    if (this.current) return;
+    const b = this.queue.shift();
+    if (!b) return;
+    const dur = b.dur ?? 3;
+    const node = el('div', `banner tone-${b.tone}`, this.layer);
+    node.style.setProperty('--dur', `${dur}s`);
+    if (b.color) node.style.setProperty('--accent', b.color);
+    el('div', 'banner-rule', node);
+    el('div', 'banner-title', node, b.title);
+    if (b.sub) el('div', 'banner-sub', node, b.sub);
+    el('div', 'banner-rule', node);
+    this.current = node;
+    this.currentUntil = now + dur * 1000;
+  }
+
+  dispose(): void {
+    this.layer.remove();
+  }
+}

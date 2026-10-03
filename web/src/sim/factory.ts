@@ -2,7 +2,7 @@
  * Entity constructors. Always create entities through these so defaults stay consistent.
  * They register the entity in the World and return it; they do not emit events.
  */
-import { AVATAR, BUILDINGS, FACTION_DEFS, HIPPIE, PING_DURATION } from './constants';
+import { AVATAR, BUILDINGS, FACTION_DEFS, HIPPIE, PIECE, PING_DURATION } from './constants';
 import type { V2, V3 } from './math';
 import type {
   Avatar,
@@ -10,6 +10,7 @@ import type {
   BuildingKind,
   Crystal,
   Difficulty,
+  DroppedBeacon,
   EntityId,
   FactionId,
   FactionState,
@@ -18,6 +19,8 @@ import type {
   Hippie,
   Owner,
   Pile,
+  Piece,
+  PieceKind,
   Ping,
   PingKind,
   Projectile,
@@ -261,5 +264,40 @@ export function spawnZone(
 export function spawnPing(world: World, kind: PingKind, faction: FactionId, at: V2, from: EntityId | -1): Ping {
   const p: Ping = { id: world.newId(), type: 'ping', kind, faction, pos: { ...at }, from, bornAt: world.time, until: world.time + PING_DURATION };
   world.pings.set(p.id, p);
+  return p;
+}
+
+/** A D.E.G.E.N. beacon dropped by a KO'd hippie; picking it up taps `faction`'s mesh. */
+export function spawnBeacon(world: World, faction: FactionId, at: V2, until: number): DroppedBeacon {
+  const b: DroppedBeacon = { id: world.newId(), type: 'beacon', faction, pos: { ...at }, until };
+  world.beacons.set(b.id, b);
+  return b;
+}
+
+/** A Fortnite-style build piece (wall on an edge, deck/ramp on a facet). Shapes are registered by pieces.ts. */
+export function spawnPiece(
+  world: World,
+  kind: PieceKind,
+  faction: Owner,
+  edge: number,
+  facet: number,
+  level: number,
+  rampEdge: number,
+): Piece {
+  const p: Piece = {
+    id: world.newId(),
+    type: 'piece',
+    kind,
+    faction,
+    edge,
+    facet,
+    level,
+    rampEdge,
+    hp: PIECE.hp,
+    maxHp: PIECE.hp,
+    builtAt: world.time,
+    shapeIds: [],
+  };
+  world.pieces.set(p.id, p);
   return p;
 }

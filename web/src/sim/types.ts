@@ -148,7 +148,7 @@ export type AvatarAction =
   | { kind: 'plant'; node: number; t: number }
   | { kind: 'pull'; flagId: EntityId; t: number; dur: number }
   | { kind: 'align'; chakra: ChakraId; t: number }
-  | { kind: 'channel'; what: 'dialectics' | 'hold'; t: number; dur: number };
+  | { kind: 'channel'; what: 'dialectics'; t: number; dur: number };
 
 export interface Avatar {
   id: EntityId;

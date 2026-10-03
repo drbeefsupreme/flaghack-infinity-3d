@@ -15,32 +15,66 @@ import { StructuresRenderer } from './structures/structuresRenderer';
 import { SurveyRenderer } from './survey/surveyRenderer';
 import { VfxRenderer } from './vfx/vfxRenderer';
 
+/**
+ * Longest the canvas holds its last frame while a new scene's programs compile (a hold longer
+ * than this reads as a freeze); after it the scene draws anyway and any program still linking
+ * is waited for on first use.
+ */
+const WARM_CAP_MS = 300;
+
 export class GameRenderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: THREE.PerspectiveCamera;
   ctx: RenderContext | null = null;
   private modules: RenderModule[] = [];
   private post: PostFx | null = null;
+  /**
+   * The previous match's modules, kept until the new scene's materials have acquired their
+   * programs: three keeps a linked program while any material uses it, so identical materials
+   * of the new match reuse them instead of compiling everything again.
+   */
+  private retired: { modules: RenderModule[]; post: PostFx | null } | null = null;
+  /** The scene's programs have not been requested yet (first render after attach). */
+  private needsWarm = false;
+  /** Programs are compiling in parallel: the canvas keeps its last frame until this time. */
+  private warmUntil = 0;
+  /**
+   * Bound while compiling ahead: PostFx draws the scene into a render target, and three keys
+   * programs on whether one is bound (tone mapping and output colour space are left to the
+   * final pass), so precompiling for the canvas would build programs the scene never uses.
+   */
+  private readonly warmTarget = new THREE.WebGLRenderTarget(1, 1);
   private canvas: HTMLCanvasElement;
   private fx: PostFxState = { dust: 0, acid: 0, saffron: 0, crash: 0, damage: 0, command: 0, instability: 0, flash: 0 };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // PostFx renders the scene into its own multisampled target; the canvas only receives the
+    // final full-screen pass, so default-framebuffer MSAA would be wasted fill rate.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    // The link check reads the GL info logs, which waits for every compile to finish on the
+    // main thread: development only.
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
     window.addEventListener('resize', () => this.resize());
     this.resize();
   }
 
-  /** Build all modules for a world (call again for a new match; previous modules are disposed). */
+  /**
+   * Build all modules for a world (call again for a new match). The previous match's modules
+   * are disposed on the new scene's first render, once its programs are requested.
+   */
   attach(world: World, session: Session): void {
-    this.detach();
+    this.disposeRetired();
+    this.retired = { modules: this.modules, post: this.post };
+    this.modules = [];
+    this.post = null;
     const scene = new THREE.Scene();
     const ctx: RenderContext = {
       renderer: this.renderer,
@@ -64,14 +98,24 @@ export class GameRenderer {
     ];
     this.post = new PostFx(ctx);
     this.resize();
+    this.needsWarm = true;
+    this.warmUntil = 0;
   }
 
   detach(): void {
+    this.disposeRetired();
     for (const m of this.modules) m.dispose();
     this.modules = [];
     this.post?.dispose();
     this.post = null;
     this.ctx = null;
+  }
+
+  private disposeRetired(): void {
+    if (!this.retired) return;
+    for (const m of this.retired.modules) m.dispose();
+    this.retired.post?.dispose();
+    this.retired = null;
   }
 
   onEvents(events: GameEvent[]): void {
@@ -91,6 +135,21 @@ export class GameRenderer {
     ctx.time += dt;
     this.updateFx(dt);
     for (const m of this.modules) m.update(dt);
+    if (this.needsWarm) {
+      // After one update, so materials the modules create lazily are included. compileAsync
+      // starts every link at once (KHR_parallel_shader_compile) and resolves when all are
+      // done; meanwhile the canvas keeps its last frame and the page stays responsive.
+      this.needsWarm = false;
+      this.warmUntil = performance.now() + WARM_CAP_MS;
+      const target = this.renderer.getRenderTarget();
+      this.renderer.setRenderTarget(this.warmTarget);
+      void this.renderer.compileAsync(ctx.scene, this.camera).then(() => {
+        if (this.ctx === ctx) this.warmUntil = 0;
+      });
+      this.renderer.setRenderTarget(target);
+      this.disposeRetired();
+    }
+    if (performance.now() < this.warmUntil) return;
     this.post?.render(dt);
   }
 

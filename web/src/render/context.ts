@@ -36,6 +36,13 @@ export interface SharedRender {
   fx?: PostFxState;
   /** Camera trauma 0..1: VFX adds on impacts/captures; controls applies and decays it. */
   shake?: number;
+  /**
+   * Set by env every frame (read by actors for Flag cloth, by structures for banners):
+   * x/z = unit downwind direction, strength 0..1.5 (gusting).
+   */
+  wind?: { x: number; z: number; strength: number };
+  /** Set by env: unit vector toward the visible sun disc (below the horizon at night). */
+  sunDisc?: THREE.Vector3;
 }
 
 export interface PostFxState {

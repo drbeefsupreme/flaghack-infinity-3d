@@ -37,8 +37,15 @@ NPCs obey the same visible systems, drugs/buildings/chakras all change decisions
 - Map: 300 m × 300 m, x/z ∈ [-150, 150], flat ground at y = 0 (height comes from built
   structures and buildings). A grassy Georgia burn (Alchemy): dirt roads, tents,
   geodesic domes, art installations, porta-potty rows, tree clusters, a pond, sound camps.
-- Four corner camps at (±100, ±100). Faction 0 (player) at (-100, 100)... see
-  `CAMP_CENTERS` in `web/src/sim/constants.ts`.
+- Four corner camps at (±90, ±90): faction 0 (player) at (-90, 90); see `CAMP_CENTERS`
+  in `web/src/sim/constants.ts`.
+- **Conquest corridor.** No Ley Node within `CAMP_CLEAR_RADIUS` (46.7 m) of a camp centre
+  is ever blocked by an obstacle. Two blocked nodes that share a rhombus form a link no
+  loop can cross, so blocked-ground chains could otherwise seal a Hearth forever. The
+  radius is the rival loop radius (24 m) + the longest rhombus diagonal (15.2 m) + the
+  worst Hearth offset (7.5 m): the outline of the facet patch around the home area is
+  then always a plantable loop, on any rhombus tiling and after any phason flips.
+  `web/src/sim/map/corridor.test.ts` asserts this over 24 seeds.
 - Center: **The Flag**, a 26 m wooden effigy flag on the **Omega Node** (a guaranteed
   5-fold focus point). It burns at **The Burn** (sudden death, see §9).
 - Lumber piles (pallets, MOOP heaps) scattered across the map; they deplete and respawn.
@@ -66,9 +73,14 @@ perpendicular position `Σ k_j e⊥_j` with `e⊥_j = (cos 4πj/5, sin 4πj/5)`.
    the planter's faction colour shows as a ribbon at the finial and in ley light.
 2. **Implied Flags (the implied Flag fractal).** If two nodes held by faction F (real or
    implied) have an *exact* midpoint at another free, unblocked node, that node holds an
-   implied Flag of F with order = max(parent orders) + 1. Iterate to order 3. Implied
-   Flags count for Ley Lines, facets, pentacles and enclosure, cannot be pulled, and
-   vanish when a parent goes. A real Flag (any faction) on the node overrides.
+   implied Flag of F with order = max(parent orders) + 1. Iterate to order 3. Parent pairs
+   reach up to 2φ·edge (`IMPLIED_REACH`), so midpoints come from straight runs at two
+   scales: two collinear edges, and two collinear φ·edge steps along thick-rhombus long
+   diagonals (the inflated tiling). That second scale is what makes the fractal cascade;
+   at scale 1 alone no implied Flag ever has an implied child. Implied Flags count for Ley
+   Lines, facets, pentacles and enclosure, cannot be pulled, and vanish when a parent
+   goes. A real Flag (any faction) on the node overrides; two factions implying one node
+   cancel (interference).
 3. **Ley Lines.** An edge whose two nodes are both held by F (real or implied) is F's Ley
    Line.
 4. **Crystallized facets.** A facet whose four nodes are all held by F.
@@ -94,7 +106,8 @@ perpendicular position `Σ k_j e⊥_j` with `e⊥_j = (cos 4πj/5, sin 4πj/5)`.
 - **Phason Tide**: every 75 s (10 s warning: "The Crystal is turning…") ~5% of flippable
   nodes flip, weighted toward high **perpendicular strain**. Strain is the distance of
   the node's perp position outside the canonical acceptance window, so the lattice tends
-  to heal back toward perfect Penrose order.
+  to heal back toward perfect Penrose order. A tide is a **wave**: the chosen nodes flip
+  in order along a seeded direction as a front crosses the map over ~1.8 s.
 - **Observation freezes the Crystal (Zeno).** A node is *observed* for faction F if any
   of the following hold:
   - it is within 12 m of F's vexillomancer;
@@ -240,8 +253,11 @@ Primary labour, the 75% layer.
   - **Gather**: chop a pile, haul lumber to the Hearth.
   - **Defend**: guard Hearth / respond to SOS pings; shove intruders and pull enemy
     Flags inside your Survey.
-  - **Raid**: pull enemy Flags that enclose or threaten your Hearth first, else enemy
-    Flags on the nearest enemy Survey boundary; steal them home.
+  - **Raid**: pull enemy Flags that enclose your Hearth (its critical Flags) first, then
+    rival Flags squatting on your own plan nodes (these are replanted on the spot as
+    yours: "pull, then plant"), then threats near the Hearth, Attack pings, and finally
+    the nearest enemy Survey boundary; other stolen Flags go home to stock. If a camp has
+    no raiders while its plan is blocked, one Survey/Defend hippie clears the blockers.
   - **Ritual**: drum at a Drum Circle.
 
   Idle hippies are distributed proportionally to weights over available work.
@@ -281,17 +297,22 @@ Overwritten → Captured**.
 - **Threatened**: an enemy Survey facet or enemy Ley Line within 30 m.
 - **Contained**: the Hearth's facet is inside an enemy Survey and not inside the
   owner's.
-- **Contested**: inside both the enemy's and the owner's Survey (or the owner's avatar
-  is channelling "Hold the Hearth" within 8 m by standing still).
-- Pressure per attacker 0→100. Base 2.8/s (~36 s). Modifiers:
-  - Contested ×0.4
-  - each defending hippie within 12 m ×0.93 (floor 0.5)
-  - Hearth Ward ×0.6
+- **Contested**: the owner's vexillomancer is alive and **in person** within 8 m of the
+  Hearth ("Hold the Hearth"). The owner's own Survey enclosing its Hearth does not slow
+  pressure (every home ring encloses its Hearth from t = 0); the overlap still builds
+  Crystal instability.
+- Pressure per attacker 0→100. Base 6/s (~17 s bare). Modifiers (all in `CAPTURE`):
+  - Contested ×0.6
+  - each defending hippie within 12 m ×0.93 (floor 0.8)
+  - Hearth Ward ×0.7
   - attacker Crystals within 45 m ×1.15 each
-  - sudden death ×2
+  - captured outpost (held by anyone but its founder) ×1.5
+  - sudden death ×2, then +1 every 120 s after The Burn
 
-  Pressure decays 6/s when not contained. With several attackers, the highest pressure
-  leads the overwrite.
+  Pressure decays 3/s when not contained: a broken loop costs the attacker tempo
+  (~33 s to drain), not the whole siege. With several attackers, the highest pressure
+  leads the overwrite. These values come from 16-seed all-AI sweeps: a closed loop
+  survives a median 4–8 s before defenders pull a wall Flag, so conversion must be quick.
 - **Overwritten** at 100: a 3 s overwrite (cannot be stopped), then **Captured**:
   - the Hearth becomes the captor's outpost Hearth;
   - the loser's buildings become the captor's but disabled until repaired;
@@ -318,8 +339,12 @@ implied node, wall off loop Flags, out-enclose (Contested), Ward, Stabilize, Dia
 - Survey planning tools (plan = the faction's personal Survey Pattern, shown as ghost
   Flags everywhere, filled by Survey hippies):
   - **Node** — toggle individual nodes.
-  - **Enclose** — click any point (e.g. an enemy Hearth); plan the minimum-new-Flag
-    loop around it.
+  - **Enclose** — click any point (e.g. an enemy Hearth); plan the cheapest loop around
+    it. Node cost: 0 already held, 1 free, 3 a rival Flag (pull, then plant), impassable
+    if blocked or Stabilize-protected. Rival Flags usually chain from their home ring to
+    blocked ground, so a planner that refused to cross them would often find no loop at
+    all. The prompt counts both ("21 new Flags · 5 rival Flags to pull") and explains a
+    failure.
   - **Pentacle** — click a revealed focus; plan its 5 neighbours.
   - **Ring** — expand your home Survey by a radius step.
   - **Clear**.
@@ -329,8 +354,9 @@ implied node, wall off loop Flags, out-enclose (Contested), Ward, Stabilize, Dia
 
 Five **Flag chakras**, one per Ley direction (the five pentagrid families) and named for
 the anatomy of a Flag. Align with Ritual at your Hearth: a 4 s channel, interruptible.
-Costs: L1 30, L2 70, L3 130 Ritual. Ritual comes from drumming, Crystals, and Saffron.
-Never from territory size.
+Costs: L1 30, L2 70, L3 130 Ritual. Ritual comes from drumming (0.1/s per drummer, four
+per circle), Crystals (0.08/s each) and Saffron (0.3/s), never from territory size. In
+all-AI play the first alignment lands at ~70–150 s and an L3 near minute 10.
 
 | Key | Chakra | Ability | L1 / L2 / L3 |
 |---|---|---|---|
@@ -422,7 +448,14 @@ Rules:
 - Events: systems call `world.emit(event)`; consumers read `world.drainEvents()` once per
   frame (the app fans them out to render/ui/audio).
 - Performance targets: 60 fps at 1080p on a mid laptop GPU; sim step < 4 ms with ~150
-  hippies. Instanced meshes for hippies, flags, pieces, lattice. Performance work uses a
-  written eval (benchmark script) plus the harness `/ratchet` hill-climb.
+  hippies. Instanced/batched meshes for hippies, flags, pieces, props and lattice;
+  map-wide props are split into 8×8 culling tiles; no material is shared between
+  instanced and non-instanced draws (it forces program re-derivation every frame).
+- Evals (`web/bench/`): `bun bench/sim-eval.ts` (`npm run eval:sim`; p95 tick ms for an
+  all-AI match, per-system breakdown, `--top`, `--probes`), `bun bench/nav-eval.ts`
+  (replays a recorded nav workload), and `bench/render-eval.js` (browser: p95 frame ms,
+  JS split, draw calls, triangles, program-variant switches). Each yields a single score,
+  so they plug into the harness `/ratchet` hill-climb. Measure on a hardware-GPU Chrome
+  (`--use-angle=vulkan`); the shared headless browser is SwiftShader.
 - Tests: vitest for lattice/survey/capture/AI-planner invariants and a headless full
   match (4 AI factions) that must reach a winner.

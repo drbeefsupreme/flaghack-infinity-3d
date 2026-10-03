@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval:sim": "bun bench/sim-eval.ts"
   },
   "dependencies": {
     "@fontsource/bungee": "^5.3.0",

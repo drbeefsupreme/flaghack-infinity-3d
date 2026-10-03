@@ -34,7 +34,12 @@ export type GameEvent =
   | { t: 'surveyChanged'; faction: FactionId; gained: number[]; lost: number[]; size: number }
   | { t: 'phasonFlip'; node: number; from: V2; to: V2; cause: 'tide' | 'ability' | 'storm' }
   | { t: 'tideWarning'; at: number }
-  | { t: 'tide'; flips: number }
+  /**
+   * A Phason Tide begins: `flips` nodes are chosen and turn as a wave front sweeps the burn
+   * along unit vector `dir` over `duration` s (each turn arrives as its own phasonFlip; Flags
+   * observed by their owner hold, so fewer may actually flip).
+   */
+  | { t: 'tide'; flips: number; dir?: V2; duration?: number }
   | { t: 'crystalManifest'; crystalId: EntityId; node: number; faction: FactionId; pos: V2 }
   | { t: 'crystalShatter'; crystalId: EntityId; node: number; faction: FactionId; pos: V2 }
   | { t: 'instability'; facet: number; level: 'shimmer' | 'discharge' | 'storm'; pos: V2 }

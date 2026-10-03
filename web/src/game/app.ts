@@ -88,6 +88,22 @@ export class App implements AppApi {
     this.world?.submit(cmd);
   }
 
+  /**
+   * Debug/eval fast-forward: run AI + simulation for `seconds` of game time synchronously.
+   * Events produced meanwhile are discarded (presentation would otherwise replay minutes of
+   * one-shot effects at once).
+   */
+  fastForward(seconds: number): void {
+    if (!this.sim || !this.world) return;
+    const steps = Math.round(seconds / SIM_DT);
+    for (let i = 0; i < steps && this.world.phase === 'playing'; i++) {
+      this.ai?.update();
+      this.sim.step();
+      if ((i & 255) === 255) this.world.drainEvents();
+    }
+    this.world.drainEvents();
+  }
+
   private load(options: MatchOptions): void {
     const world = createMatch(options);
     this.world = world;

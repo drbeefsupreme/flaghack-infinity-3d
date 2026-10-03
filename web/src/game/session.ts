@@ -4,14 +4,17 @@
  */
 import type { Severity } from '../sim/events';
 import type { V2, V3 } from '../sim/math';
-import type { BuildingKind, Difficulty, EntityId, FactionId, PieceKind } from '../sim/types';
+import type { BuildingKind, Difficulty, EntityId, FactionId, HippieOrder, PieceKind } from '../sim/types';
 
 export type Screen = 'title' | 'playing' | 'paused' | 'ended';
 export type ViewMode = 'action' | 'command';
 /** Action-mode tool (what LMB / E do). */
 export type ToolKind = 'flag' | 'wall' | 'floor' | 'ramp' | 'demolish' | 'building';
-/** Command View Survey planning tool. */
-export type PlanTool = 'select' | 'node' | 'enclose' | 'pentacle' | 'ring';
+/**
+ * Command View Survey planning tool. 'simulacra' = Flag Simulacra targeting: the next two
+ * plan-node clicks become the superposed pair (UI arms it; controls collect + submit).
+ */
+export type PlanTool = 'select' | 'node' | 'enclose' | 'pentacle' | 'ring' | 'simulacra';
 
 export interface AimInfo {
   /** Throw aim held (RMB) or quick-throw preview. */
@@ -40,6 +43,23 @@ export interface HoverInfo {
   facet: number;
   edge: number;
   entity: EntityId | -1;
+}
+
+/** Command View drag-select rectangle in canvas CSS pixels. */
+export interface SelectBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** A just-issued Command View order or plan commit, for a brief ground acknowledgement. */
+export interface OrderMarker {
+  x: number;
+  z: number;
+  kind: HippieOrder['kind'] | 'plan';
+  /** performance.now() when issued. */
+  at: number;
 }
 
 export interface FeedItem {
@@ -88,6 +108,10 @@ export class Session {
   ghost: GhostInfo | null = null;
   /** Nodes previewed by a planning tool before committing (Command View). */
   planPreview: number[] = [];
+  /** Command View LMB drag-select rectangle (UI draws it), or null. */
+  selectBox: SelectBox | null = null;
+  /** Last Command View order/plan click (render draws a fading ground marker). */
+  orderMarker: OrderMarker | null = null;
   pointerLocked = false;
   /** Lattice overlay visible in action mode (L toggles). */
   showLattice = true;

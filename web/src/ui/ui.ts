@@ -5,32 +5,218 @@
  * tools, priorities, selection orders, build menu), chakra ritual screen, codex (Liber HH),
  * pause/settings, end screen, contextual tutorial hints.
  * Owner: UI agent.
+ *
+ * Update discipline: events only touch part state; the DOM is written at <= 10 Hz and the
+ * minimap canvas at <= 15 Hz. The only per-frame write is the drag-select rectangle. The root
+ * never takes pointer events; only real widgets (class `ix`) do, so pointer lock and canvas
+ * input stay with the controls.
  */
 import type { AppApi } from '../game/app';
-import type { GameEvent } from '../sim/events';
+import type { Screen } from '../game/session';
+import type { GameEvent, Severity } from '../sim/events';
+import type { V2 } from '../sim/math';
+import type { World } from '../sim/world';
+import { ActionBar } from './actionbar';
+import { Banners } from './banners';
+import { ChakraScreen } from './chakras';
+import { Codex } from './codex';
+import { CommandPanels } from './command';
+import type { BannerSpec, UiHost, UiLayout, UiPart } from './core';
+import { el, setClass } from './dom';
+import { EndScreen } from './endscreen';
+import { FeedPart } from './feed';
+import { HelpOverlay } from './help';
+import { HudPart, PerfOverlay } from './hud';
+import { Minimap } from './minimap';
+import { PauseMenu } from './pause';
+import { HearthRail } from './rail';
+import { Roster } from './roster';
+import { SettingsPanel } from './settings';
+import { TitleScreen } from './title';
+import { Tutorial } from './tutorial';
+import { LoadingVeil } from './veil';
+import './ui.css';
+
+const TICK_MS = 100;
+const MAP_MS = 1000 / 15;
+/** Virtual canvas the HUD is laid out for; the root zooms to fit the window. */
+const DESIGN_W = 1422;
+const DESIGN_H = 800;
+/** Ignore the Escape press that caused the pause (it can arrive with the pointer-lock exit). */
+const PAUSE_ESC_GRACE_MS = 300;
 
 export class GameUI {
-  private root: HTMLElement;
   private app: AppApi;
-  private title: HTMLElement;
+  private rootEl: HTMLElement;
+  private zoomed: HTMLElement;
+  private hudLayer: HTMLElement;
+  private parts: UiPart[] = [];
+  private hud: HudPart;
+  private minimap: Minimap;
+  private banners: Banners;
+  private veil: LoadingVeil;
+  private world: World | null = null;
+  private screen: Screen | null = null;
+  private lastTick = -Infinity;
+  private lastMap = -Infinity;
+  private pausedAt = 0;
+  private uiMs = 0;
+  private uiMaxMs = 0;
+  private uiMaxWindow = 0;
+  private uiMaxStart = 0;
 
   constructor(root: HTMLElement, app: AppApi) {
-    this.root = root;
     this.app = app;
-    this.title = document.createElement('div');
-    this.title.className = 'title-screen';
-    this.title.innerHTML = '<h1>FLAGHACK ∞</h1><button>Begin the Survey</button>';
-    this.title.querySelector('button')!.addEventListener('click', () => app.startMatch());
-    root.appendChild(this.title);
+    this.rootEl = el('div', 'fh-root', root);
+    this.zoomed = el('div', 'fh-ui', this.rootEl);
+    this.hudLayer = el('div', 'fh-hud', this.zoomed);
+    // Banners sit between the HUD and the modal layer.
+    this.banners = new Banners(this.zoomed);
+    const region = (cls: string): HTMLElement => el('div', `region ${cls}`, this.hudLayer);
+    const layout: UiLayout = {
+      colLeft: region('col-left'),
+      colRight: region('col-right'),
+      topCenter: region('top-center'),
+      center: region('center'),
+      bottomCenter: region('bottom-center'),
+      bottomLeft: region('bottom-left'),
+      bottomRight: region('bottom-right'),
+      overlay: el('div', 'fh-overlay', this.zoomed),
+      raw: el('div', 'fh-raw', this.rootEl),
+    };
+    // Last child of the zoomed layer: the veil covers the HUD, banners and every modal.
+    this.veil = new LoadingVeil(this.zoomed);
+
+    const host: UiHost = {
+      app,
+      banner: (b: BannerSpec) => {
+        if (this.app.session.screen !== 'title') this.banners.push(b);
+      },
+      post: (text: string, severity: Severity, pos?: V2) => this.app.session.post(text, severity, pos),
+      flash: (pos: V2, color: string) => this.minimap.flash(pos, color),
+      veiledLoad: (action: () => void) => this.veil.run(action),
+    };
+
+    this.hud = new HudPart(host, layout);
+    const rail = new HearthRail(host, layout.colLeft);
+    this.minimap = new Minimap(host, layout.colRight);
+    const command = new CommandPanels(host, layout);
+    const roster = new Roster(host, layout.colRight);
+    const tutorial = new Tutorial(host, layout.topCenter);
+    const bar = new ActionBar(host, layout.bottomCenter);
+    const feed = new FeedPart(host, layout.bottomLeft);
+    const perf = new PerfOverlay(host, layout.bottomRight, () => this.uiMs);
+    this.parts.push(this.hud, rail, this.minimap, command, roster, tutorial, bar, feed, perf, this.banners);
+    this.parts.push(
+      new TitleScreen(host, layout.overlay),
+      new EndScreen(host, layout.overlay),
+      new PauseMenu(host, layout.overlay),
+      new ChakraScreen(host, layout.overlay),
+      new HelpOverlay(host, layout.overlay),
+      new Codex(host, layout.overlay),
+      new SettingsPanel(host, layout.overlay),
+    );
+
+    window.addEventListener('resize', this.onResize);
+    window.addEventListener('keydown', this.onKey);
+    this.onResize();
   }
 
-  onEvents(events: GameEvent[]): void {}
+  /** Average and worst UI update cost (ms) for perf overlays and evals. */
+  get perf(): { avgMs: number; maxMs: number } {
+    return { avgMs: this.uiMs, maxMs: this.uiMaxMs };
+  }
 
-  update(dt: number): void {
-    this.title.style.display = this.app.session.screen === 'title' ? '' : 'none';
+  onEvents(events: GameEvent[]): void {
+    const w = this.app.world;
+    if (!w || events.length === 0) return;
+    if (w !== this.world) this.attach(w);
+    for (const e of events) {
+      for (const p of this.parts) p.onEvent?.(e, w);
+    }
+  }
+
+  update(_dt: number): void {
+    const t0 = performance.now();
+    const s = this.app.session;
+    const world = this.app.world;
+    if (world && world !== this.world) this.attach(world);
+    if (s.screen !== this.screen) this.onScreen(this.screen, s.screen, t0);
+
+    this.hud.frame();
+    if (t0 - this.lastTick >= TICK_MS) {
+      this.lastTick = t0;
+      const root = this.rootEl;
+      setClass(root, 'scr-title', s.screen === 'title');
+      setClass(root, 'scr-playing', s.screen === 'playing');
+      setClass(root, 'scr-paused', s.screen === 'paused');
+      setClass(root, 'scr-ended', s.screen === 'ended');
+      setClass(root, 'view-command', s.view === 'command');
+      setClass(root, 'modal-open', s.panels.codex || s.panels.settings || s.panels.chakras || s.panels.help);
+      for (const p of this.parts) p.update(world, t0);
+    }
+    if (t0 - this.lastMap >= MAP_MS) {
+      this.lastMap = t0;
+      this.minimap.draw(world, t0);
+    }
+
+    const ms = performance.now() - t0;
+    this.uiMs = this.uiMs * 0.95 + ms * 0.05;
+    this.uiMaxWindow = Math.max(this.uiMaxWindow, ms);
+    if (t0 - this.uiMaxStart > 1000) {
+      this.uiMaxMs = this.uiMaxWindow;
+      this.uiMaxWindow = 0;
+      this.uiMaxStart = t0;
+    }
+    // After the timing window: the load the veil runs is not UI cost.
+    this.veil.frame(performance.now());
   }
 
   dispose(): void {
-    this.root.innerHTML = '';
+    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('keydown', this.onKey);
+    for (const p of this.parts) p.dispose?.();
+    this.parts = [];
+    this.rootEl.remove();
   }
+
+  private attach(world: World): void {
+    this.world = world;
+    for (const p of this.parts) p.reset?.(world);
+  }
+
+  private onScreen(prev: Screen | null, next: Screen, now: number): void {
+    const panels = this.app.session.panels;
+    if (next === 'title' || (prev === 'title' && next === 'playing')) {
+      // A fresh burn or the attract loop: nothing from the last session stays open.
+      panels.chakras = false;
+      panels.codex = false;
+      panels.help = false;
+      panels.settings = false;
+      panels.degen = false;
+    }
+    if (next === 'ended') {
+      panels.chakras = false;
+      panels.help = false;
+    }
+    if (next === 'paused') this.pausedAt = now;
+    this.screen = next;
+  }
+
+  private onResize = (): void => {
+    const z = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
+    this.zoomed.style.setProperty('zoom', Math.max(0.72, Math.min(1.6, z)).toFixed(3));
+  };
+
+  /** Escape outside of play (title / pause / end), where the controls do not listen. */
+  private onKey = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Escape') return;
+    const s = this.app.session;
+    if (s.screen === 'playing') return;
+    if (s.panels.settings) s.panels.settings = false;
+    else if (s.panels.codex) s.panels.codex = false;
+    else if (s.screen === 'paused' && performance.now() - this.pausedAt > PAUSE_ESC_GRACE_MS) this.app.setPaused(false);
+    else return;
+    ev.preventDefault();
+  };
 }

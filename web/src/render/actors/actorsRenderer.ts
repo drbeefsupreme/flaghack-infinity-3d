@@ -1,63 +1,74 @@
 /**
- * Actors: vexillomancer avatars (balaclava + Moebius hat for Dr. Beef Supreme, distinct
- * silhouettes per rival), instanced hippies with procedural animation and tie-dye variety,
- * every Flag (planted/loose/carried quiver bundles/flying) as instanced yellow cloth with a
- * wind shader and faction ribbon, KO/stun/distracted states, D.E.G.E.N. status icons,
- * dropped beacons, Crystals. Publishes ctx.shared.unitAnchors.
+ * Actors: every Flag (planted / loose / thrown / quiver bundles / over-the-shoulder), the four
+ * vexillomancer avatars, the instanced hippie crowd, D.E.G.E.N. status badges, dropped
+ * beacons and unit rings. Publishes ctx.shared.unitAnchors (head positions by entity id,
+ * vectors reused across frames). Flags and hippies draw at two levels of detail, and only
+ * actors near the camera cast shadows (see lod.ts): about 20 draws regardless of counts.
  * Owner: RenderActors agent.
  */
-import * as THREE from 'three';
+import type * as THREE from 'three';
+import type { GameEvent } from '../../sim/events';
+import type { EntityId } from '../../sim/types';
 import type { RenderContext, RenderModule } from '../context';
+import { AvatarRenderer } from './avatarRenderer';
+import { BeaconRenderer } from './beaconRenderer';
+import { FlagRenderer } from './flagRenderer';
+import { ActorView } from './lod';
+import { HippieRenderer } from './hippieRenderer';
+import { StatusIcons, UnitRings } from './overlays';
 
 export class ActorsRenderer implements RenderModule {
-  private ctx: RenderContext;
-  private flagMesh: THREE.InstancedMesh;
-  private unitMesh: THREE.InstancedMesh;
-  private m = new THREE.Matrix4();
+  private readonly ctx: RenderContext;
+  private readonly anchors = new Map<EntityId, THREE.Vector3>();
+  private readonly view: ActorView;
+  private readonly flags: FlagRenderer;
+  private readonly rings: UnitRings;
+  private readonly icons: StatusIcons;
+  private readonly avatars: AvatarRenderer;
+  private readonly hippies: HippieRenderer;
+  private readonly beacons: BeaconRenderer;
 
   constructor(ctx: RenderContext) {
     this.ctx = ctx;
-    this.flagMesh = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(0.9, 0.6, 0.05).translate(0.45, 2.4, 0),
-      new THREE.MeshBasicMaterial({ color: 0xffd400 }),
-      2048,
-    );
-    this.unitMesh = new THREE.InstancedMesh(
-      new THREE.CapsuleGeometry(0.4, 1, 4, 8).translate(0, 0.9, 0),
-      new THREE.MeshStandardMaterial({ color: 0xffffff }),
-      1024,
-    );
-    ctx.scene.add(this.flagMesh, this.unitMesh);
+    ctx.shared.unitAnchors = this.anchors;
+    this.view = new ActorView(ctx.quality !== 'low');
+    this.flags = new FlagRenderer(ctx, this.view);
+    this.rings = new UnitRings(ctx.scene);
+    this.icons = new StatusIcons(ctx.scene);
+    this.avatars = new AvatarRenderer(ctx, this.view, this.flags, this.rings, this.anchors);
+    this.hippies = new HippieRenderer(ctx, this.view, this.flags, this.rings, this.icons, this.anchors);
+    this.beacons = new BeaconRenderer(ctx, this.rings, this.icons);
   }
 
   update(dt: number): void {
-    const w = this.ctx.world;
-    let i = 0;
-    for (const f of w.flags.values()) {
-      if (f.state !== 'planted' && f.state !== 'loose' && f.state !== 'flying') continue;
-      this.m.makeTranslation(f.pos.x, f.pos.y, f.pos.z);
-      this.flagMesh.setMatrixAt(i++, this.m);
-    }
-    this.flagMesh.count = i;
-    this.flagMesh.instanceMatrix.needsUpdate = true;
-    let u = 0;
-    const c = new THREE.Color();
-    for (const h of w.hippies.values()) {
-      this.m.makeTranslation(h.pos.x, 0, h.pos.z);
-      this.unitMesh.setMatrixAt(u, this.m);
-      this.unitMesh.setColorAt(u++, c.setHex(h.faction >= 0 ? w.factions[h.faction].color : 0xd8d2c0));
-    }
-    for (const a of w.avatars.values()) {
-      this.m.makeScale(1.3, 1.3, 1.3).setPosition(a.pos.x, a.pos.y, a.pos.z);
-      this.unitMesh.setMatrixAt(u, this.m);
-      this.unitMesh.setColorAt(u++, c.setHex(w.factions[a.faction].color));
-    }
-    this.unitMesh.count = u;
-    this.unitMesh.instanceMatrix.needsUpdate = true;
-    if (this.unitMesh.instanceColor) this.unitMesh.instanceColor.needsUpdate = true;
+    const ctx = this.ctx;
+    this.view.update(ctx.camera);
+    // Units first: they append carried Flags and pull-shake requests to the Flag batch.
+    this.flags.begin();
+    this.rings.begin();
+    this.icons.begin();
+    this.avatars.update(dt);
+    this.hippies.update(dt);
+    this.beacons.update();
+    this.flags.end();
+    this.rings.end(ctx.time);
+    this.icons.end(ctx.time, ctx.session.viewBlend > 0.5 ? 1 : 0);
+  }
+
+  onEvent(e: GameEvent): void {
+    this.flags.onEvent(e);
+    this.avatars.onEvent(e);
+    this.hippies.onEvent(e);
   }
 
   dispose(): void {
-    this.ctx.scene.remove(this.flagMesh, this.unitMesh);
+    this.flags.dispose();
+    this.rings.dispose();
+    this.icons.dispose();
+    this.avatars.dispose();
+    this.hippies.dispose();
+    this.beacons.dispose();
+    if (this.ctx.shared.unitAnchors === this.anchors) delete this.ctx.shared.unitAnchors;
+    this.anchors.clear();
   }
 }

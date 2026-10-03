@@ -88,6 +88,20 @@ export interface LatticeOptions {
   isBlockedAt?: (x: number, z: number) => boolean;
 }
 
+/**
+ * Perpendicular-space acceptance window of one pentagrid index: the convex hull (CCW) of the
+ * perp positions of every vertex the pentagrid generated with that index. A node whose perp
+ * position leaves its window is phason strain, i.e. no longer canonical Penrose order.
+ */
+export interface PerpWindow {
+  /** Pentagrid index Σk (1..4). */
+  index: number;
+  xs: number[];
+  ys: number[];
+  /** Depth of the window's centre: distance from the hull centroid to its nearest side. */
+  inradius: number;
+}
+
 export class Lattice {
   readonly edge: number;
   readonly half: number;
@@ -100,6 +114,8 @@ export class Lattice {
   omegaNode = -1;
   /** Increments on every topology change (phason flip). */
   version = 0;
+  /** Acceptance windows for indices 1..4 (`perpWindows[i].index === i + 1`), recorded at generation. */
+  perpWindows: PerpWindow[] = [];
   isBlockedAt: (x: number, z: number) => boolean;
 
   private cellSize: number;
@@ -203,6 +219,24 @@ export class Lattice {
         }
       }
     }
+
+    // Acceptance windows: hull the perp positions of every generated vertex per index, so a
+    // freshly generated node always sits inside its window (zero strain).
+    const perpXs: number[][] = [[], [], [], []];
+    const perpYs: number[][] = [[], [], [], []];
+    for (const k of rawK) {
+      const index = k[0] + k[1] + k[2] + k[3] + k[4];
+      if (index < 1 || index > 4) continue;
+      let px = 0;
+      let py = 0;
+      for (let j = 0; j < 5; j++) {
+        px += k[j] * E_PERP[j][0];
+        py += k[j] * E_PERP[j][1];
+      }
+      perpXs[index - 1].push(px);
+      perpYs[index - 1].push(py);
+    }
+    lat.perpWindows = perpXs.map((xs, i) => perpWindow(i + 1, xs, perpYs[i]));
 
     // Find the 5-fold star vertex nearest the tiling origin: degree 5, all five rhombi thick.
     const rawDeg = new Map<number, { count: number; thick: number }>();
@@ -673,6 +707,52 @@ function signedArea(lat: Lattice, ids: number[]): number {
     s += p.x * q.z - q.x * p.z;
   }
   return s / 2;
+}
+
+/** Convex hull (Andrew's monotone chain, CCW, collinear points dropped) plus its inradius. */
+function perpWindow(index: number, px: number[], py: number[]): PerpWindow {
+  const order = px.map((_, i) => i).sort((a, b) => px[a] - px[b] || py[a] - py[b]);
+  const cross = (o: number, a: number, b: number) =>
+    (px[a] - px[o]) * (py[b] - py[o]) - (py[a] - py[o]) * (px[b] - px[o]);
+  const hull: number[] = [];
+  for (const i of order) {
+    while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], i) <= 0) hull.pop();
+    hull.push(i);
+  }
+  const lowerLen = hull.length + 1;
+  for (let k = order.length - 2; k >= 0; k--) {
+    const i = order[k];
+    while (hull.length >= lowerLen && cross(hull[hull.length - 2], hull[hull.length - 1], i) <= 0) hull.pop();
+    hull.push(i);
+  }
+  hull.pop();
+  const xs = hull.map((i) => px[i]);
+  const ys = hull.map((i) => py[i]);
+
+  // Area centroid, then the distance to the nearest side.
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < xs.length; i++) {
+    const j = (i + 1) % xs.length;
+    const w = xs[i] * ys[j] - xs[j] * ys[i];
+    area += w;
+    cx += (xs[i] + xs[j]) * w;
+    cy += (ys[i] + ys[j]) * w;
+  }
+  let inradius = 0;
+  if (xs.length >= 3 && area > 0) {
+    cx /= 3 * area;
+    cy /= 3 * area;
+    inradius = Infinity;
+    for (let i = 0; i < xs.length; i++) {
+      const j = (i + 1) % xs.length;
+      const ex = xs[j] - xs[i];
+      const ey = ys[j] - ys[i];
+      inradius = Math.min(inradius, (ex * (cy - ys[i]) - ey * (cx - xs[i])) / Math.hypot(ex, ey));
+    }
+  }
+  return { index, xs, ys, inradius };
 }
 
 /** Pentagrid family of the edge a→b: the j with |(b - a)/s · e_j| ≈ 1. */

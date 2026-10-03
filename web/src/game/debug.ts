@@ -35,10 +35,9 @@ export function installDebug(app: App): void {
     abilities,
     buildings,
     pieces,
-    /** Run the simulation synchronously for `seconds` of game time. */
+    /** Run AI + simulation synchronously for `seconds` of game time (events discarded). */
     advance(seconds: number): void {
-      const steps = Math.round(seconds * 60);
-      for (let i = 0; i < steps; i++) app.sim?.step();
+      app.fastForward(seconds);
     },
     /** Grant resources to a faction (default: player). */
     give(res: { lumber?: number; ritual?: number; flags?: number }, faction: FactionId = 0): void {
@@ -55,22 +54,25 @@ export function installDebug(app: App): void {
     },
     /**
      * Plant a loop of fresh Flags for `faction` enclosing (x, z) at ≥ radius, using the shared
-     * planner. Returns the node ids planted.
+     * planner. Nodes the faction already holds are reused for free. Returns the loop's node ids.
      */
     encircle(faction: FactionId, x: number, z: number, radius: number): number[] {
       const w = app.world;
       if (!w) return [];
       const lat = w.lattice;
+      const held = (n: number) => w.survey.nodeFlagOwner[n] === faction;
       const loop = planner.planEnclosure(lat, {
         x,
         z,
         minRadius: radius,
-        cost: (n) => (lat.nodes[n].blocked || w.survey.nodeFlag[n] >= 0 ? Infinity : 1),
+        cost: (n) => (held(n) ? 0 : flags.canPlantAt(w, n, faction) ? 1 : Infinity),
       });
       if (!loop) return [];
       for (const node of loop) {
+        if (held(node)) continue;
         const n = lat.nodes[node];
-        const fl = factory.spawnFlag(w, { state: 'carried', owner: faction, holder: -1, pos: { x: n.x, y: 0, z: n.z } });
+        // Loose (not carried) so a rejected plant leaves an ordinary pickup, not a holderless carried Flag.
+        const fl = factory.spawnFlag(w, { state: 'loose', owner: faction, holder: -1, pos: { x: n.x, y: 0, z: n.z } });
         flags.plantFlag(w, fl.id, node, faction, -1);
       }
       return loop;

@@ -4,7 +4,8 @@
  * stage gets the matching light pools where those cones meet the ground, a colour wash and
  * strobe flashes. Beams are choreographed on the CPU each frame (a few dozen numbers, no
  * allocation) into uniform arrays that both shaders read, so the pools land exactly where
- * the cones hit. Patterns change every 32 beats at 124 BPM; everything fades out by day.
+ * the cones hit. Everything runs on the festival beat (ctx.beat, locked to the music's kick):
+ * patterns change every 32 beats and everything fades out by day.
  */
 import * as THREE from 'three';
 import { hash01 } from '../../../sim/rng';
@@ -17,6 +18,12 @@ const MAX_STAGES = 8;
 const MAX_PER_STAGE = 8;
 const MAX_LEN = 38;
 const PHRASE = 32;
+/**
+ * Largest change of the festival beat clock between two frames (beats) still taken as the
+ * music playing on: about five frames' worth even across a dropped frame. A larger step either
+ * way is the clock re-locking to the music (audio starting or resuming) and is absorbed.
+ */
+const MAX_BEAT_STEP = 1;
 
 const enum Pattern {
   Fan,
@@ -269,6 +276,14 @@ export class StageShow {
   // Per-beam aim scratch (yaw, pitch) for the two patterns being blended.
   private aimA = { yaw: 0, pitch: 0 };
   private aimB = { yaw: 0, pitch: 0 };
+  /**
+   * Whole beats added to the festival clock to get the show's clock. The phase stays the
+   * music's own, so pulses and strobes land on the kick; when the festival clock jumps, the
+   * offset changes by whole beats so the heads carry on from where they were (a skip of at
+   * most half a beat) instead of leaping to another point in the set.
+   */
+  private beatOffset = 0;
+  private lastBeat = Number.NaN;
 
   constructor(env: EnvContext, stages: StageRig[]) {
     this.env = env;
@@ -383,9 +398,14 @@ export class StageShow {
     const on = strength > 0.01 && this.beamCount > 0;
     this.beams.visible = on;
     this.pools.visible = on;
+    // Tracked while dark too, so a re-lock at any hour is absorbed before the lights come on.
+    const festival = this.env.ctx.beat;
+    const step = festival - this.lastBeat;
+    if (Math.abs(step) > MAX_BEAT_STEP) this.beatOffset -= Math.round(step);
+    this.lastBeat = festival;
     if (!on) return;
     this.uStrength.value = strength;
-    const beatNow = this.env.uniforms.uBeat.value;
+    const beatNow = festival + this.beatOffset;
     for (let s = 0; s < this.rigs.length; s++) {
       const r = this.rigs[s];
       // Stages run their sets offset from each other.
@@ -397,7 +417,8 @@ export class StageShow {
       const bar = Math.floor(beat / 4);
       const phase = beat - Math.floor(beat);
       const pulse = 0.62 + 0.38 * Math.exp(-phase * 4);
-      const strobe = pat === Pattern.Drop ? Math.exp(-((beat * 2) % 1) * 10) * blend : 0;
+      // Floor, not %: a re-lock can leave the show clock just below zero, where % goes negative.
+      const strobe = pat === Pattern.Drop ? Math.exp(-(beat * 2 - Math.floor(beat * 2)) * 10) * blend : 0;
       const n = r.stage.fixtures.length;
       for (let k = 0; k < n; k++) {
         const u = n > 1 ? k / (n - 1) - 0.5 : 0;

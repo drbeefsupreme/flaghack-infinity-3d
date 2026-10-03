@@ -12,7 +12,7 @@ import type { GameEvent } from '../../sim/events';
 import type { RenderContext, RenderModule } from '../context';
 import { burnStartFor } from './burn/burnTimeline';
 import { Effigy } from './burn/effigy';
-import { BURN_CHAR_SECONDS, STAGE_BPM } from './envTypes';
+import { BURN_CHAR_SECONDS } from './envTypes';
 import type { BurnState, EnvContext, EnvPart } from './envTypes';
 import { GrassField } from './grass';
 import { Ground } from './ground';
@@ -120,7 +120,7 @@ export class EnvRenderer implements RenderModule {
     const u = env.uniforms;
     u.uTime.value = ctx.time;
     u.uNight.value = day.night;
-    u.uBeat.value = (ctx.time * STAGE_BPM) / 60;
+    u.uBeat.value = ctx.beat;
     u.uBurn.value = burn.progress;
     u.uSunColor.value.copy(day.lightColor).multiplyScalar(day.lightIntensity);
     // Wind slowly veers and gusts (strength 0.3..0.95); one wind for every swaying thing.

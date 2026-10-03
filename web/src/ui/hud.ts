@@ -168,7 +168,7 @@ export class HudPart implements UiPart {
     // ── Spectator pill (after elimination) ──
     this.spectate = el('div', 'spectate ix is-off', layout.topCenter);
     el('span', 'spectate-l', this.spectate, 'Spectating · your Survey has been overwritten');
-    button('btn btn-small', this.spectate, 'Title', () => this.host.veiledLoad(() => this.host.app.quitToTitle()));
+    button('btn btn-small', this.spectate, 'Title', () => this.host.veiledLoad(() => this.host.app.quitToTitle()), 'back');
 
     this.selectBox = el('div', 'selbox is-off', layout.raw);
     this.nodes.push(frame, plaque, cmi, this.cross, this.ring, this.prompt, this.hint, this.spectate, this.selectBox);

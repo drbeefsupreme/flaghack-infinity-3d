@@ -3,6 +3,7 @@
  * helper so a 10 Hz refresh only touches nodes whose value actually changed (no layout reads,
  * no redundant style invalidation).
  */
+import type { SfxIntent } from './sfx';
 
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -29,9 +30,20 @@ export function html<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-export function button(cls: string, parent: Element | null, markup: string, onClick: (ev: MouseEvent) => void): HTMLButtonElement {
+/**
+ * A UI button. `sfx` declares the sound intent the root's delegated listener plays for it
+ * (see sfx.ts); without it the button plays the plain click.
+ */
+export function button(
+  cls: string,
+  parent: Element | null,
+  markup: string,
+  onClick: (ev: MouseEvent) => void,
+  sfx?: SfxIntent,
+): HTMLButtonElement {
   const b = html('button', cls, markup, parent);
   b.type = 'button';
+  if (sfx) b.dataset.sfx = sfx;
   b.addEventListener('click', (ev) => {
     ev.stopPropagation();
     // Keys belong to the game: a mouse-clicked button must not keep focus, or Space (jump) would
@@ -40,6 +52,14 @@ export function button(cls: string, parent: Element | null, markup: string, onCl
     onClick(ev);
   });
   return b;
+}
+
+/**
+ * Mark a control whose action is blocked right now: its handler shows the reason instead of
+ * acting, and the delegated sound listener plays the error blip for it.
+ */
+export function setDisabled(node: Element, disabled: boolean): void {
+  setAttr(node, 'aria-disabled', disabled ? 'true' : 'false');
 }
 
 export function setText(node: HTMLElement, text: string): void {

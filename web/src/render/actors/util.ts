@@ -5,8 +5,15 @@
  */
 import type * as THREE from 'three';
 
-/** Festival tempo (126 BPM) that dancers, drummers and glowing headphones lock to. */
-export const BEAT_HZ = 126 / 60;
+/**
+ * Body bounce on the festival beat clock (RenderContext.beat, in beats): 1 on the kick (knees
+ * bent, head down), easing up to 0 at 65% of the beat and dropping back into the next kick.
+ * Smooth (C1) across beats, so beat-locked layers need no extra smoothing.
+ */
+export function kickDip(beat: number): number {
+  const f = beat - Math.floor(beat);
+  return 0.5 + 0.5 * Math.cos(2 * Math.PI * Math.pow(f, 1.6));
+}
 
 /**
  * The scene has no environment map, so strongly metallic surfaces reflect nothing and read as

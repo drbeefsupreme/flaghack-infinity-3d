@@ -219,8 +219,9 @@ export function buildHippieGeometry(): THREE.BufferGeometry {
   b.with(tag(PART.armR, SLOT.wood, variant(CAT.prop, PROP.hammer))).seg([hx, 0.92, 0.03], [hx, 0.6, 0.03], 0.016, 0.015, 5);
   b.with(tag(PART.armR, SLOT.metal, variant(CAT.prop, PROP.hammer))).box([hx, 0.62, 0.035], [0.05, 0.05, 0.15]);
   for (const x of [0.11, -0.11]) {
-    b.with(tag(PART.hips, SLOT.wood, variant(CAT.prop, PROP.bongo))).seg([x, 0.42, 0.38], [x, 0.72, 0.38], 0.095, x > 0 ? 0.12 : 0.105, 7);
-    b.with(tag(PART.hips, SLOT.drumskin, variant(CAT.prop, PROP.bongo))).seg([x, 0.72, 0.38], [x, 0.73, 0.38], 0.12, x > 0 ? 0.12 : 0.105, 7);
+    // Tall enough that a kneeling drummer's hands land on the skin (see the drum strokes).
+    b.with(tag(PART.hips, SLOT.wood, variant(CAT.prop, PROP.bongo))).seg([x, 0.42, 0.38], [x, 0.8, 0.38], 0.095, x > 0 ? 0.12 : 0.105, 7);
+    b.with(tag(PART.hips, SLOT.drumskin, variant(CAT.prop, PROP.bongo))).seg([x, 0.8, 0.38], [x, 0.81, 0.38], 0.12, x > 0 ? 0.12 : 0.105, 7);
   }
   b.with(tag(PART.torso, SLOT.lumber, variant(CAT.prop, PROP.lumber)))
     .box([-0.2, 1.5, 0.02], [0.09, 0.05, 1.15], [0.05, 0.1, 0])
@@ -291,7 +292,7 @@ export function buildHippieFarGeometry(): THREE.BufferGeometry {
   b.with(tag(PART.armR, SLOT.wood, variant(CAT.prop, PROP.hammer))).seg([hx, 0.92, 0.03], [hx, 0.6, 0.03], 0.018, 0.017, 3, 1, true);
   b.with(tag(PART.armR, SLOT.metal, variant(CAT.prop, PROP.hammer))).box([hx, 0.62, 0.035], [0.05, 0.05, 0.15]);
   for (const x of [0.11, -0.11]) {
-    b.with(tag(PART.hips, SLOT.wood, variant(CAT.prop, PROP.bongo))).seg([x, 0.42, 0.38], [x, 0.73, 0.38], 0.095, x > 0 ? 0.12 : 0.105, 5, 1, true);
+    b.with(tag(PART.hips, SLOT.wood, variant(CAT.prop, PROP.bongo))).seg([x, 0.42, 0.38], [x, 0.81, 0.38], 0.095, x > 0 ? 0.12 : 0.105, 5, 1, true);
   }
   b.with(tag(PART.torso, SLOT.lumber, variant(CAT.prop, PROP.lumber))).box([-0.2, 1.53, 0.02], [0.2, 0.1, 1.1], [0.04, 0.05, 0]);
 

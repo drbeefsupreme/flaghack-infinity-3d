@@ -20,6 +20,13 @@ export interface RenderContext {
   sunDir: THREE.Vector3;
   /** 1 = full day, 0 = deep night (set by the env module each frame). */
   daylight: number;
+  /**
+   * Festival beat clock in beats (floor = beat index, fract = phase within the beat) at
+   * FESTIVAL_BPM. Set by the orchestrator each frame before modules update: locked to the
+   * music's audible kick while audio runs, else derived from `time`. Anything that pulses
+   * "on the beat" reads this, never its own clock.
+   */
+  beat: number;
   /** Cross-module registry for presentation-only data (documented keys only). */
   shared: SharedRender;
 }

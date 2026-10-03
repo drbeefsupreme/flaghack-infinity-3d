@@ -12,7 +12,7 @@ import type { ChakraId } from '../sim/types';
 import type { World } from '../sim/world';
 import { ALIGN_NOTE, CHAKRA_INFO } from './catalog';
 import type { UiHost, UiPart } from './core';
-import { button, el, escapeHtml, html, setClass, setText, setVar, show } from './dom';
+import { button, el, escapeHtml, html, setClass, setDisabled, setText, setVar, show } from './dom';
 import { ICONS, iconSvg } from './icons';
 
 const CX = 220;
@@ -56,7 +56,7 @@ function diagramSvg(): string {
     leaders += `<path class="ck-lead ck-lead-${c}" d="M${x.toFixed(1)} ${y.toFixed(1)} L${ax} ${ay}"/><circle class="ck-anchor ck-anchor-${c}" cx="${ax}" cy="${ay}" r="3.2"/>`;
     const labelY = y + (y > CY ? 52 : -40);
     nodes +=
-      `<g class="ck-node" data-chakra="${c}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">` +
+      `<g class="ck-node" data-chakra="${c}" data-sfx="pick" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">` +
       `<circle class="ck-halo" r="38"/><circle class="ck-disc" r="30"/>` +
       `<svg x="-15" y="-17" width="30" height="30" viewBox="0 0 24 24" class="ic" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[info.icon]}</svg>` +
       `<text class="ck-key" y="23">${info.key}</text>` +
@@ -104,9 +104,15 @@ export class ChakraScreen implements UiPart {
     const head = el('div', 'modal-head', box);
     el('h2', '', head, 'The Five Flag Chakras');
     this.ritual = el('span', 'modal-meta num', head, '');
-    button('panel-x', head, iconSvg('close'), () => {
-      this.host.app.session.panels.chakras = false;
-    });
+    button(
+      'panel-x',
+      head,
+      iconSvg('close'),
+      () => {
+        this.host.app.session.panels.chakras = false;
+      },
+      'back',
+    );
     const body = el('div', 'chakra-body', box);
     const diagram = html('div', 'chakra-diagram', diagramSvg(), body);
     for (const g of diagram.querySelectorAll<SVGGElement>('.ck-node')) {
@@ -123,11 +129,20 @@ export class ChakraScreen implements UiPart {
     this.dSummary = el('p', 'chakra-summary', detail, '');
     this.dLevels = el('ol', 'chakra-levels', detail);
     this.dMeta = el('div', 'panel-meta', detail, '');
-    this.alignBtn = button('btn btn-primary align-btn', detail, '', () => {
-      const s = this.host.app.session;
-      this.lastReject = '';
-      this.host.app.submit({ t: 'align', faction: s.playerFaction, chakra: this.selected });
-    });
+    this.alignBtn = button(
+      'btn btn-primary align-btn',
+      detail,
+      '',
+      () => {
+        const s = this.host.app.session;
+        const w = this.host.app.world;
+        // A blocked align shows its reason here instead of round-tripping a rejected command.
+        const blocker = w ? alignBlocker(w, s.playerFaction, this.selected) : 'No burn in progress.';
+        this.lastReject = blocker;
+        if (!blocker) this.host.app.submit({ t: 'align', faction: s.playerFaction, chakra: this.selected });
+      },
+      'confirm',
+    );
     const bar = el('div', 'bar align-bar is-off', detail);
     this.progressFill = el('i', '', bar);
     this.progress = bar;
@@ -187,6 +202,7 @@ export class ChakraScreen implements UiPart {
     const blocker = alignBlocker(world, fac.id, c);
     setText(this.alignBtn, maxed ? 'Fully aligned' : `Align to level ${level + 1} · ${ALIGN_COST[level]} Ritual`);
     setClass(this.alignBtn, 'blocked', blocker !== '');
+    setDisabled(this.alignBtn, blocker !== '');
 
     show(this.progress, aligning !== null);
     if (aligning) setVar(this.progressFill, '--p', Math.min(1, Math.max(0, s.channel)).toFixed(3));

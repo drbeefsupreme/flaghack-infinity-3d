@@ -54,7 +54,11 @@ export interface EnvUniforms {
   uTime: { value: number };
   /** 0 = day, 1 = night (DayState.night). */
   uNight: { value: number };
-  /** Sound-camp beat counter at 124 BPM: floor = beat index, fract = phase within the beat. */
+  /**
+   * Festival beat clock (ctx.beat at FESTIVAL_BPM, locked to the music's kick while audio
+   * runs): floor = beat index, fract = phase within the beat. Shaders read only the phase, so
+   * the clock re-locking to the music costs at most one beat's pulse.
+   */
   uBeat: { value: number };
   /** Wind on the ground plane: direction × strength (strength 0..1), x = world x, y = world z. */
   uWind: { value: THREE.Vector2 };
@@ -105,5 +109,3 @@ export interface EnvPart {
 
 /** Sim seconds over which the effigy chars after The Burn starts. */
 export const BURN_CHAR_SECONDS = 150;
-/** Sound-camp tempo. */
-export const STAGE_BPM = 124;

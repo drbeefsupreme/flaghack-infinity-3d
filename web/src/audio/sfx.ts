@@ -11,7 +11,7 @@ import { CHAKRAS } from '../sim/types';
 import type { AbilityId, CaptureStage, ChakraId, DrugId, FactionId, GccAction, Owner, PingKind } from '../sim/types';
 import type { World } from '../sim/world';
 import type { AudioEngine, VoiceHandle } from './engine';
-import { BPM } from './music';
+import { FESTIVAL_BPM } from '../sim/constants';
 import { degreeHz, midiHz, nodeDegree } from './scale';
 import { bell, choir, envelope, fm, noise, tone } from './synth';
 
@@ -789,7 +789,7 @@ export class Sfx {
         }
         break;
       case 'march': {
-        const step = 60 / BPM / 4;
+        const step = 60 / FESTIVAL_BPM / 4;
         const snare = [0, 2, 3, 4, 6, 8, 10, 11, 12, 14, 16, 18, 19, 20, 22, 24, 26, 27, 28, 29, 30, 31];
         for (const s of snare) {
           const t = v.t + s * step;

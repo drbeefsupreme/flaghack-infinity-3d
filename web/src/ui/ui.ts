@@ -32,6 +32,7 @@ import { PauseMenu } from './pause';
 import { HearthRail } from './rail';
 import { Roster } from './roster';
 import { SettingsPanel } from './settings';
+import { UiSfx } from './sfx';
 import { TitleScreen } from './title';
 import { Tutorial } from './tutorial';
 import { LoadingVeil } from './veil';
@@ -45,6 +46,9 @@ const DESIGN_H = 800;
 /** Ignore the Escape press that caused the pause (it can arrive with the pointer-lock exit). */
 const PAUSE_ESC_GRACE_MS = 300;
 
+/** A blocked button hammered with the same reason posts it to the feed at most this often. */
+const BLOCKED_REPEAT_MS = 1500;
+
 export class GameUI {
   private app: AppApi;
   private rootEl: HTMLElement;
@@ -55,6 +59,9 @@ export class GameUI {
   private minimap: Minimap;
   private banners: Banners;
   private veil: LoadingVeil;
+  private sfx: UiSfx;
+  /** Last blocked-action reason posted, so a hammered button does not flood the feed. */
+  private lastBlocked = { reason: '', at: -Infinity };
   private world: World | null = null;
   private screen: Screen | null = null;
   private lastTick = -Infinity;
@@ -68,6 +75,7 @@ export class GameUI {
   constructor(root: HTMLElement, app: AppApi) {
     this.app = app;
     this.rootEl = el('div', 'fh-root', root);
+    this.sfx = new UiSfx(this.rootEl, app);
     this.zoomed = el('div', 'fh-ui', this.rootEl);
     this.hudLayer = el('div', 'fh-hud', this.zoomed);
     // Banners sit between the HUD and the modal layer.
@@ -95,6 +103,12 @@ export class GameUI {
       post: (text: string, severity: Severity, pos?: V2) => this.app.session.post(text, severity, pos),
       flash: (pos: V2, color: string) => this.minimap.flash(pos, color),
       veiledLoad: (action: () => void) => this.veil.run(action),
+      blocked: (reason: string) => {
+        const now = performance.now();
+        if (reason === this.lastBlocked.reason && now - this.lastBlocked.at < BLOCKED_REPEAT_MS) return;
+        this.lastBlocked = { reason, at: now };
+        this.app.session.post(reason, 'warn');
+      },
     };
 
     this.hud = new HudPart(host, layout);
@@ -175,6 +189,7 @@ export class GameUI {
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKey);
+    this.sfx.dispose();
     for (const p of this.parts) p.dispose?.();
     this.parts = [];
     this.rootEl.remove();
@@ -208,15 +223,23 @@ export class GameUI {
     this.zoomed.style.setProperty('zoom', Math.max(0.72, Math.min(1.6, z)).toFixed(3));
   };
 
-  /** Escape outside of play (title / pause / end), where the controls do not listen. */
+  /**
+   * Escape outside of play (title / pause / end), where the controls do not listen. In play the
+   * controls close any open panel on Escape (in their next update), so only the sound is ours.
+   */
   private onKey = (ev: KeyboardEvent): void => {
-    if (ev.key !== 'Escape') return;
+    if (ev.key !== 'Escape' || ev.repeat) return;
     const s = this.app.session;
-    if (s.screen === 'playing') return;
-    if (s.panels.settings) s.panels.settings = false;
-    else if (s.panels.codex) s.panels.codex = false;
+    const p = s.panels;
+    if (s.screen === 'playing') {
+      if (p.chakras || p.codex || p.help || p.settings) this.sfx.back();
+      return;
+    }
+    if (p.settings) p.settings = false;
+    else if (p.codex) p.codex = false;
     else if (s.screen === 'paused' && performance.now() - this.pausedAt > PAUSE_ESC_GRACE_MS) this.app.setPaused(false);
     else return;
+    this.sfx.back();
     ev.preventDefault();
   };
 }

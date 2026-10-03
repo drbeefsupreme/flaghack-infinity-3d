@@ -116,10 +116,16 @@ export class Tutorial implements UiPart {
     this.root = el('div', 'tut is-off', parent);
     const head = el('div', 'tut-head', this.root);
     this.stepLabel = el('span', 'tut-step', head, '');
-    button('tut-x', head, 'Dismiss lessons', () => {
-      this.progress.done = true;
-      this.save();
-    });
+    button(
+      'tut-x',
+      head,
+      'Dismiss lessons',
+      () => {
+        this.progress.done = true;
+        this.save();
+      },
+      'back',
+    );
     this.title = el('div', 'tut-title', this.root, '');
     this.text = el('div', 'tut-text', this.root, '');
     const pipBox = el('div', 'tut-pips', this.root);

@@ -20,7 +20,7 @@ import { BONE_NAMES, STAFF_TOP, buildAvatarRig, createAvatarMaterial, type Avata
 import type { FlagRenderer } from './flagRenderer';
 import type { ActorView } from './lod';
 import { RING, type UnitRings } from './overlays';
-import { BEAT_HZ, bump, clamp01, damp, easeOutCubic, hash01 } from './util';
+import { bump, clamp01, damp, easeOutCubic, hash01, kickDip } from './util';
 
 const NB = BONE_NAMES.length;
 const ROOT = BONE_NAMES.indexOf('root');
@@ -87,6 +87,8 @@ interface AvatarVis {
   channel: number;
   /** Smoothed 0..1: standing at an own Hearth under capture (Hold the Hearth). */
   hold: number;
+  /** Smoothed 0..1 weight of DJ Scarecrow's beat-locked groove (idle and standing only). */
+  groove: number;
   anchor: THREE.Vector3;
 }
 
@@ -175,8 +177,9 @@ export class AvatarRenderer {
     const w = ctx.world;
     const t = ctx.time;
     this.time.value = t;
-    const bt = (t * BEAT_HZ) % 1;
-    this.beat.value = (1 - bt) * (1 - bt) * (1 - bt);
+    // Beat-pulsed glow (DJ Scarecrow's headphones and EQ): attack on the kick, then decay.
+    const phase = ctx.beat - Math.floor(ctx.beat);
+    this.beat.value = (1 - phase) * (1 - phase) * (1 - phase);
     this.fx.begin();
     const player = w.factions[ctx.session.playerFaction];
     const acid = player ? player.drugActive.acidcop > w.time : false;
@@ -266,6 +269,7 @@ export class AvatarRenderer {
       respawnAt: -10,
       channel: 0,
       hold: 0,
+      groove: 0,
       anchor: new THREE.Vector3(av.pos.x, av.pos.y + 1.9, av.pos.z),
     };
     this.byId.set(av.id, v);
@@ -345,17 +349,12 @@ export class AvatarRenderer {
         break;
       }
       case 'groove': {
-        const b = Math.sin(t * BEAT_HZ * Math.PI * 2);
-        const half = Math.sin(t * BEAT_HZ * Math.PI);
-        const dip = 0.5 + 0.5 * b;
-        bob = -0.025 * dip;
-        put(tg, THIGH_L, -0.08 * dip, 0, 0);
-        put(tg, THIGH_R, -0.08 * dip, 0, 0);
-        put(tg, SHIN_L, 0.12 + 0.12 * dip, 0, 0);
-        put(tg, SHIN_R, 0.12 + 0.12 * dip, 0, 0);
-        put(tg, HEAD, 0.14 * b, 0, 0.06 * half);
-        put(tg, CHEST, style.hunch, 0, 0.07 * half);
-        put(tg, ARM_L, -0.3 - 0.2 * b, 0, 0.2);
+        // A loose DJ stance; the bounce on the kick is added after smoothing (end of animate).
+        bob = -0.012;
+        put(tg, SHIN_L, 0.16, 0, 0);
+        put(tg, SHIN_R, 0.16, 0, 0);
+        put(tg, CHEST, style.hunch, 0, 0);
+        put(tg, ARM_L, -0.38, 0, 0.2);
         put(tg, FORE_L, -0.9, 0, 0);
         put(tg, ARM_R, -0.15, 0, -0.1);
         put(tg, FORE_R, -0.55, 0, 0);
@@ -632,6 +631,28 @@ export class AvatarRenderer {
     bones[ROOT].rotation.set(v.fall, 0, 0);
     bones[BAND].rotation.set(0, t * style.bandSpin * (1 + 3 * v.channel), 0);
     bones[HIPS].position.y = HIPS_Y + v.bob;
+
+    // DJ Scarecrow's groove rides the festival beat clock. It is added after the smoothing
+    // above, which would otherwise make the bounce trail the kick; any action, running, a jump
+    // or holding the Hearth fades it out.
+    const idle = action.kind === 'idle' && av.pushing < 0 && swing >= 1 && thr >= 1 && plant >= 1 && !down && !stunned;
+    const grooveTarget = style.idle === 'groove' && idle ? (1 - gait) * (1 - v.air) * (1 - v.hold) : 0;
+    v.groove += (grooveTarget - v.groove) * damp(6, dt);
+    if (v.groove > 0.002) {
+      const beat = this.ctx.beat;
+      const dip = kickDip(beat) * v.groove;
+      // Half-time sway: the lean changes side on every beat.
+      const sway = Math.cos(Math.PI * beat) * v.groove;
+      bones[THIGH_L].rotation.x -= 0.09 * dip;
+      bones[THIGH_R].rotation.x -= 0.09 * dip;
+      bones[SHIN_L].rotation.x += 0.18 * dip;
+      bones[SHIN_R].rotation.x += 0.18 * dip;
+      bones[HEAD].rotation.x += 0.15 * dip;
+      bones[HEAD].rotation.z += 0.06 * sway;
+      bones[CHEST].rotation.z += 0.07 * sway;
+      bones[ARM_L].rotation.x -= 0.22 * dip;
+      bones[HIPS].position.y -= 0.032 * dip;
+    }
   }
 
   /**

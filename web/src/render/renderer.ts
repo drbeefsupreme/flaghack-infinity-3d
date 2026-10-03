@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import type { Session } from '../game/session';
+import { FESTIVAL_BPM } from '../sim/constants';
 import type { GameEvent } from '../sim/events';
 import type { World } from '../sim/world';
 import { ActorsRenderer } from './actors/actorsRenderer';
@@ -26,6 +27,11 @@ export class GameRenderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: THREE.PerspectiveCamera;
   ctx: RenderContext | null = null;
+  /**
+   * Audible beat position of the music (beats), or null while audio is not running. Set by
+   * the app; the render clock falls back to presentation time at FESTIVAL_BPM.
+   */
+  beatSource: (() => number | null) | null = null;
   private modules: RenderModule[] = [];
   private post: PostFx | null = null;
   /**
@@ -86,6 +92,7 @@ export class GameRenderer {
       time: 0,
       sunDir: new THREE.Vector3(0.5, 0.8, 0.3).normalize(),
       daylight: 1,
+      beat: 0,
       shared: { fx: this.fx },
     };
     this.ctx = ctx;
@@ -133,6 +140,7 @@ export class GameRenderer {
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.time += dt;
+    ctx.beat = this.beatSource?.() ?? (ctx.time * FESTIVAL_BPM) / 60;
     this.updateFx(dt);
     for (const m of this.modules) m.update(dt);
     if (this.needsWarm) {

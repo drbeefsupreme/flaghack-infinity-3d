@@ -174,6 +174,14 @@ export class GameAudio {
     s.firePan = approach(s.firePan, g.firePan, 3, dt);
   }
 
+  /**
+   * Audible festival beat (beats at FESTIVAL_BPM; integer = a sound-camp kick), or null while
+   * audio is locked/suspended. The renderer phase-locks RenderContext.beat to this.
+   */
+  beat(): number | null {
+    return this.parts ? this.parts.music.beat() : null;
+  }
+
   /** Engine diagnostics for the debug overlay / perf evals. */
   stats(): AudioStats {
     const p = this.parts;

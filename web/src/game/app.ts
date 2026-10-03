@@ -25,6 +25,8 @@ export interface AppApi {
   readonly fps: number;
   startMatch(opts?: Partial<MatchOptions>): void;
   readonly renderer: GameRenderer;
+  /** Procedural audio; the UI calls its blips (uiClick, uiHover, uiConfirm, uiBack, uiToggle). */
+  readonly audio: GameAudio;
   quitToTitle(): void;
   setPaused(paused: boolean): void;
   submit(cmd: Command): void;
@@ -54,6 +56,8 @@ export class App implements AppApi {
     this.controls = new Controls(this, canvas);
     this.ui = new GameUI(uiRoot, this);
     this.audio = new GameAudio(this);
+    // Stage lights, dancers and DJ Scarecrow's headphones pulse on the music's audible kick.
+    this.renderer.beatSource = () => this.audio.beat();
     this.startAttract();
     requestAnimationFrame(this.frame);
   }

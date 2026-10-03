@@ -84,7 +84,7 @@ export class SettingsPanel implements UiPart {
     const box = el('div', 'modal-box frame settings-box', this.root);
     const head = el('div', 'modal-head', box);
     el('h2', '', head, 'Settings');
-    button('panel-x', head, iconSvg('close'), () => this.close());
+    button('panel-x', head, iconSvg('close'), () => this.close(), 'back');
     const grid = el('div', 'set-grid', box);
 
     for (const def of RANGES) {
@@ -103,11 +103,17 @@ export class SettingsPanel implements UiPart {
     }
 
     el('label', 'set-l', grid, 'Invert Y');
-    this.invert = button('toggle', grid, '', () => {
-      const st = this.host.app.session.settings;
-      st.invertY = !st.invertY;
-      this.persist();
-    });
+    this.invert = button(
+      'toggle',
+      grid,
+      '',
+      () => {
+        const st = this.host.app.session.settings;
+        st.invertY = !st.invertY;
+        this.persist();
+      },
+      'toggle',
+    );
     el('span', 'set-v', grid, '');
 
     el('label', 'set-l', grid, 'Quality');
@@ -115,25 +121,37 @@ export class SettingsPanel implements UiPart {
     for (const q of QUALITIES) {
       this.quality.set(
         q,
-        button('seg-btn', seg, q[0].toUpperCase() + q.slice(1), () => {
-          this.host.app.session.settings.quality = q;
-          this.persist();
-        }),
+        button(
+          'seg-btn',
+          seg,
+          q[0].toUpperCase() + q.slice(1),
+          () => {
+            this.host.app.session.settings.quality = q;
+            this.persist();
+          },
+          'pick',
+        ),
       );
     }
     el('span', 'set-v', grid, '');
 
     el('label', 'set-l', grid, 'Show FPS');
-    this.fps = button('toggle', grid, '', () => {
-      const st = this.host.app.session.settings;
-      st.showFps = !st.showFps;
-      this.persist();
-    });
+    this.fps = button(
+      'toggle',
+      grid,
+      '',
+      () => {
+        const st = this.host.app.session.settings;
+        st.showFps = !st.showFps;
+        this.persist();
+      },
+      'toggle',
+    );
     el('span', 'set-v', grid, '');
 
     const foot = el('div', 'modal-foot', box);
     el('span', 'panel-hint', foot, 'Quality applies to the next Survey you begin.');
-    button('btn btn-primary', foot, 'Done', () => this.close());
+    button('btn btn-primary', foot, 'Done', () => this.close(), 'back');
   }
 
   private close(): void {

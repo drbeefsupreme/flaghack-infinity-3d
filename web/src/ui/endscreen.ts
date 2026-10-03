@@ -155,8 +155,8 @@ export class EndScreen implements UiPart {
         this.spectating = true;
       });
     }
-    button('btn btn-primary', row, 'Play again', () => this.host.veiledLoad(() => this.host.app.startMatch()));
-    button('btn', row, 'Title', () => this.host.veiledLoad(() => this.host.app.quitToTitle()));
+    button('btn btn-primary', row, 'Play again', () => this.host.veiledLoad(() => this.host.app.startMatch()), 'confirm');
+    button('btn', row, 'Title', () => this.host.veiledLoad(() => this.host.app.quitToTitle()), 'back');
   }
 
   dispose(): void {

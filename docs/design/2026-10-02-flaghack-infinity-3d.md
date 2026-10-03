@@ -89,13 +89,12 @@ perpendicular position `Σ k_j e⊥_j` with `e⊥_j = (cos 4πj/5, sin 4πj/5)`.
    facets). Crystallized facets are automatically enclosed.
 6. **Overlap / interference.** A facet in ≥ 2 factions' Surveys accumulates
    **instability** (0→1, +0.08/s; decays −0.15/s when no longer overlapped).
-   - ≥ 0.35 shimmer and moiré, and hippies inside lose attention twice as fast
-     (Flag Psychosis).
+   - ≥ 0.35 shimmer and moiré. Units of the faction holding the most of an unstable
+     facet's corners resonate (+20% work speed); every other faction's units there suffer
+     Flag Psychosis (attention drains twice as fast).
    - ≥ 0.65 **Crystal discharge** lightning every few seconds (stun 1.2 s on units,
      25 damage to pieces/buildings).
    - ≥ 0.9 local phason flips in unobserved spots.
-   - Units of the faction holding more Flags in the overlap get +20% work speed
-     (resonance).
 
 ### 3.2 Phasons (the Crystal turns)
 
@@ -131,7 +130,7 @@ perpendicular position `Σ k_j e⊥_j` with `e⊥_j = (cos 4πj/5, sin 4πj/5)`.
   revealed (Geomantic Advice radius, Luminous Dust, Command View near your GCC).
 - **Pentacle**: when one faction holds all five neighbours of a focus (five Flags, the
   canonical minimum), a **Crystal** manifests on the focus (3 s growth). Effects:
-  - +0.6 Ritual/s to the owner;
+  - +0.08 Ritual/s to the owner (scaled by growth);
   - +15% containment pressure within 45 m;
   - observes nodes within 10 m;
   - adds to C.M.I.
@@ -172,7 +171,7 @@ avatars, which are driven by AI through the same commands.
 | Jump | 7.5 m/s (gravity 24 m/s²) |
 | HP | 200; regenerates 6/s after 4 s untouched |
 | Flag quiver | 10 carried (visible bundle on back); auto-refill from own Hearth stock within 6 m |
-| Plant | 0.2 s at a node within 3.5 m (E or LMB with flag tool) |
+| Plant (E) | 0.2 s at a node within 3.5 m. LMB with the Flag tool swings the staff; it never plants. |
 | Throw (Q) | 0.3 s cooldown. Ballistic arc (v = 26 m/s); lands and auto-plants on the nearest free unblocked node within 3 m of impact, otherwise lies loose. Hits stun hippies 1 s. |
 | Pull | own Flag 0.35 s; enemy/neutral Flag 1.0 s channel (hold E). Pulled Flags go to the quiver if there is room, else drop loose. |
 | Staff swing (LMB) | 0.45 s. 34 damage to hippies/avatars, 40 to pieces, 14 lumber from piles. |
@@ -186,8 +185,8 @@ Pieces snap to the lattice under the crosshair, cost 10 lumber, appear instantly
 | Key | Piece | Snaps to | Notes |
 |---|---|---|---|
 | Z | Tarp Wall | a Ley edge (inset 0.5 m from both nodes) | 3.2 m tall; blocks movement, thrown Flags, hippies |
-| X | Deck | a facet | at level height 3.2 m × level; walkable, you can walk under |
-| C | Ramp | a facet | rises one level along the facet axis closest to your facing |
+| X | Deck | a facet | top at (level + 1) × 3.2 m on scaffold stilts; walkable, you can walk under |
+| C | Ramp | a facet | rises from level × 3.2 m on the facet edge facing you to (level + 1) × 3.2 m |
 | V | Demolish | own piece | refunds 5 lumber |
 
 Levels 0–3. A deck or ramp at level L ≥ 1 needs support (a wall, deck or ramp at L−1
@@ -200,8 +199,8 @@ Survey**, never covering nodes.
 |---|---|---|---|
 | Flag Hearth | — | 1500 | Camp core, conquest target. Crafts 1 Flag / 8 s (4 lumber). Stock lives here. Hoarding: stock above 24 drains your hippies' attention faster (§8). |
 | Flag Workshop | 80 | 500 | +1 Flag / 5 s (3 lumber each) |
-| Drum Circle | 80 | 500 | Recruits 1 hippie / 14 s (1 Flag + 10 lumber); +6 pop cap; up to 4 hippies on Ritual job drum here (+1 Ritual/s each) |
-| Hearth Ward | 120 | 700 | −40% enemy containment pressure on Hearths within 30 m; observes 26 m; vibe-check pulse every 4 s (stun 1 s, 10 dmg) on enemy hippies within 14 m |
+| Drum Circle | 80 | 500 | Recruits 1 hippie / 14 s (1 Flag + 10 lumber); +6 pop cap; up to 4 hippies on Ritual job drum here (+0.1 Ritual/s each) |
+| Hearth Ward | 120 | 700 | Enemy containment pressure ×0.7 on Hearths within 30 m (one Ward counts); observes 26 m; vibe-check pulse every 4 s (stun 1 s, 10 dmg) on enemy hippies within 14 m |
 | Drug Lab | 100 | 500 | Brews one dose per 22 s (25 lumber), max 3 of each drug |
 | Geomantic Command Center | unique | 600 | See §7 |
 
@@ -335,7 +334,7 @@ Overwritten → Captured**.
 
 Counterplay toolbox: pull a loop Flag (any one breaks the enclosure; the HUD shows the
 loop's **critical Flags**), Phason Shift a loop node, plant your own Flag on their
-implied node, wall off loop Flags, out-enclose (Contested), Ward, Stabilize, Dialectics.
+implied node, wall off loop Flags, stand at your Hearth (Contested), Ward, Stabilize, Dialectics.
 
 ## 10. Command View (the GCC table)
 
@@ -379,7 +378,7 @@ all-AI play the first alignment lands at ~70–150 s and an L3 near minute 10.
 
 | Key | Drug | Effect | Risk |
 |---|---|---|---|
-| 6 | **Saffron** (Vexillicrocus tea) | 40 s: all your hippies +50% work & move speed, +2 Ritual/s | After: 20 s crash (−30% speed); 25% chance per hippie to wander off "overstimulated" |
+| 6 | **Saffron** (Vexillicrocus tea) | 40 s: all your hippies +50% work & move speed, +0.3 Ritual/s | After: 20 s crash (−30% speed); 25% chance per hippie to wander off "overstimulated" |
 | 7 | **Luminous Dust** | 30 s: whole lattice, focus points, strain, enemy simulacra revealed; your throws auto-snap within 5 m | Screen distortion, minimap noise, and 3–5 hallucinated False Flags in your view |
 | 8 | **Acid Cop Vision** | 30 s: see every rival's hippies, tasks, planned Survey nodes and avatar through walls | Paranoia: your hippies' attention drains ×2; your avatar sees phantom pursuers on the minimap |
 
@@ -401,8 +400,10 @@ Same commands as the player. Layers:
 4. **Builder**: personality build order; places buildings inside own Survey; walls
    around exposed loop Flags and its Hearth under threat.
 5. **Avatar pilot** (every tick): navigation, throwing Flags into the hardest planned
-   nodes, pulling critical enemy Flags, swinging at intruders, ability and drug use,
-   pushing the GCC to a forward position during ATTACK.
+   nodes, pulling critical enemy Flags, standing at its own Hearth when contained,
+   swinging at intruders, ability and drug use, restocking at the nearest own stocked
+   Hearth (captured outposts become forward depots), and GCC errands (gifts, dialectics,
+   simulacra). AI vexillomancers never push their GCC.
 
 Difficulty (Chill / Normal / Hard / Vexillosaint) scales reaction delay, decision
 interval, throw accuracy, and ability usage. NPCs never cheat on information beyond what
@@ -410,8 +411,10 @@ their faction can see.
 
 ## 14. Presentation
 
-- Golden-hour start, dusk ~6:00, night ~10:00 (flags and ley lines glow, fairy lights
-  on domes), fireworks at The Burn.
+- Golden-hour start, sunset ~6:20, night from ~10:00 (flags and ley lines glow, fairy
+  lights on domes), fireworks at The Burn (14:00), deepest night ~20:00, blue hour
+  ~26–28 min, sunrise exactly at Dawn (30:00). Night never clips to white: Survey glass
+  is a tint, bloom keeps only energy above its threshold.
 - Yellow Flags with a waving cloth shader are always the brightest saturated objects.
   Ley lines are glowing beams in faction colour. Survey facets are translucent crystal
   glass tinted by faction, with a sweeping fill animation when a loop closes. Crystals

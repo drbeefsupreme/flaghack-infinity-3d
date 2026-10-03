@@ -62,16 +62,28 @@ export class TitleScreen implements UiPart {
 
     const menu = el('div', 'menu frame', col);
     const s = host.app.session;
-    button('btn btn-primary btn-begin', menu, 'Begin the Survey', () => {
-      this.host.veiledLoad(() => this.host.app.startMatch());
-    });
+    button(
+      'btn btn-primary btn-begin',
+      menu,
+      'Begin the Survey',
+      () => {
+        this.host.veiledLoad(() => this.host.app.startMatch());
+      },
+      'confirm',
+    );
     const diff = el('div', 'diff', menu);
     el('div', 'diff-label', diff, 'Rival difficulty');
     const seg = el('div', 'seg', diff);
     for (const d of DIFFICULTIES) {
-      const b = button('seg-btn', seg, DIFFICULTY_INFO[d].name, () => {
-        s.settings.difficulty = d;
-      });
+      const b = button(
+        'seg-btn',
+        seg,
+        DIFFICULTY_INFO[d].name,
+        () => {
+          s.settings.difficulty = d;
+        },
+        'pick',
+      );
       this.diffButtons.set(d, b);
     }
     this.diffDesc = el('div', 'diff-desc', diff, '');

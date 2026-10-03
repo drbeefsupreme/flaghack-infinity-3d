@@ -1,5 +1,5 @@
 /**
- * Generative festival-night music in A minor pentatonic at 124 BPM, scheduled a step ahead
+ * Generative festival-night music in A minor pentatonic at FESTIVAL_BPM, scheduled a step ahead
  * on the AudioContext clock. Nothing loops identically: chords walk a weighted Markov chain,
  * arpeggios random-walk the chord, drum-circle parts are polymeters (12- and 10-step cycles
  * against the 16-step bar) with ghost notes and fills, the sound camp drops into breakdowns
@@ -15,17 +15,17 @@
  * - burn:  The Burn: drone, taiko and brass stabs
  * Title screen: calmer, wondrous variant (relative-major chords, long pads, sparse bells).
  */
+import { FESTIVAL_BPM } from '../sim/constants';
 import type { AudioEngine } from './engine';
 import { CHORDS, degreeHz, midiHz, MATCH_MOVES, pickChord, TITLE_MOVES, type ChordName } from './scale';
 import type { Soundscape } from './soundscape';
 import { approach } from './soundscape';
 import { bell, choir, fm, noise, tone } from './synth';
 
-export const BPM = 124;
-const STEP = 60 / BPM / 4;
+const STEP = 60 / FESTIVAL_BPM / 4;
 /** Schedule this far ahead of the audio clock; covers main-thread stalls up to ~250 ms. */
 const LOOKAHEAD = 0.3;
-/** Behind by more than this (hidden tab, long stall): resync instead of bursting old steps. */
+/** Behind by more than this (hidden tab, long stall): skip the missed steps instead of bursting them. */
 const MAX_LATE = 0.5;
 
 type Layer = 'fest' | 'drums' | 'pad' | 'arp' | 'mel' | 'tens' | 'burn';
@@ -188,15 +188,35 @@ export class Music {
   }
 
   /**
+   * Audible position of the sound-camp grid in beats (integer = a kick, since step 0 of every
+   * 16-step bar and every 4th step kicks), or null before the first step is scheduled.
+   * Step `step` is scheduled at `nextT`, so the step position at audio time `a` is
+   * `step - (nextT - a) / STEP`; output latency shifts it to what the listener hears now.
+   * `step` and `nextT` always advance together (stalls skip whole steps), so this is linear
+   * and monotonic in audio time.
+   */
+  beat(): number | null {
+    const ctx = this.ctx;
+    if (this.step === 0 || ctx.state !== 'running') return null;
+    const audible = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
+    return (this.step - (this.nextT - audible) / STEP) / 4;
+  }
+
+  /**
    * Look-ahead scheduler on the audio clock, driven by its own 25 ms timer rather than the
    * render loop so render hitches never stutter the groove ("a tale of two clocks").
-   * Slightly late steps play at once; after a long stall (hidden tab) it resyncs instead of
-   * bursting the missed steps.
+   * Slightly late steps play at once; after a long stall (hidden tab) the missed steps are
+   * skipped, not burst, and the grid keeps its phase (`nextT` stays `T0 + step * STEP`), so
+   * beat() stays linear in audio time and kicks stay on integer beats.
    */
   private tick = (): void => {
     const t = this.ctx.currentTime;
     if (this.ctx.state !== 'running') return;
-    if (this.nextT < t - MAX_LATE) this.nextT = t + 0.05;
+    if (this.nextT < t - MAX_LATE) {
+      const skip = Math.ceil((t + 0.05 - this.nextT) / STEP);
+      this.step += skip;
+      this.nextT += skip * STEP;
+    }
     while (this.nextT < t + LOOKAHEAD) {
       this.schedule(this.step, Math.max(this.nextT, t + 0.005));
       this.nextT += STEP;

@@ -19,9 +19,15 @@ export class HelpOverlay implements UiPart {
     const box = el('div', 'help-box frame', this.root);
     const head = el('div', 'modal-head', box);
     el('h2', '', head, 'Field Keys');
-    button('panel-x', head, iconSvg('close'), () => {
-      this.host.app.session.panels.help = false;
-    });
+    button(
+      'panel-x',
+      head,
+      iconSvg('close'),
+      () => {
+        this.host.app.session.panels.help = false;
+      },
+      'back',
+    );
     let markup = '';
     for (const g of KEYMAP) {
       markup += `<section><h4>${escapeHtml(g.title)}</h4><dl>`;

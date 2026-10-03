@@ -23,7 +23,7 @@ import {
 } from './catalog';
 import type { CampBuildingKind } from './catalog';
 import type { UiHost, UiLayout, UiPart } from './core';
-import { button, el, escapeHtml, fmtCountdown, html, kbd, setAttr, setClass, setText, setVar, show } from './dom';
+import { button, el, escapeHtml, fmtCountdown, html, kbd, setAttr, setClass, setDisabled, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
 
 const MAX_CHIPS = 16;
@@ -90,16 +90,23 @@ export class CommandPanels implements UiPart {
     const plan = this.panel(this.right, 'Survey plan', 'plan');
     const tools = el('div', 'plan-tools', plan);
     for (const info of PLAN_TOOLS) {
-      const b = button('plan-btn', tools, `${iconSvg(info.icon)}<span class="pb-name">${info.name}</span>${kbd(info.key)}`, () => {
-        const ss = this.host.app.session;
-        if (info.tool === 'clear') {
-          this.host.app.submit({ t: 'plan', faction: ss.playerFaction, op: 'clear', nodes: [] });
-          ss.planPreview = [];
-        } else {
-          ss.planTool = info.tool;
-          if (info.tool !== 'simulacra') ss.planPreview = [];
-        }
-      });
+      const b = button(
+        'plan-btn',
+        tools,
+        `${iconSvg(info.icon)}<span class="pb-name">${info.name}</span>${kbd(info.key)}`,
+        () => {
+          const ss = this.host.app.session;
+          if (info.tool === 'clear') {
+            this.host.app.submit({ t: 'plan', faction: ss.playerFaction, op: 'clear', nodes: [] });
+            ss.planPreview = [];
+          } else {
+            ss.planTool = info.tool;
+            if (info.tool !== 'simulacra') ss.planPreview = [];
+          }
+        },
+        // Clear is an action on the plan; the rest pick a tool.
+        info.tool === 'clear' ? 'click' : 'pick',
+      );
       b.title = info.hint;
       this.planButtons.set(info.tool, b);
     }
@@ -108,11 +115,17 @@ export class CommandPanels implements UiPart {
     this.simBox = el('div', 'sim-target is-off', plan);
     html('span', 'sim-ic', iconSvg('simulacra'), this.simBox);
     this.simText = el('span', 'sim-text', this.simBox, '');
-    button('btn btn-tiny', this.simBox, 'Cancel', () => {
-      const ss = this.host.app.session;
-      ss.planTool = 'select';
-      ss.planPreview = [];
-    });
+    button(
+      'btn btn-tiny',
+      this.simBox,
+      'Cancel',
+      () => {
+        const ss = this.host.app.session;
+        ss.planTool = 'select';
+        ss.planPreview = [];
+      },
+      'back',
+    );
 
     // ── Camp priorities ──
     const prio = this.panel(this.right, 'Camp priorities', 'prio');
@@ -125,10 +138,16 @@ export class CommandPanels implements UiPart {
       const notchBox = el('span', 'notches', row);
       const notches: HTMLButtonElement[] = [];
       for (let v = 0; v <= 4; v++) {
-        const n = button('notch', notchBox, String(v), () => {
-          const ss = this.host.app.session;
-          this.host.app.submit({ t: 'jobWeights', faction: ss.playerFaction, weights: { [job]: v } });
-        });
+        const n = button(
+          'notch',
+          notchBox,
+          String(v),
+          () => {
+            const ss = this.host.app.session;
+            this.host.app.submit({ t: 'jobWeights', faction: ss.playerFaction, weights: { [job]: v } });
+          },
+          'pick',
+        );
         notches.push(n);
       }
       const count = el('span', 'job-count num', row, '0');
@@ -153,6 +172,7 @@ export class CommandPanels implements UiPart {
         gccRow,
         `<span class="gcc-ic">${iconSvg(info.icon)}</span><span class="gcc-name">${info.name}</span><span class="slot-sweep"></span>`,
         onClick,
+        'confirm',
       );
       b.title = info.effect;
       return b;
@@ -171,20 +191,20 @@ export class CommandPanels implements UiPart {
         const ss = this.host.app.session;
         const blocker = blockerFor('gift');
         const target = w ? this.giftTarget(w) : null;
-        if (blocker || !target) this.host.post(blocker || 'Select a neutral Signifier near your cart.', 'warn');
+        if (blocker || !target) this.host.blocked(blocker || 'Select a neutral Signifier near your cart.');
         else this.host.app.submit({ t: 'gcc', faction: ss.playerFaction, action: 'gift', target: target.id, nodes: [] });
       }),
       dialectics: mkGcc('dialectics', () => {
         const ss = this.host.app.session;
         const blocker = blockerFor('dialectics');
-        if (blocker) this.host.post(blocker, 'warn');
+        if (blocker) this.host.blocked(blocker);
         else this.host.app.submit({ t: 'gcc', faction: ss.playerFaction, action: 'dialectics', target: -1, nodes: [] });
       }),
       simulacra: mkGcc('simulacra', () => {
         const ss = this.host.app.session;
         const blocker = blockerFor('simulacra');
         if (blocker) {
-          this.host.post(blocker, 'warn');
+          this.host.blocked(blocker);
           return;
         }
         ss.planTool = 'simulacra';
@@ -208,9 +228,16 @@ export class CommandPanels implements UiPart {
     button('btn btn-small', this.selOrders, `${iconSvg('follow')}Follow me`, () => this.order('follow'));
     button('btn btn-small', this.selOrders, `${iconSvg('defend')}Defend here`, () => this.order('defend'));
     button('btn btn-small', this.selOrders, `${iconSvg('close')}Clear orders`, () => this.order('clear'));
-    this.selGift = button('btn btn-small btn-gold', this.selOrders, `${iconSvg('gift')}Flag Gift`, () => {
-      this.gccButtons.gift.click();
-    });
+    // Relays to the GCC's Flag Gifts button; that relayed click is synthetic and stays silent.
+    this.selGift = button(
+      'btn btn-small btn-gold',
+      this.selOrders,
+      `${iconSvg('gift')}Flag Gift`,
+      () => {
+        this.gccButtons.gift.click();
+      },
+      'confirm',
+    );
 
     // ── Deck: build menu ──
     const build = this.panel(this.deck, 'Camp buildings', 'build');
@@ -229,6 +256,7 @@ export class CommandPanels implements UiPart {
             ss.buildingKind = kind;
           }
         },
+        'toggle',
       );
       b.title = info.effect;
       this.buildButtons.set(kind, b);
@@ -357,6 +385,9 @@ export class CommandPanels implements UiPart {
       setText(this.gccCd[action], left > 0 ? String(Math.ceil(left)) : '');
       const blocker = left > 0 ? '' : this.gccBlocker(action);
       setClass(b, 'blocked', blocker !== '');
+      // Recharging or blocked: a click shows the reason (and sounds the error) instead of acting.
+      setDisabled(b, left > 0 || blocker !== '');
+      if (action === 'gift') setDisabled(this.selGift, left > 0 || blocker !== '');
       if (!hint) hint = blocker;
       setClass(b, 'on', action === 'simulacra' && this.host.app.session.planTool === 'simulacra');
     }
@@ -463,6 +494,7 @@ export class CommandPanels implements UiPart {
       for (const [drug, btn] of row.brew) {
         const blocker = brewBlocker(world, fac.id, b.id, drug);
         setClass(btn, 'blocked', blocker !== '');
+        setDisabled(btn, blocker !== '');
         setClass(btn, 'poor', fac.lumber < BREW_COST);
         setAttr(btn, 'title', blocker || `Brew ${DRUG_INFO[drug].name}: ${BREW_COST} lumber, ${BREW_TIME} s`);
       }
@@ -486,10 +518,19 @@ export class CommandPanels implements UiPart {
     const brew = new Map<DrugId, HTMLButtonElement>();
     for (const drug of DRUGS) {
       const info = DRUG_INFO[drug];
-      const b = button('brew-btn', btns, `${iconSvg(info.icon)}<span>${info.name}</span><span class="num">${BREW_COST}</span>`, () => {
-        const s = this.host.app.session;
-        this.host.app.submit({ t: 'brew', faction: s.playerFaction, labId: id, drug });
-      });
+      const b = button(
+        'brew-btn',
+        btns,
+        `${iconSvg(info.icon)}<span>${info.name}</span><span class="num">${BREW_COST}</span>`,
+        () => {
+          const s = this.host.app.session;
+          const w = this.host.app.world;
+          const blocker = w ? brewBlocker(w, s.playerFaction, id, drug) : 'No burn in progress.';
+          if (blocker) this.host.blocked(blocker);
+          else this.host.app.submit({ t: 'brew', faction: s.playerFaction, labId: id, drug });
+        },
+        'confirm',
+      );
       b.title = `Brew ${info.name}: ${BREW_COST} lumber, ${BREW_TIME} s`;
       brew.set(drug, b);
     }

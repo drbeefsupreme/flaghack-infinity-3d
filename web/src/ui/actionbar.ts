@@ -14,7 +14,7 @@ import type { ChakraId, DrugId } from '../sim/types';
 import type { World } from '../sim/world';
 import { BUILD_INFO, CHAKRA_INFO, DRUG_INFO, TOOL_INFO } from './catalog';
 import type { UiHost, UiPart } from './core';
-import { el, escapeHtml, fmtCountdown, html, setClass, setText, setVar, show } from './dom';
+import { el, escapeHtml, fmtCountdown, html, setClass, setDisabled, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
 
 interface AbilitySlot {
@@ -64,6 +64,7 @@ export class ActionBar implements UiPart {
       const icon = html('span', 'tool-ic', iconSvg(info.icon), root);
       const name = el('span', 'tool-name', root, info.name);
       const cost = el('span', 'tool-cost num', root, info.cost > 0 ? String(info.cost) : info.cost < 0 ? `+${-info.cost}` : '');
+      root.dataset.sfx = 'pick';
       root.addEventListener('click', () => {
         this.host.app.session.tool = info.tool;
       });
@@ -102,9 +103,13 @@ export class ActionBar implements UiPart {
       const tip = el('div', 'tip', root);
       const slot: DrugSlot = { drug, root, doses, timer, tip, tipKey: '' };
       this.hoverable(root, slot);
+      root.dataset.sfx = 'click';
       root.addEventListener('click', () => {
         const s = this.host.app.session;
-        this.host.app.submit({ t: 'drug', faction: s.playerFaction, drug });
+        const w = this.host.app.world;
+        const blocker = w ? drugBlocker(w, s.playerFaction, drug) : 'No burn in progress.';
+        if (blocker) this.host.blocked(blocker);
+        else this.host.app.submit({ t: 'drug', faction: s.playerFaction, drug });
       });
       this.drugs.push(slot);
     }
@@ -174,6 +179,7 @@ export class ActionBar implements UiPart {
       const crashLeft = slot.drug === 'saffron' ? fac.saffronCrashUntil - t : 0;
       setText(slot.doses, `×${doses}`);
       setClass(slot.root, 'empty', doses <= 0 && activeLeft <= 0);
+      setDisabled(slot.root, drugBlocker(world, s.playerFaction, slot.drug) !== '');
       setClass(slot.root, 'active', activeLeft > 0);
       setClass(slot.root, 'crash', activeLeft <= 0 && crashLeft > 0);
       const p = activeLeft > 0 ? activeLeft / DRUG.duration[slot.drug] : crashLeft > 0 ? crashLeft / DRUG.crashTime : 0;

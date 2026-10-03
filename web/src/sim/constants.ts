@@ -71,6 +71,11 @@ export const FACTION_DEFS: Record<FactionId, FactionDef> = {
 };
 export const FLAG_YELLOW = 0xffd400;
 export const NEUTRAL_COLOR = 0xd8d2c0;
+/**
+ * Festival tempo (presentation only): the music's sound-camp kick, stage lights, dancers and
+ * DJ Scarecrow's headphones all run at this BPM, phase-locked through RenderContext.beat.
+ */
+export const FESTIVAL_BPM = 124;
 
 // ── Starting camp ─────────────────────────────────────────────────────────────
 export const START_LUMBER = 150;

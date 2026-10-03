@@ -120,16 +120,28 @@ export class Codex implements UiPart {
     html('div', 'codex-mark', `${iconSvg('book')}<span>LIBER HH</span>`, spine);
     el('div', 'codex-markSub', spine, 'the vexillomantic field manual');
     for (const t of TABS) {
-      const b = button('codex-tab', spine, `<span class="ct-num">${t.numeral}</span><span>${t.title}</span>`, () => {
-        this.tab = t.id;
-      });
+      const b = button(
+        'codex-tab',
+        spine,
+        `<span class="ct-num">${t.numeral}</span><span>${t.title}</span>`,
+        () => {
+          this.tab = t.id;
+        },
+        'pick',
+      );
       this.tabButtons.set(t.id, b);
     }
     el('div', 'codex-foot', spine, 'Liber HH is continuously updated to never be wrong.');
     const sheet = el('div', 'codex-sheet', book);
-    button('panel-x codex-x', sheet, iconSvg('close'), () => {
-      this.host.app.session.panels.codex = false;
-    });
+    button(
+      'panel-x codex-x',
+      sheet,
+      iconSvg('close'),
+      () => {
+        this.host.app.session.panels.codex = false;
+      },
+      'back',
+    );
     this.page = el('div', 'codex-page', sheet);
   }
 

@@ -9,7 +9,7 @@ import type { EntityId, HippieStatus } from '../sim/types';
 import type { World } from '../sim/world';
 import { RETRANSMIT_INFO, STATUS_INFO } from './catalog';
 import type { UiHost, UiPart } from './core';
-import { button, el, html, setAttr, setClass, setText, setVar, show } from './dom';
+import { button, el, html, setAttr, setClass, setDisabled, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
 
 type GroupKey = HippieStatus | 'offmesh';
@@ -46,9 +46,15 @@ export class Roster implements UiPart {
     this.root = el('div', 'panel roster ix', parent);
     const title = el('div', 'panel-title', this.root, 'D.E.G.E.N. Roster');
     el('span', 'panel-sub', title, "know what they're up to");
-    button('panel-x', title, iconSvg('close'), () => {
-      this.host.app.session.panels.degen = false;
-    });
+    button(
+      'panel-x',
+      title,
+      iconSvg('close'),
+      () => {
+        this.host.app.session.panels.degen = false;
+      },
+      'back',
+    );
     const head = el('div', 'roster-head', this.root);
     this.count = el('span', 'panel-meta', head, '');
     this.shot = button(
@@ -57,8 +63,13 @@ export class Roster implements UiPart {
       `${iconSvg('shot')}<span>${RETRANSMIT_INFO.name}</span><span class="shot-cd num"></span><span class="slot-sweep"></span>`,
       () => {
         const s = this.host.app.session;
-        this.host.app.submit({ t: 'retransmit', faction: s.playerFaction });
+        const w = this.host.app.world;
+        const left = w ? w.factions[s.playerFaction].cooldowns.retransmit - w.time : 0;
+        // Recharging: say so here rather than round-tripping a rejected command.
+        if (left > 0) this.host.blocked(`${RETRANSMIT_INFO.name} recharging (${Math.ceil(left)} s).`);
+        else this.host.app.submit({ t: 'retransmit', faction: s.playerFaction });
       },
+      'confirm',
     );
     this.shot.title = RETRANSMIT_INFO.effect;
     this.shotCd = this.shot.querySelector<HTMLElement>('.shot-cd') ?? el('span', '', this.shot);
@@ -145,6 +156,7 @@ export class Roster implements UiPart {
 
     const left = fac.cooldowns.retransmit - world.time;
     setClass(this.shot, 'cooling', left > 0);
+    setDisabled(this.shot, left > 0);
     setVar(this.shot, '--p', left > 0 ? Math.min(1, left / RETRANSMIT_COOLDOWN).toFixed(3) : '0');
     setText(this.shotCd, left > 0 ? String(Math.ceil(left)) : '');
   }

@@ -14,7 +14,7 @@ export const GlowMode = {
   steady: 0,
   /** Per-vertex random twinkle (fairy lights). */
   twinkle: 1,
-  /** Pulses on the 124 BPM beat. */
+  /** Pulses on the festival beat (ctx.beat, locked to the music's kick). */
   beat: 2,
   /** Hue cycles through the rainbow (LED art). */
   rainbow: 3,

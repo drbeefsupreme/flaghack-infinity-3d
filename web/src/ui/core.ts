@@ -39,6 +39,11 @@ export interface UiHost {
   flash(pos: V2, color: string): void;
   /** Run a frame-freezing world load (app.startMatch) behind the loading veil. */
   veiledLoad(action: () => void): void;
+  /**
+   * A blocked action's reason, shown in the feed (repeats of the same reason are throttled).
+   * The control must also be marked aria-disabled so it sounds the error blip, not its action.
+   */
+  blocked(reason: string): void;
 }
 
 export interface UiPart {

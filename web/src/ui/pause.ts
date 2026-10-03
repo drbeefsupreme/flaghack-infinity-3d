@@ -25,7 +25,7 @@ export class PauseMenu implements UiPart {
     el('h2', 'pause-title', box, 'Paused');
     el('div', 'pause-sub', box, 'The Crystal holds its breath.');
     const menu = el('div', 'pause-menu', box);
-    button('btn btn-primary', menu, 'Resume', () => this.host.app.setPaused(false));
+    button('btn btn-primary', menu, 'Resume', () => this.host.app.setPaused(false), 'back');
     button('btn', menu, 'Settings', () => {
       this.host.app.session.panels.settings = true;
     });

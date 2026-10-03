@@ -18,7 +18,18 @@ import { NEUTRAL } from '../../sim/types';
 import type { EntityId, Hippie } from '../../sim/types';
 import type { RenderContext } from '../context';
 import type { FlagRenderer } from './flagRenderer';
-import { JOG_CYCLE, RUN_CYCLE, applyHippieEffects, hippieAnimFor, poseHippie, propFor, type HippieAnim, type HippieRoot } from './hippieAnim';
+import {
+  BEAT_ANIMS,
+  JOG_CYCLE,
+  RUN_CYCLE,
+  applyHippieEffects,
+  beatHippie,
+  hippieAnimFor,
+  poseHippie,
+  propFor,
+  type HippieAnim,
+  type HippieRoot,
+} from './hippieAnim';
 import {
   HAIR_STYLES,
   HIPPIE_HEAD_TOP,
@@ -72,6 +83,9 @@ interface HippieVis {
   anchor: THREE.Vector3;
   /** Drawn at full detail last frame (level-of-detail hysteresis). */
   detailed: boolean;
+  /** Smoothed 0..1 weight of the beat-locked layer, and the animation it belongs to. */
+  groove: number;
+  beatAnim: HippieAnim;
 }
 
 /** Hat id from a uniform roll: bare 34%, headband 20%, flower crown 14%, bucket 12%, top hat 8%, beanie 12%. */
@@ -99,6 +113,10 @@ export class HippieRenderer {
   private frame = 0;
   private readonly target = new Float32Array(POSE_SIZE);
   private readonly targetRoot: HippieRoot = { bob: 0, pitch: 0, roll: 0, yaw: 0 };
+  /** Beat-locked layer and the displayed pose (smoothed pose + layer) for the current hippie. */
+  private readonly layer = new Float32Array(POSE_SIZE);
+  private readonly layerRoot: HippieRoot = { bob: 0, pitch: 0, roll: 0, yaw: 0 };
+  private readonly shown = new Float32Array(POSE_SIZE);
   /** The instance transform being built (column-major), before it is copied to its level. */
   private readonly m16 = new Float32Array(16);
   private readonly factionColors: THREE.Color[];
@@ -174,6 +192,7 @@ export class HippieRenderer {
     const acid = player.drugActive.acidcop > w.time;
     const hover = session.hover.entity;
     const m16 = this.m16;
+    const beat = ctx.beat;
     for (const level of this.levels) level.set.begin();
 
     for (const h of w.hippies.values()) {
@@ -227,9 +246,29 @@ export class HippieRenderer {
       root.roll += (tr.roll - root.roll) * kp;
       root.yaw += angleDiff(root.yaw, tr.yaw) * kp;
 
+      // The beat-locked layer is added after smoothing, which would make it lag the kick.
+      const grooving = BEAT_ANIMS[anim] === true;
+      if (grooving) v.beatAnim = anim;
+      v.groove += ((grooving ? 1 : 0) - v.groove) * damp(5, dt);
+      const shown = this.shown;
+      shown.set(pose);
+      let bob = root.bob;
+      let pitch = root.pitch;
+      let roll = root.roll;
+      if (v.groove > 0.002) {
+        const g = v.groove;
+        const layer = this.layer;
+        const lr = this.layerRoot;
+        beatHippie(v.beatAnim, beat, v.seed, layer, lr);
+        for (let j = 0; j < POSE_SIZE; j++) shown[j] += layer[j] * g;
+        bob += lr.bob * g;
+        pitch += lr.pitch * g;
+        roll += lr.roll * g;
+      }
+
       // Instance data: transform, pose, look.
       const gy = groundAt ? groundAt(v.x, v.z) : 0;
-      writeTransform(m16, 0, v.x, gy + root.bob * v.scale, v.z, v.yaw + root.yaw, root.pitch, root.roll, v.scale);
+      writeTransform(m16, 0, v.x, gy + bob * v.scale, v.z, v.yaw + root.yaw, pitch, roll, v.scale);
       const look = v.look;
       look[HL.prop] = propFor(anim, h);
       const fc = h.faction === NEUTRAL ? this.white : this.factionColors[h.faction];
@@ -247,13 +286,13 @@ export class HippieRenderer {
         const slot = place === PLACE.coarse ? set.plain() : set.caster();
         const attrs = set.attrs;
         attrs[0].array.set(m16, slot * 16);
-        attrs[1].array.set(pose, slot * POSE_SIZE);
+        attrs[1].array.set(shown, slot * POSE_SIZE);
         attrs[2].array.set(look, slot * 16);
       }
 
       // Torso pivot (same maths as the shader) for anchors and the carried Flag.
       this.mRoot.fromArray(m16);
-      this.euler.set(pose[HJ.torsoPitch], pose[HJ.torsoYaw], pose[HJ.torsoRoll], 'YXZ');
+      this.euler.set(shown[HJ.torsoPitch], shown[HJ.torsoYaw], shown[HJ.torsoRoll], 'YXZ');
       this.mTorso.makeRotationFromEuler(this.euler);
       this.mPivot.makeTranslation(this.waist.x, this.waist.y, this.waist.z).multiply(this.mTorso);
       this.mPivot.multiply(this.mTorso.makeTranslation(-this.waist.x, -this.waist.y, -this.waist.z));
@@ -358,6 +397,8 @@ export class HippieRenderer {
       seen: this.frame,
       anchor: new THREE.Vector3(h.pos.x, HIPPIE_HEAD_TOP, h.pos.z),
       detailed: false,
+      groove: 0,
+      beatAnim: 'dance',
     };
     this.vis.set(h.id, v);
     this.anchors.set(h.id, v.anchor);

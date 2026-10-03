@@ -108,6 +108,8 @@ export class Minimap implements UiPart {
   private flashes: Flash[] = [];
   private mesh: HTMLElement;
   private taps: HTMLElement;
+  /** Toggles the D.E.G.E.N. roster panel; `.on` mirrors session.panels.degen. */
+  private rosterBtn: HTMLButtonElement;
   private tapText = '';
   private dragging = false;
   private onResize = (): void => {
@@ -131,10 +133,16 @@ export class Minimap implements UiPart {
     const plaque = el('div', 'mm-plaque', this.root);
     el('span', 'mm-title', plaque, 'D.E.G.E.N.');
     this.mesh = el('span', 'mm-mesh num', plaque, '');
-    button('mm-roster btn btn-tiny', plaque, 'Roster', () => {
-      const s = this.host.app.session;
-      s.panels.degen = !s.panels.degen;
-    });
+    this.rosterBtn = button(
+      'mm-roster btn btn-tiny',
+      plaque,
+      'Roster',
+      () => {
+        const s = this.host.app.session;
+        s.panels.degen = !s.panels.degen;
+      },
+      'toggle',
+    );
     this.taps = el('div', 'mm-taps is-off', this.root);
 
     this.canvas.addEventListener('pointerdown', (ev) => {
@@ -189,6 +197,7 @@ export class Minimap implements UiPart {
     if (!visible || !world) return;
     setClass(this.root, 'ix', s.view === 'command' || !s.pointerLocked);
     setClass(this.root, 'cmd', s.view === 'command');
+    setClass(this.rosterBtn, 'on', s.panels.degen);
     const P = s.playerFaction;
     let beacons = 0;
     for (const h of world.hippies.values()) if (h.faction === P && h.beacon) beacons++;

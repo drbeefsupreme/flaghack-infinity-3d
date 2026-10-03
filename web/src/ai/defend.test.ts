@@ -43,7 +43,7 @@ function pullersOn(world: World, f: FactionId, flags: ReadonlySet<EntityId>): nu
 
 describe('NPC defence', () => {
   it('notices a closed loop after its reaction delay, then holds the Hearth and sends hands at the Flags the loop hangs on', () => {
-    const world = createMatch({ seed: 'ai-defend', difficulty: 'normal', allAi: true });
+    const world = createMatch({ seed: 'ai-defend', difficulty: 'normal', humans: [], mode: 'standard' });
     const victim: FactionId = 0;
     const attacker: FactionId = 1;
     stageContainment(world, victim, attacker);
@@ -85,7 +85,7 @@ describe('NPC defence', () => {
   });
 
   it('breaks the loop and frees its Hearth', () => {
-    const world = createMatch({ seed: 'ai-defend', difficulty: 'normal', allAi: true });
+    const world = createMatch({ seed: 'ai-defend', difficulty: 'normal', humans: [], mode: 'standard' });
     stageContainment(world, 0, 1);
     const sim = new Simulation(world);
     const ai = createAi(world, [0]);

@@ -6,7 +6,28 @@ import type { Severity } from '../sim/events';
 import type { V2, V3 } from '../sim/math';
 import type { BuildingKind, Difficulty, EntityId, FactionId, HippieOrder, PieceKind } from '../sim/types';
 
-export type Screen = 'title' | 'playing' | 'paused' | 'ended';
+/**
+ * 'lobby': connected to a host, waiting for the match (the attract burn plays behind it).
+ * 'paused' online only opens the menu: the host's burn keeps running.
+ */
+export type Screen = 'title' | 'lobby' | 'playing' | 'paused' | 'ended';
+
+/**
+ * A world-space objective marker (tutorial goals; render/survey draws them, the tutorial UI
+ * points at off-screen ones). Exactly one anchor applies: node, entity or at.
+ */
+export interface ObjectiveMarker {
+  id: string;
+  kind: 'node' | 'entity' | 'point' | 'area';
+  node?: number;
+  entity?: EntityId;
+  at?: V2;
+  /** Area markers: ring radius (m). */
+  radius?: number;
+  label?: string;
+  /** Default FLAG_YELLOW. */
+  color?: number;
+}
 export type ViewMode = 'action' | 'command';
 /** Action-mode tool (what LMB / E do). */
 export type ToolKind = 'flag' | 'wall' | 'floor' | 'ramp' | 'demolish' | 'building';
@@ -133,6 +154,12 @@ export class Session {
     difficulty: 'normal',
   };
   debug = false;
+  /** Online spectator: watches without a seat (no gameplay input, free camera). */
+  spectator = false;
+  /** Online: player handles by seat (nameplates, Hearth rail, feed). Empty offline. */
+  playerNames: Partial<Record<FactionId, string>> = {};
+  /** World objective markers (tutorial). Owned by the tutorial director; cleared on new match. */
+  markers: ObjectiveMarker[] = [];
   private feedId = 1;
 
   post(text: string, severity: Severity = 'info', pos?: V2): void {

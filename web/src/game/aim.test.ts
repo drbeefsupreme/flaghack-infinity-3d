@@ -37,7 +37,7 @@ describe('throw aim', () => {
   });
 
   it('previews exactly where the simulation lands the thrown Flag', () => {
-    const world = createMatch({ seed: 'aim-preview', difficulty: 'normal', allAi: false });
+    const world = createMatch({ seed: 'aim-preview', difficulty: 'normal', humans: [0], mode: 'standard' });
     const sim = new Simulation(world);
     const av = world.avatarOf(0);
     const yaw = av.yaw;

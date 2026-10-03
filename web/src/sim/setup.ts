@@ -74,7 +74,7 @@ export function createMatch(options: MatchOptions): World {
   world.tide.nextAt = TIDE_INTERVAL;
 
   for (const f of FACTION_IDS) {
-    world.factions.push(createFaction(f, f === 0 && !options.allAi, options.difficulty));
+    world.factions.push(createFaction(f, options.humans.includes(f), options.difficulty));
   }
   for (const f of FACTION_IDS) setupCamp(world, f);
 

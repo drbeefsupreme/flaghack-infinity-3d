@@ -19,7 +19,7 @@ import { updateTides } from '../tides';
 import { updateVictory } from '../victory';
 
 export function newMatch(seed: string): World {
-  return createMatch({ seed, difficulty: 'normal', allAi: true });
+  return createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
 }
 
 /**

@@ -27,7 +27,7 @@ describe('throw solver', () => {
   });
 
   it('a solved throw lands on its target node in the running sim', () => {
-    const world = createMatch({ seed: 'ballistics', difficulty: 'normal', allAi: true });
+    const world = createMatch({ seed: 'ballistics', difficulty: 'normal', humans: [], mode: 'standard' });
     const sim = new Simulation(world);
     const f: FactionId = 0;
     const av = world.avatarOf(f);

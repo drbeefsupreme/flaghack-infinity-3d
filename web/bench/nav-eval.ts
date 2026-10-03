@@ -128,7 +128,7 @@ function record(args: Args): Op[] {
     return path;
   };
   try {
-    const world = createMatch({ seed: args.seed, difficulty: 'normal', allAi: true });
+    const world = createMatch({ seed: args.seed, difficulty: 'normal', humans: [], mode: 'standard' });
     const sim = new Simulation(world);
     const ai = createAi(world, [...FACTION_IDS]);
     topUp(world, args);

@@ -22,7 +22,7 @@ interface MatchReport {
 
 /** Four NPC factions, no player, until someone wins or `limit` (s) runs out. */
 function playMatch(seed: string, limit: number): MatchReport {
-  const world = createMatch({ seed, difficulty: 'normal', allAi: true });
+  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
   const sim = new Simulation(world);
   const ai = createAi(world, [...FACTION_IDS]);
   const zero = (): Record<FactionId, number> => ({ 0: 0, 1: 0, 2: 0, 3: 0 });

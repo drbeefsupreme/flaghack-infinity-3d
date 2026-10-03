@@ -153,6 +153,11 @@ function panelOpen(s: Session): boolean {
   return p.chakras || p.codex || p.help || p.settings;
 }
 
+/** The local player commands a seat in this world (not the attract burn, not an online spectator). */
+function seated(world: World, s: Session): boolean {
+  return !s.spectator && world.options.humans.includes(s.playerFaction);
+}
+
 export class Controls {
   private app: AppApi;
   private input: Input;
@@ -258,7 +263,7 @@ export class Controls {
     if (fresh || s.screen !== this.screen) this.screenChanged(s);
     const f = s.playerFaction;
     const av = world.avatars.get(world.factions[f].avatarId);
-    const playing = s.screen === 'playing' && !world.options.allAi && av !== undefined;
+    const playing = s.screen === 'playing' && seated(world, s) && av !== undefined;
     const spectating = playing && !world.factions[f].alive;
     if (playing && av && this.freshWorld) this.beginMatch(s, av);
 
@@ -291,7 +296,7 @@ export class Controls {
   tick(): void {
     const s = this.app.session;
     const world = this.app.world;
-    if (!world || world !== this.world || s.screen !== 'playing' || world.options.allAi) return;
+    if (!world || world !== this.world || s.screen !== 'playing' || !seated(world, s)) return;
     const av = world.avatars.get(world.factions[s.playerFaction].avatarId);
     if (!av) return;
     if (!world.factions[s.playerFaction].alive) {
@@ -372,7 +377,7 @@ export class Controls {
    */
   private spectating(): boolean {
     const w = this.app.world;
-    return w !== null && !w.options.allAi && !w.factions[this.app.session.playerFaction].alive;
+    return w !== null && seated(w, this.app.session) && !w.factions[this.app.session.playerFaction].alive;
   }
 
   /** Spectator frame: Esc backs out of the Command View, else opens the pause menu; tools stay down. */
@@ -492,7 +497,7 @@ export class Controls {
   private updateCamera(world: World, s: Session, av: Avatar | undefined, dt: number): void {
     const rig = this.rig;
     const f = s.playerFaction;
-    if (s.screen === 'title' || world.options.allAi || !av) {
+    if (s.screen === 'title' || !seated(world, s) || !av) {
       rig.setMode('title', 1.6);
       rig.updateTitle(world, f, dt);
     } else if (s.screen === 'ended') {

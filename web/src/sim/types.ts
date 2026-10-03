@@ -373,11 +373,19 @@ export type Entity =
   | DroppedBeacon;
 
 // ── Match ────────────────────────────────────────────────────────────────────
+/**
+ * 'standard': the four-camp burn. 'tutorial': the Training Burn scenario (single player,
+ * local only; built by sim/scenarios/tutorial.ts and driven by the tutorial director).
+ */
+export type MatchMode = 'standard' | 'tutorial';
+
+/** Plain data (serializable): the host sends it to every client to rebuild the static world. */
 export interface MatchOptions {
   seed: string;
   difficulty: Difficulty;
-  /** When true, faction 0 is AI-controlled too (attract mode / headless tests). */
-  allAi: boolean;
+  /** Human-controlled factions. Every other faction is AI (empty: attract mode / headless tests). */
+  humans: FactionId[];
+  mode: MatchMode;
 }
 
 export type MatchPhase = 'playing' | 'ended';

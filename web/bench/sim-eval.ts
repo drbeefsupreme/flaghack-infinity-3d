@@ -149,7 +149,7 @@ interface SlowTick {
 const args = parseArgs(process.argv.slice(2));
 
 const setupStart = performance.now();
-const world = createMatch({ seed: args.seed, difficulty: 'normal', allAi: true });
+const world = createMatch({ seed: args.seed, difficulty: 'normal', humans: [], mode: 'standard' });
 const sim = new Simulation(world);
 const ai = createAi(world, [...FACTION_IDS]);
 if (args.hippies > 0 || args.flags > 0) topUp(world, args);

@@ -94,7 +94,7 @@ export class HearthRail implements UiPart {
       const top = el('div', 'rc-top', root);
       el('span', 'rc-sigil', top);
       const name = el('span', 'rc-name', top, f.name);
-      if (f.id === P && !world.options.allAi) el('span', 'rc-you', top, 'You');
+      if (f.id === P && world.options.humans.includes(P)) el('span', 'rc-you', top, 'You');
       const badge = el('span', 'badge', top, '');
       el('div', 'rc-title', root, f.title);
       // The dawn marker sits under the title; its tooltip needs the cursor (see updateDawn).

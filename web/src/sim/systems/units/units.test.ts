@@ -20,7 +20,7 @@ interface Match {
 }
 
 function match(seed = 'units-suite'): Match {
-  const world = createMatch({ seed, difficulty: 'normal', allAi: true });
+  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
   // No phason tides mid-test: they would decohere Flags under the scenario.
   world.tide.nextAt = Infinity;
   return { world, sim: new Simulation(world), events: [] };

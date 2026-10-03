@@ -16,7 +16,7 @@ export interface Harness {
 }
 
 export function newMatch(seed = 'economy-tests'): Harness {
-  const world = createMatch({ seed, difficulty: 'normal', allAi: true });
+  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
   return { world, sim: new Simulation(world), events: [] };
 }
 

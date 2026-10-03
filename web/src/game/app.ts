@@ -1,6 +1,7 @@
 /**
  * App: owns the lifecycle (title attract match → player match → end), the fixed-step loop,
- * and fans GameEvents out to render, ui and audio.
+ * and fans GameEvents out to render, ui and audio. Local matches step the Simulation here;
+ * online matches mirror the host's World (net/*) and never step a Simulation locally.
  */
 import { createAi, type AiController } from '../ai';
 import { GameAudio } from '../audio/audio';
@@ -13,6 +14,10 @@ import { Simulation } from '../sim/simulation';
 import { FACTION_IDS } from '../sim/types';
 import type { FactionId, MatchOptions } from '../sim/types';
 import type { World } from '../sim/world';
+import type { HostInfo } from '../net/protocol';
+import type { NetSession } from '../net/session';
+import { createTutorial } from '../tutorial/director';
+import type { TutorialDriver, TutorialRun } from '../tutorial/types';
 import { GameUI } from '../ui/ui';
 import { Controls } from './controls';
 import { Session } from './session';
@@ -28,8 +33,19 @@ export interface AppApi {
   /** Procedural audio; the UI calls its blips (uiClick, uiHover, uiConfirm, uiBack, uiToggle). */
   readonly audio: GameAudio;
   quitToTitle(): void;
+  /** Online: opens/closes the menu only (the host's burn keeps running). */
   setPaused(paused: boolean): void;
   submit(cmd: Command): void;
+  /** This page was served by a FLAGHACK host (multiplayer available), probed at boot; else null. */
+  readonly hostInfo: HostInfo | null;
+  /** Online session with the host, or null when playing locally. */
+  readonly net: NetSession | null;
+  /** Open a session with the host that served this page and join with a handle + password. */
+  joinHost(name: string, password: string): void;
+  /** The Training Burn while it runs, else null. */
+  readonly tutorial: TutorialRun | null;
+  /** Start the Training Burn (tutorial mission). */
+  startTutorial(): void;
 }
 
 const MAX_STEPS_PER_FRAME = 6;
@@ -43,6 +59,9 @@ export class App implements AppApi {
   readonly controls: Controls;
   readonly ui: GameUI;
   readonly audio: GameAudio;
+  hostInfo: HostInfo | null = null;
+  net: NetSession | null = null;
+  tutorial: TutorialDriver | null = null;
   private ai: AiController | null = null;
   private acc = 0;
   private last = performance.now();
@@ -64,23 +83,41 @@ export class App implements AppApi {
 
   /** Title screen: an all-AI burn plays out behind the menu. */
   private startAttract(): void {
-    this.load({ seed: `attract-${Math.floor(Math.random() * 1e6)}`, difficulty: 'normal', allAi: true });
+    this.load({ seed: `attract-${Math.floor(Math.random() * 1e6)}`, difficulty: 'normal', humans: [], mode: 'standard' });
     this.session.screen = 'title';
   }
 
   startMatch(opts: Partial<MatchOptions> = {}): void {
     const seed = opts.seed ?? `burn-${Date.now().toString(36)}`;
-    this.load({ seed, difficulty: opts.difficulty ?? this.session.settings.difficulty, allAi: false });
+    const difficulty = opts.difficulty ?? this.session.settings.difficulty;
+    this.load({ seed, difficulty, humans: [this.session.playerFaction], mode: 'standard' });
+    this.enterPlay();
+  }
+
+  startTutorial(): void {
+    this.load({ seed: 'training-burn', difficulty: 'normal', humans: [this.session.playerFaction], mode: 'tutorial' });
+    const world = this.world;
+    if (!world) return;
+    this.tutorial = createTutorial(world, this.session, { exitToTitle: () => this.quitToTitle() });
+    this.enterPlay();
+  }
+
+  joinHost(name: string, password: string): void {
+    void name;
+    void password;
+  }
+
+  quitToTitle(): void {
+    this.startAttract();
+  }
+
+  private enterPlay(): void {
     this.session.screen = 'playing';
     this.session.view = 'action';
     this.session.viewBlend = 0;
     this.session.selection.clear();
     this.session.feed = [];
     this.audio.unlock();
-  }
-
-  quitToTitle(): void {
-    this.startAttract();
   }
 
   setPaused(paused: boolean): void {
@@ -109,10 +146,15 @@ export class App implements AppApi {
   }
 
   private load(options: MatchOptions): void {
+    this.tutorial?.dispose();
+    this.tutorial = null;
+    this.session.markers = [];
     const world = createMatch(options);
     this.world = world;
     this.sim = new Simulation(world);
-    const aiFactions: FactionId[] = FACTION_IDS.filter((f) => options.allAi || f !== this.session.playerFaction);
+    // The Training Burn's rivals are scripted by the tutorial director, not the AI.
+    const aiFactions: FactionId[] =
+      options.mode === 'tutorial' ? [] : FACTION_IDS.filter((f) => !options.humans.includes(f));
     this.ai = createAi(world, aiFactions);
     this.renderer.attach(world, this.session);
     this.acc = 0;
@@ -137,6 +179,7 @@ export class App implements AppApi {
       let steps = 0;
       while (this.acc >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
         this.controls.tick();
+        this.tutorial?.tick();
         this.ai?.update();
         this.sim.step();
         this.acc -= SIM_DT;
@@ -147,6 +190,7 @@ export class App implements AppApi {
     let events: GameEvent[] = [];
     if (this.world) events = this.world.drainEvents();
     if (this.world && this.world.phase === 'ended' && this.session.screen === 'playing') this.session.screen = 'ended';
+    this.tutorial?.update(dt, events);
     this.renderer.onEvents(events);
     this.ui.onEvents(events);
     this.audio.onEvents(events);

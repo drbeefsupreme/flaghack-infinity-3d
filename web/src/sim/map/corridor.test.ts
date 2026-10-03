@@ -115,7 +115,7 @@ describe('conquest corridor', () => {
 
   it('starts every match with each Hearth enclosable by every rival around its home ring', () => {
     for (let s = 0; s < 6; s++) {
-      const world = createMatch({ seed: `corridor-match-${s}`, difficulty: 'normal', allAi: true });
+      const world = createMatch({ seed: `corridor-match-${s}`, difficulty: 'normal', humans: [], mode: 'standard' });
       const lat = world.lattice;
       const owners = geometryOwners(world);
       for (const b of world.buildings.values()) {

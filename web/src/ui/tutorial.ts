@@ -151,7 +151,7 @@ export class Tutorial implements UiPart {
 
   reset(world: World): void {
     // Only a real player match teaches; the title attract match is all AI.
-    this.live = !world.options.allAi;
+    this.live = world.options.humans.length > 0;
     this.planBaseline = -1;
     this.weightsBaseline = '';
   }

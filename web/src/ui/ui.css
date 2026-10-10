@@ -1983,6 +1983,8 @@
 
 /* Title screen */
 .title {
+  --title-subtitle-size: 25px;
+  --title-edition-size: calc(2 * var(--title-subtitle-size));
   position: absolute;
   inset: 0;
   transition: opacity 0.3s;
@@ -1991,15 +1993,25 @@
   opacity: 0.25;
 }
 .title-edition {
+  --edition-width: 570px;
   position: absolute;
-  top: 24px;
+  /* Rotating around the upper right raises the left edge by width * sin(15deg).
+     Compensate for that rise so the entire label stays inside the viewport. */
+  top: calc(24px + var(--edition-width) * 0.258819);
   right: 28px;
-  max-width: 40%;
+  width: var(--edition-width);
   color: #fff;
-  font-size: 18px;
-  line-height: 1.4;
+  font-family: var(--font-display);
+  font-size: var(--title-edition-size);
+  font-weight: 400;
+  line-height: 1.08;
   text-align: right;
-  text-shadow: 0 2px 4px #000;
+  white-space: nowrap;
+  transform: rotate(15deg);
+  transform-origin: top right;
+  /* A fine highlight and a dark lower edge give the white lettering a light bevel. */
+  text-shadow: -0.6px -0.6px 0 #fff, 0.8px 1px 0 #9b9b9b,
+    1.5px 2px 0 #454545, 0 3px 5px rgba(0, 0, 0, 0.8);
 }
 #ui .fh-root .title-edition {
   pointer-events: none;
@@ -2060,36 +2072,20 @@
   filter: drop-shadow(0 0 3px rgba(255, 60, 60, 0.8));
 }
 .logo {
-  margin: 0;
-  font: 700 92px/1 var(--font-ornate);
-  letter-spacing: 0.02em;
-  color: var(--flag);
-  text-shadow: 0 0 18px rgba(255, 212, 0, 0.55), 0 0 46px rgba(255, 170, 0, 0.3), 0 3px 0 #6b4800, 0 6px 16px rgba(0, 0, 0, 0.7);
-  white-space: nowrap;
+  width: 100%;
+  min-width: 0;
+  /* Absorb the artboard's transparent glow padding into the vertical stack.
+     Percentages follow the wordmark width, so the whole lockup scales together. */
+  margin: -9.184% 0 calc(18px - 6.505%);
+  line-height: 0;
+  flex: none;
+}
+.title-wordmark {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The SVG viewBox includes the full lettering, infinity, rule and glow. */
   animation: fh-glow 4s ease-in-out infinite;
-}
-.logo .inf {
-  display: inline-block;
-  font-family: var(--font-display);
-  font-weight: 400;
-  color: #fff6c2;
-  animation: fh-inf 6s ease-in-out infinite;
-}
-.subtitle {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 4px 0 18px 4px;
-  font: 700 25px var(--font-stencil);
-  letter-spacing: 0.5em;
-  color: var(--cream);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
-}
-.subtitle::after {
-  content: '';
-  width: 120px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--flag), transparent);
 }
 .quote {
   min-height: 76px;
@@ -4079,17 +4075,6 @@
   }
   50% {
     filter: brightness(1.12);
-  }
-}
-@keyframes fh-inf {
-  0%,
-  100% {
-    transform: rotate(0deg) scale(1);
-    text-shadow: 0 0 18px rgba(255, 240, 160, 0.7);
-  }
-  50% {
-    transform: rotate(-6deg) scale(1.06);
-    text-shadow: 0 0 34px rgba(255, 240, 160, 1);
   }
 }
 @keyframes fh-begin {

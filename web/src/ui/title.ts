@@ -15,6 +15,7 @@ import type { UiHost, UiPart } from './core';
 import { button, el, html, setClass, setDisabled, setText, show } from './dom';
 import { iconSvg } from './icons';
 import { QUOTES } from './lore';
+import titleWordmarkUrl from './assets/title-wordmark.svg';
 
 const QUOTE_MS = 8000;
 const FADE_MS = 650;
@@ -102,11 +103,17 @@ export class TitleScreen implements UiPart {
     this.host = host;
     this.root = el('div', 'title ix', parent);
     el('div', 'title-shade', this.root);
-    el('div', 'title-edition', this.root, 'game of the millennium edition');
+    html('div', 'title-edition', 'game of the<br>millennium<br>edition', this.root);
     const col = el('div', 'title-col', this.root);
     html('div', 'title-sigil', sigilSvg('sigil spin'), col);
-    html('h1', 'logo', 'FLAGHACK <span class="inf">∞</span>', col);
-    el('div', 'subtitle', col, 'SURVEY FLAGS');
+    // Keep the title and subtitle in one outlined, font-independent lockup.
+    const logo = el('h1', 'logo', col);
+    const wordmark = el('img', 'title-wordmark', logo);
+    wordmark.src = titleWordmarkUrl;
+    wordmark.alt = 'FLAGHACK ∞ — SURVEY FLAGS';
+    wordmark.width = 784;
+    wordmark.height = 252;
+    wordmark.draggable = false;
 
     this.quote = el('blockquote', 'quote', col);
     this.quoteText = el('p', 'quote-text', this.quote);

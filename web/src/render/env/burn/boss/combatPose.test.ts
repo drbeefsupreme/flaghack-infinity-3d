@@ -15,7 +15,7 @@ async function model() {
   return prepareBossModel((await new GLTFLoader().parseAsync(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), '')).scene);
 }
 function boss(action: BossState['action'] = 'idle', crouched = false): BossState {
-  return { id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 8800, maxHp: 8800, spawnedAt: 100, action, actionAt: 110,
+  return { id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action, actionAt: 110,
     actionSeq: 3, hitSeq: -1, target: null, focusFaction: null, retaliateId: null, retaliateUntil: 0,
     nextAttackAt: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched };
 }

@@ -1,7 +1,8 @@
 /** Durable, host-owned encounter state. Renderers never advance gameplay. */
 import type { EntityId, FactionId, Owner } from './types';
 import type { V2 } from './math';
-export const BOSS_MAX_HP = 8800;
+/** Temporary testing balance. Original four-minute held-staff calibration: 8,800 HP. */
+export const BOSS_MAX_HP = 5000;
 export const BOSS_RADIUS = 2.35;
 export const BOSS_DEATH_DURATION = 12;
 export const BOSS_ACTIONS = ['emerge', 'idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'death', 'dead'] as const;

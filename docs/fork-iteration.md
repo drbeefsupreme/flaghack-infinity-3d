@@ -111,9 +111,10 @@ remain rivals; afterward player-controlled and NPC camps are allies. Rival damag
 knockback, flag theft, Dialectics conversion and altar overwrites stop. NPC vexillomancers
 and their Signifiers attack the giant. Priority Beacons can direct your Signifiers at it.
 
-- The giant starts with 8,800 HP: about four minutes of one player's actual held, unbuffed
-  staff attacks in continuous contact. Staff timing and damage are unchanged. Cooperation,
-  Signifiers and thrown Flags shorten the encounter.
+- For testing, the giant starts with 5,000 HP: about 137 seconds of one player's actual
+  held, unbuffed staff attacks in continuous contact. Staff timing and damage are unchanged.
+  The earlier four-minute calibration was 8,800 HP; the lower value is a deliberate testing
+  override. Cooperation, Signifiers and thrown Flags shorten the encounter.
 - A thrown Flag deals 50 damage to the body or 100 to the head/hat, destroys the Flag, and
   bursts into a colored firework at the exact impact point. Swept collision regions follow
   the approved animated rig, including crouching, arms, skull and hat; walls still stop a

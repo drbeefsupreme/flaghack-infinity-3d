@@ -19,7 +19,7 @@ class Node {
 function setup() {
   vi.stubGlobal('document', { createElement: () => new Node() });
   const root = new Node(), hud = new BossHud(root as unknown as HTMLElement);
-  const world = { boss: { hp: 4300, maxHp: 8800, action: 'idle', deathAt: null } } as unknown as World;
+  const world = { boss: { hp: 4300, maxHp: 5000, action: 'idle', deathAt: null } } as unknown as World;
   return { root, hud, world, node: hud.element as unknown as Node };
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -35,8 +35,8 @@ describe('boss health HUD state', () => {
     const { hud, world, node } = setup(); hud.update(world, true);
     const bar = node.children[1], fill = bar.children[0];
     expect(bar.getAttribute('role')).toBe('progressbar'); expect(bar.getAttribute('aria-valuenow')).toBe('4300');
-    expect(bar.getAttribute('aria-valuemax')).toBe('8800'); expect(fill.properties.get('--boss-health')).toBe(String(4300 / 8800));
-    expect(node.children[0].children[1].textContent).toBe('4,300 / 8,800');
+    expect(bar.getAttribute('aria-valuemax')).toBe('5000'); expect(fill.properties.get('--boss-health')).toBe(String(4300 / 5000));
+    expect(node.children[0].children[1].textContent).toBe('4,300 / 5,000');
   });
   it('keeps the zero-health death state visible until the authoritative dead action', () => {
     const { hud, world, node, root } = setup(); world.boss!.hp = 0; world.boss!.deathAt = 200; world.boss!.action = 'death';

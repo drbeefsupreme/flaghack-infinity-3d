@@ -24,9 +24,9 @@ function encounter(): World {
 function tick(w: World, seconds: number): void { for (let i = 0; i < Math.ceil(seconds / SIM_DT); i++) { w.time += SIM_DT; updateBoss(w, SIM_DT); } }
 
 describe('authoritative boss encounter', () => {
-  it('spawns once with measured four-minute staff HP', () => {
+  it('spawns once with the current testing HP', () => {
     const w = encounter(), b = w.boss!;
-    expect(b.hp).toBe(8800); expect(b.maxHp).toBe(BOSS_MAX_HP);
+    expect(b.hp).toBe(5000); expect(b.maxHp).toBe(BOSS_MAX_HP);
     expect(spawnBoss(w)).toBe(b); expect(w.drainEvents().filter(e => e.t === 'notify' && e.text.includes('awakened'))).toHaveLength(1);
   });
   it('targets faction CMI, not hearth count or survey size', () => {
@@ -92,7 +92,7 @@ describe('authoritative boss encounter', () => {
     expect(pullFlag(w, flag.id, a.id)).toBe(false);
     w.effigyRevealedAt = null; expect(damageEntity(w, ally.id, 25, a.id)).toBe(true); expect(ally.hp).toBe(AVATAR.maxHp - 25);
   });
-  it('actual held staff cadence takes about four minutes without changing swing timing', () => {
+  it('current testing HP takes about 137 seconds at the unchanged held staff cadence', () => {
     const w = encounter(), b = w.boss!, a = w.avatarOf(0); b.pos = { x: 0, z: 3 }; a.pos = { x: 0, y: 0, z: 0 };
     a.yaw = 0; a.input.yaw = 0;
     // Continuous contact baseline excludes evasion, walking and boss damage, just like the approved diagnostic.
@@ -113,7 +113,8 @@ describe('authoritative boss encounter', () => {
         accumulator -= SIM_DT;
       }
     }
-    expect(b.hp).toBe(0); expect(w.time - start).toBeGreaterThan(235); expect(w.time - start).toBeLessThan(247);
+    console.log(JSON.stringify({ bossStaffTestingHP: BOSS_MAX_HP, elapsed: w.time - start }));
+    expect(b.hp).toBe(0); expect(w.time - start).toBeGreaterThan(134); expect(w.time - start).toBeLessThan(141);
   });
   it('NPC rival issues allied movement and damages the boss through ordinary staff commands', () => {
     const w = encounter(), b = w.boss!; b.pos = { x: 0, z: 0 };

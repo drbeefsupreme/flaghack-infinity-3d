@@ -289,7 +289,7 @@ export class App implements AppApi {
 
   /** Title screen and online lobby: an all-AI burn plays out behind the menus. */
   private loadAttract(): void {
-    this.load({ seed: `attract-${Math.floor(Math.random() * 1e6)}`, difficulty: 'normal', humans: [], mode: 'standard' });
+    this.load({ seed: `attract-${Math.floor(Math.random() * 1e6)}`, difficulty: 'normal', humans: [], mode: 'standard', match: normalizeMatch({ bossMode: false }) });
   }
 
   private enterPlay(): void {

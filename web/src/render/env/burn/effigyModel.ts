@@ -12,6 +12,7 @@ import { GlowMode, PartsBuilder } from '../geom';
 import {
   FLAG_BOTTOM,
   FLAG_HEIGHT,
+  GUY_HEIGHT,
   LATTICE_R0,
   LATTICE_R1,
   LATTICE_TOP,
@@ -25,10 +26,16 @@ import {
 export interface EffigyGeometry {
   /** Timber lattice, decks, ladders: chars, then burns away. */
   lattice: THREE.BufferGeometry;
-  /** Plinth and mast: chars but stands to the end. */
+  /** Plinth: chars but stands to the end. */
   solid: THREE.BufferGeometry;
-  /** Offerings, uplight cans, guy lines with pennants, the gilded finial: never burn. */
+  /** Original mast and straps, separated for the shared Flag/pole shrink. */
+  mast: THREE.BufferGeometry;
+  /** Gold pole cap and finial, which follow the same assembly. */
+  finial: THREE.BufferGeometry;
+  /** Offerings, uplight cans, ground anchors: never burn. */
   offerings: THREE.BufferGeometry;
+  /** Five guy/support lines and their pennants; separate for the 20–30 s burn-through. */
+  guyLines: THREE.BufferGeometry;
   /** Uplight beams (position/normal/uv; uv.y = 0 at the lamp). */
   shafts: THREE.BufferGeometry;
 }
@@ -39,7 +46,7 @@ const LEVELS = 8;
 /** Ground radius of the guy-line anchors (inside the plaza). */
 const GUY_RADIUS = 14;
 /** Height where the guy lines grip the mast (below the decks' railing and the Flag). */
-const GUY_HEIGHT = 18.4;
+export { GUY_HEIGHT } from './burnTimeline';
 /** Uplight cans stand on the ground between the legs at this radius. */
 export const UPLIGHT_RADIUS = PLINTH_RADIUS + 0.75;
 
@@ -80,7 +87,10 @@ export function buildEffigyGeometry(rng: Rng): EffigyGeometry {
   return {
     lattice: buildLattice(rng),
     solid: buildSolid(rng),
+    mast: buildMast(),
+    finial: buildFinial(),
     offerings: buildOfferings(rng),
+    guyLines: buildGuyLines(),
     shafts: buildShafts(),
   };
 }
@@ -248,6 +258,12 @@ function buildSolid(rng: Rng): THREE.BufferGeometry {
     }
   }
 
+  return b.build();
+}
+
+function buildMast(): THREE.BufferGeometry {
+  const b = new PartsBuilder();
+  const H = PLINTH_HEIGHT;
   // The mast: one tapering timber column, iron straps, lashings where the Flag is hoisted.
   const mastH = MAST_TOP - H + 0.05;
   b.cylinder(MAST_R1, MAST_R0, mastH, 0x9a6a3e, { y: H - 0.05 + mastH / 2 }, { segments: 14 });
@@ -333,14 +349,34 @@ function buildOfferings(rng: Rng): THREE.BufferGeometry {
     b.cylinder(0.14, 0.14, 0.02, 0xfff0d0, { x: x - Math.cos(th) * 0.04, y: 0.355, z: z - Math.sin(th) * 0.04, rx, rz }, { segments: 10, glow: 6 });
   }
 
-  // Guy lines from the mast to five ground anchors, strung with yellow pennants.
+  // The ground anchors survive after their guy lines burn away.
+  for (let k = 0; k < LEGS; k++) {
+    const th = legAngle(k) + Math.PI / LEGS;
+    const anchor = c.set(Math.cos(th) * GUY_RADIUS, 0.18, Math.sin(th) * GUY_RADIUS);
+    b.box(0.32, 0.36, 0.32, 0x6b6450, { x: anchor.x, y: 0.18, z: anchor.z, ry: th });
+  }
+
+  return b.build();
+}
+
+function buildFinial(): THREE.BufferGeometry {
+  const b = new PartsBuilder();
+  // Gilded finial atop the mast (Vexillaurum: the pole is gold).
+  b.sphere(0.42, 0xffc93a, { y: MAST_TOP + 0.36 }, { detail: 2, glow: 0.25 });
+  b.cone(0.16, 0.9, 0xffd65a, { y: MAST_TOP + 1.15 }, { segments: 8, glow: 0.25 });
+  b.cylinder(MAST_R1 * 0.7, MAST_R1, 0.12, 0xd4a017, { y: MAST_TOP - 0.02 }, { segments: 14 });
+  return b.build();
+}
+
+function buildGuyLines(): THREE.BufferGeometry {
+  const b = new PartsBuilder();
   const pennant = [FLAG_YELLOW, 0xffb21f, 0xffe45a];
   for (let k = 0; k < LEGS; k++) {
     const th = legAngle(k) + Math.PI / LEGS;
-    const top = a.set(Math.cos(th) * (mastRadius(GUY_HEIGHT) + 0.02), GUY_HEIGHT, Math.sin(th) * (mastRadius(GUY_HEIGHT) + 0.02));
-    const anchor = c.set(Math.cos(th) * GUY_RADIUS, 0.18, Math.sin(th) * GUY_RADIUS);
-    b.strut(top, anchor, 0.022, 0x3a3a3c, { segments: 4 });
-    b.box(0.32, 0.36, 0.32, 0x6b6450, { x: anchor.x, y: 0.18, z: anchor.z, ry: th });
+    const top = new THREE.Vector3(Math.cos(th) * (mastRadius(GUY_HEIGHT) + 0.02), GUY_HEIGHT, Math.sin(th) * (mastRadius(GUY_HEIGHT) + 0.02));
+    const anchor = new THREE.Vector3(Math.cos(th) * GUY_RADIUS, 0.18, Math.sin(th) * GUY_RADIUS);
+    // Length subdivisions let the released line drape onto the plinth/meadow during free fall.
+    b.strut(top, anchor, 0.022, 0x3a3a3c, { segments: 4, heightSegments: 64 });
     const yaw = -th;
     const len = top.distanceTo(anchor);
     const n = Math.floor((len * 0.78) / 0.82);
@@ -353,10 +389,6 @@ function buildOfferings(rng: Rng): THREE.BufferGeometry {
     }
   }
 
-  // Gilded finial atop the mast (Vexillaurum: the pole is gold).
-  b.sphere(0.42, 0xffc93a, { y: MAST_TOP + 0.36 }, { detail: 2, glow: 0.25 });
-  b.cone(0.16, 0.9, 0xffd65a, { y: MAST_TOP + 1.15 }, { segments: 8, glow: 0.25 });
-  b.cylinder(MAST_R1 * 0.7, MAST_R1, 0.12, 0xd4a017, { y: MAST_TOP - 0.02 }, { segments: 14 });
   return b.build();
 }
 

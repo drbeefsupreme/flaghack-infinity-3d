@@ -100,6 +100,10 @@ export class CollisionWorld {
   private readonly cells: number[][] = [];
   private readonly shapes: Shape[] = [];
   private readonly free: number[] = [];
+  /** Mast handles only: the effigy's pedestal keeps its original collision after burning. */
+  private readonly effigyMasts = new Set<ShapeId>();
+  /** Full effigy handles, retired together when the boss emerges. */
+  private readonly effigyShapes = new Set<ShapeId>();
   private stamp = 0;
   private cand = new Int32Array(256);
   private readonly result: MoveResult = { onGround: false, hitWall: false, groundY: 0 };
@@ -175,8 +179,10 @@ export class CollisionWorld {
         }
         case 'effigy': {
           // Pedestal plus mast carrying The Flag.
-          w.addCylinder(o.x, o.z, o.radius, 0, 3, tag);
-          w.addCylinder(o.x, o.z, 0.7, 0, o.height, tag);
+          w.effigyShapes.add(w.addCylinder(o.x, o.z, o.radius, 0, 3, tag));
+          const mast = w.addCylinder(o.x, o.z, 0.7, 0, o.height, tag);
+          w.effigyMasts.add(mast);
+          w.effigyShapes.add(mast);
           break;
         }
         default:
@@ -309,7 +315,19 @@ export class CollisionWorld {
       }
     }
     s.alive = false;
+    this.effigyMasts.delete(id);
+    this.effigyShapes.delete(id);
     this.free.push(id);
+  }
+
+  /** Retire consumed poles only; stable tags, pedestal shapes and other handles stay intact. */
+  removeEffigyMasts(): void {
+    for (const id of this.effigyMasts) this.remove(id);
+  }
+
+  /** Retire pedestal and mast only; dynamic shapes and recycled handles remain safe. */
+  removeEffigy(): void {
+    for (const id of this.effigyShapes) this.remove(id);
   }
 
   /**

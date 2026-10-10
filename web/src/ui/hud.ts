@@ -27,6 +27,7 @@ import { button, el, escapeHtml, fmtClock, html, kbd, setAttr, setClass, setText
 import { iconSvg } from './icons';
 import type { IconName } from './icons';
 import { takeableSeat } from './online';
+import { BossHud } from './bossHud';
 
 /** Dusk falls at 6:00 and night at 10:00 (design §14). */
 const DUSK_AT = 6 * 60;
@@ -93,9 +94,11 @@ export class HudPart implements UiPart {
   private spectateBtn: HTMLButtonElement;
   private spectatePlay: HTMLButtonElement;
   private selectBox: HTMLElement;
+  private bossHud: BossHud;
 
   constructor(host: UiHost, layout: UiLayout) {
     this.host = host;
+    this.bossHud = new BossHud(layout.topCenter);
 
     // ── Resource frame (homage to the 2017 "20 FLAGS" frame) ──
     const frame = el('div', 'res frame', layout.colLeft);
@@ -198,6 +201,7 @@ export class HudPart implements UiPart {
 
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
+    this.bossHud.update(world, matchScreen(s.screen));
     if (!matchScreen(s.screen) || !world) return;
     const P = s.playerFaction;
     const fac = world.factions[P];
@@ -260,7 +264,7 @@ export class HudPart implements UiPart {
     // The Training Burn's director holds The Burn and Dawn back: no countdown to promise there.
     const timed = world.options.mode !== 'tutorial' && Number.isFinite(endAt);
     show(this.burn, timed);
-    show(this.dawn, timed && world.suddenDeath);
+    show(this.dawn, timed && world.suddenDeath && world.effigyRevealedAt === null);
     show(this.clockSub, timed || tideDue);
     if (timed) {
       if (world.suddenDeath) {
@@ -333,6 +337,7 @@ export class HudPart implements UiPart {
   }
 
   dispose(): void {
+    this.bossHud.dispose();
     for (const n of this.nodes) n.remove();
   }
 }

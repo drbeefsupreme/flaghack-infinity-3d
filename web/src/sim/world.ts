@@ -4,6 +4,7 @@
  * and submits Commands.
  */
 import type { Command } from './commands';
+import type { BossOutcome, BossState } from './boss';
 import type { GameEvent } from './events';
 import type { Lattice } from './lattice/lattice';
 import type { MapLayout } from './map/mapgen';
@@ -76,6 +77,11 @@ export class World {
   phase: MatchPhase = 'playing';
   winner: FactionId | null = null;
   suddenDeath = false;
+  /** Authoritative start of the boss reveal, in match seconds. Null before the transition. */
+  effigyRevealedAt: number | null = null;
+  /** Durable authoritative encounter and result, including late joins. */
+  boss: BossState | null = null;
+  bossOutcome: BossOutcome | null = null;
 
   lattice!: Lattice;
   map!: MapLayout;

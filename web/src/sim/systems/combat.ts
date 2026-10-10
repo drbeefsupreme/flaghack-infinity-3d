@@ -10,6 +10,7 @@ import type { V2 } from '../math';
 import { NEUTRAL } from '../types';
 import type { Avatar, EntityId, Hippie } from '../types';
 import type { World } from '../world';
+import { bossEncounterActive, damageBoss } from './boss/damage';
 import { damageBuilding } from './buildings';
 import { applyEffect } from './effects';
 import { dropLoose } from './flags';
@@ -29,6 +30,8 @@ const AVATAR_KNOCK_LIFT = 0.35;
  * for units at 0 HP, ko (dropping carried Flags loose). Returns true if the target took damage.
  */
 export function damageEntity(world: World, target: EntityId, amount: number, by: EntityId | -1): boolean {
+  if (world.boss?.id === target) return damageBoss(world, amount, by);
+  if (friendlyBossDamage(world, target, by)) return false;
   const piece = world.pieces.get(target);
   if (piece) return damagePiece(world, piece, amount, by);
   const b = world.buildings.get(target);
@@ -38,7 +41,7 @@ export function damageEntity(world: World, target: EntityId, amount: number, by:
 
 /** Avatar/hippie damage, KO handling, SOS auto-ping for hippies. */
 export function damageUnit(world: World, target: EntityId, amount: number, by: EntityId | -1): boolean {
-  if (!(amount > 0)) return false;
+  if (!(amount > 0) || friendlyBossDamage(world, target, by)) return false;
   const av = world.avatars.get(target);
   if (av) return damageAvatar(world, av, amount, by);
   const h = world.hippies.get(target);
@@ -148,4 +151,12 @@ export function knockback(world: World, target: EntityId, from: V2, strength: nu
   h.vel.x = dx * strength;
   h.vel.z = dz * strength;
   applyEffect(world, h, 'knockback', HIPPIE_KNOCK_TIME, strength);
+}
+
+/** All surviving camps ally at reveal; environmental/boss damage stays dangerous. */
+export function friendlyBossDamage(world: World, target: EntityId, by: EntityId | -1): boolean {
+  if (!bossEncounterActive(world) || by === world.boss?.id || by < 0) return false;
+  const source = world.avatars.get(by) ?? world.hippies.get(by) ?? world.buildings.get(by) ?? world.pieces.get(by);
+  const victim = world.avatars.get(target) ?? world.hippies.get(target) ?? world.buildings.get(target) ?? world.pieces.get(target);
+  return !!source && !!victim && source.faction >= 0 && victim.faction >= 0;
 }

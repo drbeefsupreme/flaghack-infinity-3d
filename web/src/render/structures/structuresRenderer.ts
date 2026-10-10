@@ -108,6 +108,7 @@ export class StructuresRenderer implements RenderModule {
         this.views.set(b.id, v);
       }
       v.update(b, f);
+      v.root.visible = !(w.boss?.held?.kind === 'building' && w.boss.held.id === b.id);
     }
     if (this.views.size > 0) {
       for (const [id, v] of this.views) {

@@ -7,6 +7,7 @@ import {
   SUDDEN_DEATH_PRESSURE_MULT,
   TIDE_INTERVAL_SUDDEN_DEATH,
 } from '../../constants';
+import { normalizeMatch } from '../../matchSettings';
 import type { GameEvent } from '../../events';
 import type { World } from '../../world';
 import { captureHearth } from '../capture';
@@ -41,6 +42,7 @@ function stripRings(world: World): void {
 describe('The Burn', () => {
   it('starts sudden death at BURN_TIME, quickens the tides and escalates on a clock', () => {
     const world = newMatch('burn-a');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.time = BURN_TIME - 0.5;
     world.tide.nextAt = world.time + 70;
     expect(suddenDeathMult(world)).toBe(1);
@@ -90,6 +92,7 @@ describe('Victory', () => {
 
   it('Dawn crowns the camp holding the most Hearths, warned a minute ahead, eliminating nobody', () => {
     const world = newMatch('dawn-a');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.tide.nextAt = Infinity;
     // Dr. Crow overwrites President Jaguar before dawn: two Hearths to everyone else's one.
     captureHearth(world, must(world.hearthOf(3), 'hearth 3'), 1);
@@ -121,6 +124,7 @@ describe('Victory', () => {
 
   it('Dawn breaks a tie on Hearths by Survey size, then C.M.I., then the lowest faction id', () => {
     const world = newMatch('dawn-b');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.tide.nextAt = Infinity;
     stripRings(world);
     runRules(world, 0.1);

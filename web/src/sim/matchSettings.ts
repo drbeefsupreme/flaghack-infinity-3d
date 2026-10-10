@@ -11,6 +11,7 @@ export interface MatchSettings {
   jumpHeight: number; // multiplier of the original jump apex; 1 = original height
   maxSignifiers: number; // fixed shared world population (alive and knocked out)
   structuresBlockFlagPlacement: boolean;
+  bossMode: boolean; // reveal the boss 90 seconds after The Burn
 }
 export const DEFAULT_MATCH: MatchSettings = {
   active: [0, 1, 2, 3],
@@ -23,6 +24,7 @@ export const DEFAULT_MATCH: MatchSettings = {
   jumpHeight: 1,
   maxSignifiers: 40,
   structuresBlockFlagPlacement: false,
+  bossMode: true,
 };
 export const MATCH_RANGES = {
   dayLength: [300, 7200, 60],
@@ -42,6 +44,7 @@ export function normalizeMatch(value: Partial<MatchSettings> = {}): MatchSetting
     if (active.length) out.active = active;
   }
   if (Number.isInteger(value.days) && value.days! >= 0 && value.days! <= 5) out.days = value.days!;
+  if (typeof value.bossMode === 'boolean') out.bossMode = value.bossMode;
   if (typeof value.structuresBlockFlagPlacement === 'boolean') out.structuresBlockFlagPlacement = value.structuresBlockFlagPlacement;
   for (const k of Object.keys(MATCH_RANGES) as (keyof typeof MATCH_RANGES)[]) {
     const v = value[k];

@@ -12,6 +12,7 @@ import { spawnBuilding, spawnHippie } from '../../factory';
 import { criticalNodes } from '../../lattice/geometry';
 import { planEnclosure } from '../../lattice/planner';
 import { NEUTRAL } from '../../types';
+import { normalizeMatch } from '../../matchSettings';
 import type { CaptureStage, FactionId } from '../../types';
 import type { World } from '../../world';
 import { isCollapsed } from '../buildings';
@@ -199,6 +200,7 @@ describe('Hearth capture', () => {
 
   it('applies defender (floored), Ward and escalating sudden-death modifiers to the pressure rate', () => {
     const world = newMatch('capture-e');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.tide.nextAt = Infinity;
     exposeHearth(world, 0);
     const hearth = must(world.hearthOf(0), 'hearth');

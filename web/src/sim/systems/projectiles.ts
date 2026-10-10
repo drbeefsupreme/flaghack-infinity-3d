@@ -8,11 +8,13 @@ import { AVATAR, MAP_HALF, PROJECTILE } from '../constants';
 import { clamp } from '../math';
 import type { FactionId, Hippie, Projectile } from '../types';
 import type { World } from '../world';
+import { bossEncounterActive } from './boss/damage';
+import { intersectBossRegions } from './boss/hitRegions';
 import { damageEntity } from './combat';
 import { recruitWithFlag } from './recruitment';
 import { isDrugActive } from './drugs';
 import { applyEffect } from './effects';
-import { dropLoose, nearestPlantableNode, plantFlag } from './flags';
+import { destroyFlag, dropLoose, nearestPlantableNode, plantFlag } from './flags';
 
 /** Surfaces at least this flat (normal y) catch a Flag; steeper ones knock it down. */
 const WALKABLE_NY = 0.7;
@@ -56,9 +58,19 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
     ground = true;
     t = dy < 0 ? clamp(oy / -dy, 0, 1) : 1;
   }
-  const victim = hippieOnSegment(world, p, ox, oy, oz, dx, dy, dz, t);
-  if (victim) {
-    bonk(world, p, victim);
+  const impact = world.boss ? intersectBossRegions(world.boss, world.time,
+    { x: ox, y: oy, z: oz }, { x: ox + dx, y: oy + dy, z: oz + dz }, t) : null;
+  // A neutral catching the flag or a physical wall in front of the giant still wins.
+  const victim = hippieOnSegment(world, p, ox, oy, oz, dx, dy, dz, impact ? impact.t : t);
+  if (victim) { bonk(world, p, victim); return; }
+  if (impact && world.boss) {
+    const amount = impact.headshot ? 100 : 50;
+    damageEntity(world, world.boss.id, amount, p.thrower);
+    const flagId = p.flagId;
+    destroyFlag(world, flagId);
+    world.projectiles.delete(p.id);
+    world.emit({ t: 'bossImpact', bossId: world.boss.id, by: p.thrower, flagId,
+      faction: p.faction, pos: impact.pos, headshot: impact.headshot, amount });
     return;
   }
   if (hit) {
@@ -111,7 +123,7 @@ function hippieOnSegment(
   let best: Hippie | null = null;
   let bestT = Infinity;
   for (const h of world.hippies.values()) {
-    if (h.status === 'ko' || h.faction === p.faction) continue;
+    if (h.status === 'ko' || h.faction === p.faction || bossEncounterActive(world) && h.faction >= 0) continue;
     const hx = h.pos.x;
     const hz = h.pos.z;
     if (hx < minX || hx > maxX || hz < minZ || hz > maxZ) continue;

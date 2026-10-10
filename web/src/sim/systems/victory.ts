@@ -1,4 +1,5 @@
 import { burnTime, endTime, matchSettings } from "../matchSettings";
+import { BOSS_DEATH_DURATION } from '../boss';
 /**
  * Elimination, match end (conquest: the last camp standing; Dawn: the dominant camp once
  * DAWN_TIME arrives), The Burn (sudden death) timing.
@@ -17,6 +18,7 @@ import { NEUTRAL } from '../types';
 import type { FactionId, Hippie } from '../types';
 import type { World } from '../world';
 import { collapseGcc, isCollapsed } from './buildings';
+import { updateEffigy } from './effigy';
 import { dropLoose, transferFlags } from './flags';
 import { FACTION_SHORT } from './rules/factions';
 
@@ -45,7 +47,7 @@ export function neutralizeHippie(world: World, h: Hippie): void {
  * scattered), its Flags orphan (planted ones stand neutral, pullable by anyone), its hippies
  * wander off neutral, its plan is forgotten and its GCC collapses for ever.
  */
-export function eliminate(world: World, faction: FactionId, by: FactionId | null): void {
+export function eliminate(world: World, faction: FactionId, by: FactionId | null, cause?: 'boss'): void {
   const fac = world.factions[faction];
   if (!fac.alive) return;
   fac.alive = false;
@@ -85,14 +87,46 @@ export function eliminate(world: World, faction: FactionId, by: FactionId | null
   }
   fac.gccId = null;
 
-  world.emit({ t: 'eliminated', faction, by });
+  world.emit({ t: 'eliminated', faction, by, ...(cause ? { cause } : {}) });
   const overwriter = by !== null ? `, overwritten by ${FACTION_SHORT[by]}` : '';
   world.emit({
     t: 'notify',
     faction: 'all',
-    text: `${fac.name} is Flagless${overwriter}. "Losing the flags is the first step to finding them."`,
+    text: cause === 'boss' ? `${fac.name} falls. The Effigy has consumed its altar.` : `${fac.name} is Flagless${overwriter}. "Losing the flags is the first step to finding them."`,
     severity: 'epic',
   });
+}
+
+/** Boss consumption uses the same complete faction teardown as ordinary elimination. */
+export function eliminateByBoss(world: World, faction: FactionId): void {
+  if (world.factions[faction].hearthIds.length > 0) return;
+  eliminate(world, faction, null, 'boss');
+}
+
+/**
+ * Resolve only host-authored encounter facts. Human camps define the loss condition; in an
+ * AI-only/spectator match all active camps participate. Eliminated camps never share a win.
+ */
+export function updateBossOutcome(world: World): void {
+  if (world.phase !== 'playing' || world.effigyRevealedAt === null || world.bossOutcome) return;
+  const active = matchSettings(world.options).active;
+  const players = active.filter((id) => world.options.humans.includes(id));
+  const participants = players.length ? players : active;
+  const survivors = active.filter((id) => world.factions[id]?.alive);
+  const lost = !participants.some((id) => world.factions[id]?.alive);
+  const boss = world.boss;
+  const defeated = boss && boss.hp <= 0 && boss.action === 'dead' && boss.deathAt !== null &&
+    world.time + 1e-6 >= boss.deathAt + BOSS_DEATH_DURATION;
+  if (!lost && !defeated) return;
+  const winners = lost ? [] : survivors;
+  world.bossOutcome = { kind: lost ? 'defeat' : 'victory', winners, at: world.time };
+  world.phase = 'ended';
+  // The encounter has several possible winners; the durable outcome is the authority.
+  world.winner = null;
+  world.emit({ t: 'bossEnded', kind: world.bossOutcome.kind, winners: [...winners] });
+  world.emit({ t: 'notify', faction: 'all', severity: 'epic', text: lost
+    ? 'The Effigy endures. Every player camp has fallen.'
+    : 'The Effigy has fallen. The surviving camps share the victory.' });
 }
 
 /**
@@ -134,7 +168,14 @@ export function updateVictory(world: World, dt: number): void {
   // The Training Burn runs on its lessons' clock; the director stages its Burn and never crowns anyone.
   if (world.options.mode === 'tutorial') return;
   if (!world.suddenDeath && world.time >= burnTime(world.options)) startBurn(world);
-  if (world.suddenDeath) announceEscalation(world);
+  if (world.suddenDeath && world.effigyRevealedAt === null) announceEscalation(world);
+  // A skipped tick can start The Burn after the reveal threshold. Resolve it before wins.
+  updateEffigy(world);
+  // Revealing the boss replaces conquest and Dawn with the shared encounter result.
+  if (world.effigyRevealedAt !== null) {
+    updateBossOutcome(world);
+    return;
+  }
 
   let survivor: FactionId | null = null;
   let survivors = 0;

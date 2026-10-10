@@ -162,8 +162,9 @@ describe('parseClientMessage', () => {
   it('accepts new match options and rejects malformed or out-of-range values', () => {
     const match = normalizeMatch({ jumpHeight: 1.5, maxSignifiers: 9, structuresBlockFlagPlacement: true });
     const message = { t: 'settings', settings: { match } };
+    expect(parseClientMessage(JSON.stringify({ ...message, settings: { match: { ...match, bossMode: false } } }))).toMatchObject({ settings: { match: { bossMode: false } } });
     expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
-    for (const patch of [{ jumpHeight: 0 }, { maxSignifiers: 0.5 }, { maxSignifiers: 201 }, { structuresBlockFlagPlacement: 'off' }]) {
+    for (const patch of [{ jumpHeight: 0 }, { maxSignifiers: 0.5 }, { maxSignifiers: 201 }, { structuresBlockFlagPlacement: 'off' }, { bossMode: 'on' }, { bossMode: 1 }, { bossMode: null }, { bossMode: undefined }]) {
       expect(parseClientMessage(JSON.stringify({ t: 'settings', settings: { match: { ...match, ...patch } } }))).toBeNull();
     }
   });

@@ -1,6 +1,6 @@
 /**
- * Flag lifecycle: stock → carried → planted/loose/flying → … Conservation: Flags are never
- * destroyed except by explicit design (none in v1). Every state change appends history,
+ * Flag lifecycle: stock → carried → planted/loose/flying → … Conservation: only explicit giant impacts/eating
+ * destroy Flags; ordinary flag actions move them. Every state change appends history,
  * updates SurveyState node arrays and marks the survey dirty.
  *
  * Inventories live here: every function that moves a Flag first detaches it from wherever it
@@ -15,6 +15,7 @@ import type { V2, V3 } from '../math';
 import { NEUTRAL } from '../types';
 import type { Avatar, Building, Crystal, EntityId, FactionId, Flag, FlagState, Hippie, Owner } from '../types';
 import type { World } from '../world';
+import { bossEncounterActive } from './boss/damage';
 import { isFlagProtected } from './abilities';
 import { isCollapsed } from './buildings';
 import { isFactionId } from './rules/factions';
@@ -167,6 +168,7 @@ export function pullFlag(world: World, flagId: EntityId, carrier: EntityId | -1,
   const c = carrier >= 0 ? carrierOf(world, carrier) : undefined;
   const puller: Owner = c ? c.faction : NEUTRAL;
   const prevOwner = fl.owner;
+  if (bossEncounterActive(world) && prevOwner >= 0 && puller >= 0 && prevOwner !== puller) return false;
   const wasPlanted = fl.state === 'planted';
   if (wasPlanted && prevOwner !== puller && isFlagProtected(world, fl)) return false;
   const taker = c ? holdingFaction(world, c) : null;
@@ -197,6 +199,17 @@ export function dropLoose(world: World, flagId: EntityId, at: V3): void {
   detach(world, fl);
   layDown(world, fl, at);
   record(world, fl, 'loose', by);
+}
+
+/** Explicit destruction by a giant impact/eating. Canonical detach clears every reference. */
+export function destroyFlag(world: World, flagId: EntityId): boolean {
+  const fl = world.flags.get(flagId);
+  if (!fl) return false;
+  detach(world, fl);
+  for (const p of world.projectiles.values()) if (p.flagId === flagId) world.projectiles.delete(p.id);
+  world.flags.delete(flagId);
+  markSurveyDirty(world);
+  return true;
 }
 
 /** Move one Flag from a Hearth's stock into a carrier's hands. Returns the Flag or null. */

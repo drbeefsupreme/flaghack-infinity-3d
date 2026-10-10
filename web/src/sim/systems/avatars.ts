@@ -5,6 +5,7 @@
  * Player and AI avatars are identical; both are driven only by these commands.
  * Owner: Units agent.
  */
+import { BOSS_RADIUS } from '../boss';
 import { AVATAR, BUILDINGS, GCC, HIPPIE, MAP_HALF } from '../constants';
 import type { CommandOf } from '../commands';
 import { spawnProjectile } from '../factory';
@@ -438,18 +439,21 @@ function resolveSwing(world: World, av: Avatar): void {
   const ax = av.pos.x;
   const ay = av.pos.y;
   const az = av.pos.z;
+  const boss = world.boss;
+  if (boss && boss.hp > 0 && ay < (boss.crouched ? 12 : 20) &&
+      inCone(ax, az, fx, fz, cosHalf, boss.pos.x, boss.pos.z, reach + BOSS_RADIUS)) {
+    damageEntity(world, boss.id, AVATAR.swingDamage, av.id);
+  }
   for (const o of world.avatars.values()) {
     if (o.faction === av.faction || o.koUntil > 0 || Math.abs(o.pos.y - ay) > UNIT_VERTICAL_REACH) continue;
     if (!inCone(ax, az, fx, fz, cosHalf, o.pos.x, o.pos.z, reach + AVATAR.radius)) continue;
-    damageEntity(world, o.id, AVATAR.swingDamage, av.id);
-    knockback(world, o.id, av.pos, AVATAR.swingKnockback);
+    if (damageEntity(world, o.id, AVATAR.swingDamage, av.id)) knockback(world, o.id, av.pos, AVATAR.swingKnockback);
   }
   if (ay < UNIT_VERTICAL_REACH) {
     for (const h of world.hippies.values()) {
       if (h.faction === av.faction || h.faction === NEUTRAL || h.status === 'ko') continue;
       if (!inCone(ax, az, fx, fz, cosHalf, h.pos.x, h.pos.z, reach + HIPPIE.radius)) continue;
-      damageEntity(world, h.id, AVATAR.swingDamage, av.id);
-      knockback(world, h.id, av.pos, AVATAR.swingKnockback);
+      if (damageEntity(world, h.id, AVATAR.swingDamage, av.id)) knockback(world, h.id, av.pos, AVATAR.swingKnockback);
     }
   }
 

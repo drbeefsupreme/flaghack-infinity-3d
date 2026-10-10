@@ -220,7 +220,7 @@ export class HearthRail implements UiPart {
     // Tooltips need the cursor: only while it is free (Command View or an unlocked pointer).
     const ix = s.view === 'command' || !s.pointerLocked;
     for (const c of this.cards) setClass(c.dawn, 'ix', ix);
-    const live = world.suddenDeath && world.phase === 'playing';
+    const live = world.suddenDeath && world.effigyRevealedAt === null && world.phase === 'playing';
     // Before The Burn (and after it is cleared at the end) there is nothing to mark or unmark.
     if (!live && this.dawnLeader === null) return;
     if (live && now - this.dawnAt < DAWN_RECOMPUTE_MS) return;

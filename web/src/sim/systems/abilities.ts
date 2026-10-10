@@ -13,6 +13,7 @@ import { FACTION_IDS } from '../types';
 import type { AbilityId, Avatar, AvatarAction, ChakraId, EntityId, FactionId, Flag, HippieOrder } from '../types';
 import type { World } from '../world';
 import { isCollapsed } from './buildings';
+import { bossEncounterActive } from './boss/damage';
 import { damageEntity, knockback } from './combat';
 import { wallSegment } from './econ/pieceGeometry';
 import { econ } from './econ/state';
@@ -186,6 +187,10 @@ export function cmdAbility(world: World, c: CommandOf<'ability'>): void {
 
 /** What a Priority Beacon at `at` points hippies at: enemy Flag, structure or unit; -1 = the spot itself. */
 function beaconTarget(world: World, f: FactionId, at: V2): EntityId | -1 {
+  if (bossEncounterActive(world)) {
+    const boss = world.boss;
+    return boss && boss.hp > 0 && Math.hypot(at.x - boss.pos.x, at.z - boss.pos.z) <= 9 ? boss.id : -1;
+  }
   let best: EntityId | -1 = -1;
   let bestD = ABILITY.beacon.targetReach ** 2;
   for (const fl of world.flags.values()) {
@@ -322,7 +327,7 @@ function castPhason(world: World, f: FactionId, av: Avatar, level: number, at: V
     nodes.sort((a, b) => d2(a) - d2(b) || a - b);
   }
   let turned = 0;
-  for (const n of nodes) if (applyFlip(world, n, 'ability')) turned++;
+  for (const n of nodes) if (!phasonHurtsAlly(world, f, n) && applyFlip(world, n, 'ability')) turned++;
   nodes.length = 0;
   if (turned === 0) return 'The Crystal holds here: Stabilized, or anchored under a building.';
   const pos = { x: cx, z: cz };
@@ -351,11 +356,12 @@ function castOmega(world: World, f: FactionId, av: Avatar, level: number): V2 {
   const centre = { x: cx, z: cz };
   spawnZone(world, 'omega', f, centre, radius, cfg.zoneTime, level);
   const r2 = radius * radius;
+  const boss = world.boss;
+  if (boss && (boss.pos.x - cx) ** 2 + (boss.pos.z - cz) ** 2 <= r2) damageEntity(world, boss.id, cfg.damage, av.id);
   for (const h of world.hippies.values()) {
     if (h.faction === f || h.faction === -1 || h.koUntil > world.time) continue;
     if ((h.pos.x - cx) ** 2 + (h.pos.z - cz) ** 2 > r2) continue;
-    damageEntity(world, h.id, cfg.damage, av.id);
-    if (h.koUntil <= world.time) knockback(world, h.id, centre, cfg.knockback);
+    if (damageEntity(world, h.id, cfg.damage, av.id) && h.koUntil <= world.time) knockback(world, h.id, centre, cfg.knockback);
   }
 
   const st = econ(world);
@@ -364,7 +370,7 @@ function castOmega(world: World, f: FactionId, av: Avatar, level: number): V2 {
   const loose2 = (radius * cfg.looseFraction) ** 2;
   for (const fl of world.flags.values()) {
     // pullFlag itself refuses Flags held by an L3 Stabilize Zone.
-    if (fl.state === 'planted' && fl.owner !== f && flagWithin(world, fl, cx, cz, loose2)) loose.push(fl.id);
+    if (fl.state === 'planted' && fl.owner !== f && !(bossEncounterActive(world) && fl.owner >= 0) && flagWithin(world, fl, cx, cz, loose2)) loose.push(fl.id);
   }
   const edge = MAP_HALF - 1;
   for (const id of loose) {
@@ -436,4 +442,20 @@ export function updateAbilities(world: World, dt: number): void {
   tendAlignments(world);
   tendMarches(world);
   for (const z of world.zones.values()) if (z.until <= world.time) world.zones.delete(z.id);
+}
+
+/** A targeted topology edit must not dismantle a cooperative camp's flags or structures. */
+function phasonHurtsAlly(world: World, f: FactionId, node: number): boolean {
+  if (!bossEncounterActive(world)) return false;
+  const lat = world.lattice, n = lat.nodes[node], touched = new Set<number>([node]);
+  for (const facet of n.facets) for (const k of lat.facets[facet].nodes) touched.add(k);
+  for (const k of touched) {
+    const owner = world.survey.holder[k];
+    if (owner >= 0 && owner !== f) return true;
+  }
+  for (const p of world.pieces.values()) {
+    if (p.faction < 0 || p.faction === f) continue;
+    if (p.kind === 'wall' ? n.edges.includes(p.edge) : n.facets.includes(p.facet)) return true;
+  }
+  return false;
 }

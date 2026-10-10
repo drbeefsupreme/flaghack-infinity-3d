@@ -47,13 +47,15 @@ export type GameEvent =
   // Conquest
   | { t: 'hearthStage'; hearthId: EntityId; faction: Owner; stage: CaptureStage; prev: CaptureStage; attacker: FactionId | null }
   | { t: 'captured'; hearthId: EntityId; from: Owner; to: FactionId; pos: V2 }
-  | { t: 'eliminated'; faction: FactionId; by: FactionId | null }
+  | { t: 'eliminated'; faction: FactionId; by: FactionId | null; cause?: 'boss' }
+  | { t: 'bossEnded'; kind: 'victory' | 'defeat'; winners: FactionId[] }
   /** `reason` 'dawn': no single camp was left at DAWN_TIME and the dominant one was crowned. */
   | { t: 'victory'; faction: FactionId; reason?: 'conquest' | 'dawn' }
   | { t: 'burn' } // The Burn / sudden death begins
   // Units & combat
   | { t: 'swing'; by: EntityId; pos: V3; yaw: number }
   | { t: 'hit'; target: EntityId; by: EntityId | -1; amount: number; pos: V3 }
+  | { t: 'bossImpact'; bossId: EntityId; by: EntityId; flagId: EntityId; faction: FactionId; pos: V3; headshot: boolean; amount: number }
   | { t: 'ko'; id: EntityId; kind: 'avatar' | 'hippie'; faction: Owner; by: EntityId | -1; pos: V3 }
   | { t: 'respawn'; id: EntityId; kind: 'avatar' | 'hippie'; faction: Owner; pos: V3 }
   | { t: 'recruited'; hippieId: EntityId; faction: FactionId; via: 'drumcircle' | 'gcc' | 'hand' | 'throw' | 'dialectics' }

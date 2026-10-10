@@ -15,6 +15,8 @@
  * Owner: NetCore agent.
  */
 import type { SurveyState, World } from '../sim/world';
+import { BOSS_ACTIONS } from '../sim/boss';
+import type { BossState, BossTargetKind } from '../sim/boss';
 import { econ } from '../sim/systems/econ/state';
 import { isFactionId } from '../sim/systems/rules/factions';
 import { CHAKRAS, DRUGS, FACTION_IDS, JOBS, NEUTRAL } from '../sim/types';
@@ -847,6 +849,16 @@ const HIPPIE_FIELDS: readonly Field<Hippie>[] = [
   }),
   effectsField<Hippie>(),
   num('recruitedAt', MS, (h) => h.recruitedAt, (h, v) => { h.recruitedAt = v; }),
+  {
+    key: 'airborne',
+    enc: (h) => h.airborne ? [quant(h.airborne.y, CM), quant(h.airborne.vy, CM)] : null,
+    same: (h, p) => h.airborne ? Array.isArray(p) && p[0] === quant(h.airborne.y, CM) &&
+      p[1] === quant(h.airborne.vy, CM) : p === null,
+    dec: (h, v) => {
+      if (Array.isArray(v)) h.airborne = { y: dequant(v[0], CM), vy: dequant(v[1], CM) };
+      else delete h.airborne;
+    },
+  },
 ];
 
 const BUILDING_FIELDS: readonly Field<Building>[] = [
@@ -1324,7 +1336,58 @@ export const FACTION_MASK_ALL = (1 << FACTION_FIELDS.length) - 1;
 
 // ── World scalars ────────────────────────────────────────────────────────────
 
+const BOSS_TARGET_KINDS: readonly BossTargetKind[] = ['avatar', 'hippie', 'building', 'piece', 'flag'];
+
+/** Boss row is durable world state, never reconstructed from animation events. */
+function bossWire(b: BossState | null): Wire {
+  if (!b) return null;
+  return [b.id, quant(b.pos.x, CM), quant(b.pos.z, CM), quant(b.yaw, MRAD),
+    quant(b.hp, TENTH), quant(b.maxHp, TENTH), quant(b.spawnedAt, MS), b.action,
+    quant(b.actionAt, MS), b.actionSeq, b.hitSeq, b.target ? [b.target.kind, b.target.id] : null,
+    b.focusFaction, b.retaliateId, quant(b.retaliateUntil, MS), quant(b.nextAttackAt, MS),
+    b.deathAt === null ? null : quant(b.deathAt, MS),
+    b.barrier ? [b.barrier.edge, b.barrier.faction, quant(b.barrier.x, CM), quant(b.barrier.z, CM), quant(b.barrier.at, MS)] : null,
+    quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched];
+}
+
+export function bossFromWire(v: Wire): BossState | null {
+  if (!Array.isArray(v) || v.length < 21 || !oneOf(v[7], BOSS_ACTIONS)) return null;
+  const target = list(v[11]);
+  const barrier = list(v[17]);
+  const held = list(v[19]);
+  return {
+    id: int(v[0], -1), pos: { x: dequant(v[1], CM), z: dequant(v[2], CM) }, yaw: dequant(v[3], MRAD),
+    hp: dequant(v[4], TENTH), maxHp: dequant(v[5], TENTH), spawnedAt: dequant(v[6], MS), action: v[7],
+    actionAt: dequant(v[8], MS), actionSeq: int(v[9], 0), hitSeq: int(v[10], 0),
+    target: oneOf(target[0], BOSS_TARGET_KINDS) ? { kind: target[0], id: int(target[1], -1) } : null,
+    focusFaction: optFaction(v[12]), retaliateId: typeof v[13] === 'number' ? v[13] : null,
+    retaliateUntil: dequant(v[14], MS), nextAttackAt: dequant(v[15], MS),
+    deathAt: v[16] === null ? null : dequant(v[16], MS),
+    barrier: barrier.length === 5 ? { edge: int(barrier[0], -1), faction: faction(barrier[1]),
+      x: dequant(barrier[2], CM), z: dequant(barrier[3], CM), at: dequant(barrier[4], MS) } : null,
+    stride: dequant(v[18], CM), crouched: v[20] === true,
+    held: oneOf(held[0], BOSS_TARGET_KINDS) ? { kind: held[0], id: int(held[1], -1), faction: owner(held[2]),
+      x: dequant(held[3], CM), z: dequant(held[4], CM) } : null,
+  };
+}
+
 export const WORLD_FIELDS: readonly Field<World>[] = [
+  {
+    key: 'boss',
+    enc: (w) => bossWire(w.boss),
+    same: (w, prev) => wireEqual(bossWire(w.boss), prev),
+    dec: (w, v) => { w.boss = bossFromWire(v); },
+  },
+  {
+    key: 'bossOutcome',
+    enc: (w) => w.bossOutcome ? [w.bossOutcome.kind, [...w.bossOutcome.winners], quant(w.bossOutcome.at, MS)] : null,
+    same: (w, p) => w.bossOutcome ? Array.isArray(p) && p[0] === w.bossOutcome.kind &&
+      wireEqual(p[1], w.bossOutcome.winners) && p[2] === quant(w.bossOutcome.at, MS) : p === null,
+    dec: (w, v) => {
+      w.bossOutcome = Array.isArray(v) && (v[0] === 'victory' || v[0] === 'defeat')
+        ? { kind: v[0], winners: ints(v[1]).filter(isFactionId), at: dequant(v[2], MS) } : null;
+    },
+  },
   choice('phase', PHASES, (w) => w.phase, (w, v) => {
     w.phase = v;
   }),
@@ -1334,6 +1397,12 @@ export const WORLD_FIELDS: readonly Field<World>[] = [
   bool('suddenDeath', (w) => w.suddenDeath, (w, v) => {
     w.suddenDeath = v;
   }),
+  {
+    key: 'effigyRevealedAt',
+    enc: (w) => w.effigyRevealedAt === null ? null : quant(w.effigyRevealedAt, MS),
+    same: (w, prev) => (w.effigyRevealedAt === null ? null : quant(w.effigyRevealedAt, MS)) === prev,
+    dec: (w, v) => { w.effigyRevealedAt = typeof v === 'number' && Number.isFinite(v) ? v / MS : null; },
+  },
   num('tideNextAt', MS, (w) => w.tide.nextAt, (w, v) => {
     w.tide.nextAt = v;
   }),

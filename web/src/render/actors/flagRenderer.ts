@@ -582,6 +582,7 @@ export class FlagRenderer {
     const m16 = this.m16;
 
     for (const f of w.flags.values()) {
+      if (w.boss?.held?.kind === 'flag' && w.boss.held.id === f.id) continue;
       if (f.state === 'stock' || f.state === 'carried') {
         const v = this.vis.get(f.id);
         if (v) {

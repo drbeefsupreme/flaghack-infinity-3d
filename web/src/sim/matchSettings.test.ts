@@ -34,6 +34,11 @@ describe('configurable matches', () => {
     });
     expect(normalizeMatch(null as never)).toEqual(DEFAULT_MATCH);
   });
+  it('defaults boss mode on and preserves explicit opt-out through normalization', () => {
+    expect(normalizeMatch().bossMode).toBe(true);
+    expect(normalizeMatch({ bossMode: false }).bossMode).toBe(false);
+    expect(normalizeMatch({ bossMode: null } as never).bossMode).toBe(true);
+  });
   it('defaults to original jump height, 40 Signifiers, and no structure blocking', () => {
     expect(normalizeMatch()).toMatchObject({ jumpHeight: 1, maxSignifiers: 40, structuresBlockFlagPlacement: false });
     expect(normalizeMatch({ jumpHeight: -1, maxSignifiers: 2.9, startingSignifiers: 12 })).toMatchObject({
@@ -58,7 +63,7 @@ describe('configurable matches', () => {
     expect(canPlantAt(w, node!.id, 0)).toBe(false);
   });
   it('creates only active camps and runs a solo game until its deadline', () => {
-    const w = createMatch(options({ active: [0], days: 2, dayLength: 300 }));
+    const w = createMatch(options({ active: [0], days: 2, dayLength: 300, bossMode: false }));
     expect(w.aliveFactions()).toEqual([0]);
     expect(w.avatars.size).toBe(1);
     expect(w.buildingsOf(1)).toHaveLength(0);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { normalizeMatch } from '../sim/matchSettings';
 import { createMatch } from '../sim/setup';
 import { Simulation } from '../sim/simulation';
 import { FACTION_IDS } from '../sim/types';
@@ -22,7 +23,7 @@ interface MatchReport {
 
 /** Four NPC factions, no player, until someone wins or `limit` (s) runs out. */
 function playMatch(seed: string, limit: number): MatchReport {
-  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
+  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard', match: normalizeMatch({ bossMode: false }) });
   const sim = new Simulation(world);
   const ai = createAi(world, [...FACTION_IDS]);
   const zero = (): Record<FactionId, number> => ({ 0: 0, 1: 0, 2: 0, 3: 0 });

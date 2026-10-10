@@ -9,6 +9,7 @@
  * buildings.moveBuilding; collapse is buildings.collapseGcc.
  */
 import type { CommandOf } from '../commands';
+import { bossEncounterActive } from './boss/damage';
 import { BUILDING_HEIGHT, BUILDINGS, GCC, GCC_REACH, GCC_REPAIR_SNAP, GCC_SIMULACRA_RANGE } from '../constants';
 import { facetYaw } from '../factory';
 import { FACTION_IDS } from '../types';
@@ -84,6 +85,7 @@ function completeAction(world: World, f: FactionId, g: Building, action: GccActi
 
 /** Flagellian Dialectics: a rooted GCC.dialecticsChannel channel at the cart; converts on completion. */
 function beginDialectics(world: World, f: FactionId, g: Building): string {
+  if (bossEncounterActive(world)) return 'All camps are allied against the giant.';
   const gc = g.gcc;
   if (!gc) return 'You have no Geomantic Command Center.';
   const action: AvatarAction = { kind: 'channel', what: 'dialectics', t: world.time, dur: GCC.dialecticsChannel };
@@ -99,7 +101,7 @@ function concludeDialectics(world: World, f: FactionId, g: Building): void {
   ids.length = 0;
   const r2 = GCC.dialecticsRadius * GCC.dialecticsRadius;
   for (const h of world.hippies.values()) {
-    if (h.faction === f || h.faction === -1 || h.koUntil > world.time) continue;
+    if (bossEncounterActive(world) || h.faction === f || h.faction === -1 || h.koUntil > world.time) continue;
     if ((h.pos.x - g.pos.x) ** 2 + (h.pos.z - g.pos.z) ** 2 <= r2) ids.push(h.id);
   }
   const d2 = (id: number): number => {

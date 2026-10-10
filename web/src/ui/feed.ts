@@ -1,4 +1,4 @@
-import { endTime } from "../sim/matchSettings";
+import { endTime, matchSettings } from "../sim/matchSettings";
 /**
  * Event feed (bottom-left): renders session.feed (shared with controls and other modules)
  * and translates GameEvents into lore-voice lines, banners and minimap flashes. Noisy event
@@ -179,7 +179,7 @@ export class FeedPart implements UiPart {
         break;
       case 'eliminated':
         if (e.faction === P) {
-          this.host.post('Your last Hearth has fallen', 'danger');
+          this.host.post(e.cause === 'boss' ? 'The Effigy consumed your last altar' : 'Your last Hearth has fallen', 'danger');
         } else {
           const f = w.factions[e.faction];
           this.host.banner({
@@ -198,7 +198,9 @@ export class FeedPart implements UiPart {
           tone: 'burn',
           dur: 4,
         });
-        this.host.post(`The effigy burns. Sudden death until dawn at ${fmtClock(endTime(this.host.app.world!.options))}!`, 'epic');
+        this.host.post(matchSettings(w.options).bossMode
+          ? 'The effigy burns. Something stirs beneath the flames.'
+          : `The effigy burns. Sudden death until dawn at ${fmtClock(endTime(w.options))}!`, 'epic');
         break;
       case 'victory':
         // A conquest needs no banner (the end screen says it); a dawn crowning gets its moment over the live burn.
@@ -217,7 +219,8 @@ export class FeedPart implements UiPart {
         break;
       case 'ko':
         if (e.kind === 'avatar' && e.faction === P) {
-          this.host.post('You were knocked Flagless. Respawning at your Hearth…', 'danger', flat(e.pos));
+          this.host.post(w.factions[e.faction]?.alive
+            ? 'You were knocked Flagless. Respawning at your Hearth…' : 'Your camp has fallen.', 'danger', flat(e.pos));
         } else if (e.kind === 'hippie' && e.faction === P) {
           const who = w.hippies.get(e.id)?.name ?? 'A Signifier';
           this.bump('ko', 'warn', flat(e.pos), (n) => (n > 1 ? `${n} of your Signifiers were knocked out` : `${who} was knocked out`));

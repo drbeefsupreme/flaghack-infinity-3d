@@ -114,7 +114,7 @@ function inWater(map: MapLayout, x: number, z: number): boolean {
  * static obstacle, or stand in the pond?
  */
 export function segmentClearance(
-  map: MapLayout,
+  world: World,
   ax: number,
   az: number,
   bx: number,
@@ -122,10 +122,12 @@ export function segmentClearance(
   halfWidth: number,
   y0: number,
 ): MapClearance {
+  const map = world.map;
   const mx = (ax + bx) / 2;
   const mz = (az + bz) / 2;
   const reach = Math.hypot(bx - ax, bz - az) / 2 + halfWidth;
   for (const o of map.obstacles) {
+    if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
     if (o.height <= y0) continue;
     const bound = obstacleBound(o) + reach;
     if ((o.x - mx) ** 2 + (o.z - mz) ** 2 > bound * bound) continue;
@@ -155,7 +157,8 @@ export function segmentClearance(
 }
 
 /** A convex footprint (deck slab, ramp) over heights [y0, ∞): static obstacle or pond in the way? */
-export function polygonClearance(map: MapLayout, xs: number[], zs: number[], y0: number): MapClearance {
+export function polygonClearance(world: World, xs: number[], zs: number[], y0: number): MapClearance {
+  const map = world.map;
   const n = xs.length;
   let cx = 0;
   let cz = 0;
@@ -168,6 +171,7 @@ export function polygonClearance(map: MapLayout, xs: number[], zs: number[], y0:
   let reach = 0;
   for (let i = 0; i < n; i++) reach = Math.max(reach, Math.hypot(xs[i] - cx, zs[i] - cz));
   for (const o of map.obstacles) {
+    if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
     if (o.height <= y0) continue;
     const bound = obstacleBound(o) + reach;
     if ((o.x - cx) ** 2 + (o.z - cz) ** 2 > bound * bound) continue;

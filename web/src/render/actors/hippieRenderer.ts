@@ -268,7 +268,8 @@ export class HippieRenderer {
 
       // Instance data: transform, pose, look.
       const gy = groundAt ? groundAt(v.x, v.z) : 0;
-      writeTransform(m16, 0, v.x, gy + bob * v.scale, v.z, v.yaw + root.yaw, pitch, roll, v.scale);
+      const airborneY = Math.max(0, h.airborne?.y ?? 0);
+      writeTransform(m16, 0, v.x, gy + airborneY + bob * v.scale, v.z, v.yaw + root.yaw, pitch, roll, v.scale);
       const look = v.look;
       look[HL.prop] = propFor(anim, h);
       const fc = h.faction === NEUTRAL ? this.white : this.factionColors[h.faction];
@@ -279,7 +280,7 @@ export class HippieRenderer {
       const flash = clamp01(1 - (t - v.flashAt) / 0.18);
       look[HL.flash] = Math.max(flash, h.id === hover ? 0.18 : 0);
       look[HL.buff] = buff * (0.6 + 0.4 * Math.sin(t * 5 + v.seed * 6));
-      const place = this.view.place(v.x, gy + HIPPIE_MID_Y, v.z, HIPPIE_RADIUS, HIPPIE_DETAIL_RANGE, v.detailed);
+      const place = this.view.place(v.x, gy + airborneY + HIPPIE_MID_Y, v.z, HIPPIE_RADIUS, HIPPIE_DETAIL_RANGE, v.detailed);
       v.detailed = place === PLACE.detailed;
       if (place !== PLACE.skip) {
         const set = this.levels[v.detailed ? 0 : 1].set;

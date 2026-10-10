@@ -213,6 +213,8 @@ export interface Hippie {
   type: 'hippie';
   faction: Owner;
   name: string;
+  /** Ballistic height/vertical velocity during a giant launch. */
+  airborne?: { y: number; vy: number };
   /** Time of joining the current camp; newest recruits occupy excess soft-cap places. */
   recruitedAt: number;
   /** Appearance seed (presentation only). */

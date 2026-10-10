@@ -1,0 +1,14 @@
+{
+  "source": "Approved skeletal-boss-untextured.glb",
+  "sha256": "9758bbe1180ff8b02c0cad4385d93e3f39aeabb5710ba074a2f89546887f2e4a",
+  "sourceHeightMetres": 32,
+  "runtimeHeightMetres": 20,
+  "uniformScale": 0.625,
+  "sourceTriangles": 401386,
+  "sourcePrimitives": 594,
+  "sourceBones": 109,
+  "runtimeDraws": 31,
+  "runtimeConsolidation": "Per-material merge of unchanged vertex attributes, same skeleton and bind matrices",
+  "revealPose": "Crossed-arms white ascent from85\u201390s; clock-sampled wide-arm and head-back gesture peaks at90s; original materials return instantly at the authoritative explosion",
+  "animationNote": "Embedded rig validation clip retained in binary, not played as gameplay animation"
+}

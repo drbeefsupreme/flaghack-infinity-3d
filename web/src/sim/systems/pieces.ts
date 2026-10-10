@@ -143,18 +143,18 @@ export function canBuildPiece(
     wallSegment(lat, edge, SEG);
     const hw = PIECE.wallThickness / 2;
     if (segmentHitsBuilding(world, SEG[0], SEG[1], SEG[2], SEG[3], hw, y0)) return NO.building;
-    const clear = segmentClearance(world.map, SEG[0], SEG[1], SEG[2], SEG[3], hw, y0);
+    const clear = segmentClearance(world, SEG[0], SEG[1], SEG[2], SEG[3], hw, y0);
     if (clear !== 'clear') return NO[clear];
   } else {
     facetPolygon(lat, facet, POLY_X, POLY_Z);
     if (polygonHitsBuilding(world, POLY_X, POLY_Z, y0)) return NO.building;
-    const clear = polygonClearance(world.map, POLY_X, POLY_Z, y0);
+    const clear = polygonClearance(world, POLY_X, POLY_Z, y0);
     if (clear !== 'clear') return NO[clear];
     if (kind === 'floor' && level === 0) {
       // Level-0 decks stand on stilts reaching the ground.
       for (let i = 0; i < 4; i++) {
         stiltFoot(lat, facet, i, FOOT);
-        const stilt = segmentClearance(world.map, FOOT[0], FOOT[1], FOOT[0], FOOT[1], STILT_RADIUS, 0);
+        const stilt = segmentClearance(world, FOOT[0], FOOT[1], FOOT[0], FOOT[1], STILT_RADIUS, 0);
         if (stilt !== 'clear') return NO[stilt];
       }
     }

@@ -8,6 +8,7 @@
  * act.ts (doing it), move.ts (getting there), targets.ts (what matters).
  * Owner: Units agent.
  */
+import { BOSS_RADIUS } from '../boss';
 import { AVATAR, BUILDINGS, HIPPIE, HIPPIE_AI, MAP_HALF } from '../constants';
 import type { CommandOf } from '../commands';
 import type { V2 } from '../math';
@@ -24,7 +25,7 @@ import { beginTask, brainOf, releaseTask, setStatus } from './units/brain';
 import type { Brain } from './units/brain';
 import { decide, needsDecision, startEngage, startFlee } from './units/decide';
 import { allocateJobs } from './units/jobs';
-import { locomote, servicePathQueue, slide } from './units/move';
+import { moveTo, locomote, servicePathQueue, slide } from './units/move';
 import { unitsState } from './units/state';
 import type { UnitsState } from './units/state';
 import { rivalUnitPos, structureOwner } from './units/targets';
@@ -64,6 +65,7 @@ function orderValid(world: World, f: FactionId, o: HippieOrder): boolean {
     case 'gather':
       return world.piles.has(o.pileId);
     case 'attack': {
+      if (world.boss?.id === o.target && world.boss.hp > 0) return true;
       const owner = structureOwner(world, o.target);
       if (owner !== undefined) return owner !== f;
       const fl = world.flags.get(o.target);
@@ -265,6 +267,7 @@ function sweepClaims(world: World, sys: UnitsState): void {
 
 function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number): void {
   const b = brainOf(h);
+  if (stepHippieAirborne(world, h, dt)) return;
   if (b.faction !== h.faction) convert(world, h, b);
   if (h.status === 'ko') {
     if (world.time >= h.koUntil) respawn(world, h, b);
@@ -289,6 +292,7 @@ function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number): voi
     b.moving = false;
     return;
   }
+  if (fightBoss(world, sys, h, b, dt)) return;
   const f = h.faction;
   if (f === NEUTRAL) {
     // Neutrals wander between sound camps and spawns; they never fight.
@@ -409,8 +413,7 @@ function shove(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId)
   if (target < 0) return;
   b.nextShoveAt = world.time + HIPPIE.shoveInterval / Math.max(0.25, speedMultiplier(world, h));
   h.facing = Math.atan2(tx - h.pos.x, tz - h.pos.z);
-  damageEntity(world, target, HIPPIE.shoveDamage, h.id);
-  knockback(world, target, h.pos, HIPPIE.shoveKnockback);
+  if (damageEntity(world, target, HIPPIE.shoveDamage, h.id)) knockback(world, target, h.pos, HIPPIE.shoveKnockback);
 }
 
 /** Recruitment, Dialectics or capture changed the hippie's faction: it starts over with the new camp. */
@@ -457,4 +460,37 @@ function respawn(world: World, h: Hippie, b: Brain): void {
   releaseTask(world, h, b);
   setStatus(h, 'idle');
   world.emit({ t: 'respawn', id: h.id, kind: 'hippie', faction: h.faction, pos: { x, y: 0, z } });
+}
+
+/** Host ballistic flight with the same geometry used by avatars. */
+export function stepHippieAirborne(world: World, h: Hippie, dt: number): boolean {
+  const air = h.airborne;
+  if (!air) return false;
+  const pos = { x: h.pos.x, y: air.y, z: h.pos.z };
+  const vel = { x: h.vel.x, y: air.vy - AVATAR.gravity * dt, z: h.vel.z };
+  const hit = world.collision.moveCharacter(pos, vel, dt, HIPPIE.radius, 1.8, 0.2);
+  h.pos.x = pos.x; h.pos.z = pos.z; h.vel.x = vel.x; h.vel.z = vel.z;
+  air.y = pos.y; air.vy = vel.y;
+  if (hit.onGround) { h.airborne = undefined; h.vel.x *= 0.35; h.vel.z *= 0.35; }
+  return true;
+}
+
+function fightBoss(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: number): boolean {
+  const boss = world.boss;
+  if (!boss || boss.hp <= 0 || h.faction < 0 || !world.factions[h.faction].alive) return false;
+  const d = Math.hypot(h.pos.x - boss.pos.x, h.pos.z - boss.pos.z);
+  const ordered = h.order?.kind === 'attack' && h.order.target === boss.id;
+  const fighter = !world.factions[h.faction].isPlayer || ordered ||
+    (d < 22 && (h.job === 'defend' || h.job === 'raid' || h.order?.kind === 'follow'));
+  if (!fighter) return false;
+  if (b.task !== 'engage' || b.target !== boss.id) { releaseTask(world, h, b); b.task = 'engage'; b.target = boss.id; }
+  h.status = 'fighting'; h.statusTarget = boss.pos;
+  h.facing = Math.atan2(boss.pos.x - h.pos.x, boss.pos.z - h.pos.z);
+  const reach = BOSS_RADIUS + HIPPIE.shoveReach;
+  if (moveTo(world, sys, h, b, boss.pos.x, boss.pos.z, reach) && world.time >= b.nextShoveAt) {
+    damageEntity(world, boss.id, HIPPIE.shoveDamage, h.id);
+    b.nextShoveAt = world.time + HIPPIE.shoveInterval;
+  }
+  locomote(world, sys, h, b, dt);
+  return true;
 }

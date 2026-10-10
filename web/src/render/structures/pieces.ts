@@ -377,6 +377,7 @@ export class PieceRenderer {
     const lat = w.lattice;
     // Cheap change signature: membership, hp, ownership, level, lattice turns.
     let sig = w.pieces.size * 1000003 + lat.version * 7919;
+    sig += w.boss?.held?.kind === 'piece' ? w.boss.held.id * 1013 + 1 : 0;
     let popping = false;
     for (const p of w.pieces.values()) {
       sig = (sig * 31 + p.id * 17 + Math.round(p.hp) * 3 + p.level + (p.faction + 2) * 101) % 2147483647;
@@ -393,6 +394,7 @@ export class PieceRenderer {
     for (const b of this.ramps) b.count = 0;
     for (const p of w.pieces.values()) {
       const age = (w.time - p.builtAt) / PIECE.popIn;
+      if (w.boss?.held?.kind === 'piece' && w.boss.held.id === p.id) continue;
       const s = age >= 1 ? 1 : Math.max(0.02, easeOutBack(Math.max(0, age)));
       const dmg = 0.42 + 0.58 * Math.max(0, Math.min(1, p.hp / p.maxHp));
       this.owner.setHex(p.faction >= 0 ? w.factions[p.faction].color : NEUTRAL_COLOR);

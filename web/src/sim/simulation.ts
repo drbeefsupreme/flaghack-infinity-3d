@@ -5,12 +5,14 @@
 import { SIM_DT } from './constants';
 import { updateAbilities } from './systems/abilities';
 import { updateAvatars } from './systems/avatars';
+import { spawnBoss, updateBoss } from './systems/boss';
 import { updateBuildings } from './systems/buildings';
 import { applyCommands } from './systems/commands';
 import { updateCapture } from './systems/capture';
 import { updateCrystals } from './systems/crystals';
 import { updateDrugs } from './systems/drugs';
 import { updateEconomy } from './systems/economy';
+import { updateEffigy } from './systems/effigy';
 import { updateGcc } from './systems/gcc';
 import { updateHippies } from './systems/hippies';
 import { updateInstability } from './systems/instability';
@@ -39,6 +41,8 @@ export class Simulation {
     // Direct calls with a running timestamp: wrapping each system in a closure would
     // allocate ~17 functions per tick (~1.5M per match) just to measure them.
     let t = performance.now();
+    updateEffigy(w);
+    spawnBoss(w);
     applyCommands(w);
     t = this.lap('commands', t);
     if (w.phase !== 'playing') return;
@@ -64,6 +68,8 @@ export class Simulation {
     t = this.lap('drugs', t);
     updateSurvey(w, dt);
     t = this.lap('survey', t);
+    updateBoss(w, dt);
+    t = this.lap('boss', t);
     updateCrystals(w, dt);
     t = this.lap('crystals', t);
     updateInstability(w, dt);

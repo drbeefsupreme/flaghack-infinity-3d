@@ -4,7 +4,8 @@
  * turbulence + fly-end flutter + droop in light wind) with analytic finite-difference
  * normals, mirrored in a depth material so its shadow waves too. Thin-cloth translucency
  * lights the shaded face when the sun is behind it; at night it holds a soft glow; in The
- * Burn it is not consumed but turns incandescent gold above the fire.
+ * Burn it first glows gold, then the late heat drive cools it from white to black as the
+ * Effigy shrinks the cloth away.
  */
 import * as THREE from 'three';
 import { FLAG_YELLOW } from '../../../sim/constants';
@@ -12,6 +13,8 @@ import type { RenderContext } from '../../context';
 import type { EnvContext } from '../envTypes';
 import { FLAG_BOTTOM, FLAG_HEIGHT, FLAG_WIDTH } from './burnTimeline';
 import { mastRadius } from './effigyModel';
+import { applyFlagHeatMaterial, createFlagHeatUniforms } from './flagHeatMaterial';
+import type { FlagHeat } from './burnTimeline';
 
 const SEGMENTS: Record<RenderContext['quality'], [number, number]> = {
   low: [20, 12],
@@ -22,7 +25,7 @@ const SEGMENTS: Record<RenderContext['quality'], [number, number]> = {
 /** Saffron (Vexillicrocus) face: an amber yellow, still unmistakably a Flag. */
 const SAFFRON = 0xffb21f;
 /** Distance (m) from the mast axis to the hoist edge (the mast surface at the Flag). */
-const HOIST = mastRadius(FLAG_BOTTOM + FLAG_HEIGHT / 2) + 0.03;
+export const FLAG_HOIST = mastRadius(FLAG_BOTTOM + FLAG_HEIGHT / 2) + 0.03;
 const CLOTH_GLSL = /* glsl */ `
 uniform float uFlagWind;
 uniform float uUpdraft;
@@ -47,7 +50,7 @@ vec3 flagCloth(vec2 st) {
   // Folds take up length; light wind lets the fly droop, the fire's updraft lifts it.
   float x = s * (1.0 - 0.08 * amp);
   float droop = mix(0.42, 0.06, w) - 0.2 * uUpdraft;
-  return vec3(${HOIST.toFixed(3)} + x * cos(droop), y - x * sin(droop), z);
+  return vec3(${FLAG_HOIST.toFixed(3)} + x * cos(droop), y - x * sin(droop), z);
 }
 `;
 
@@ -109,6 +112,7 @@ export interface FlagDrive {
   incandescence: number;
   /** 0..1 uplight wash. */
   uplight: number;
+  heat: FlagHeat;
 }
 
 export class FlagCloth {
@@ -121,6 +125,7 @@ export class FlagCloth {
   private uUpdraft = { value: 0 };
   private uIncandescence = { value: 0 };
   private uUplight = { value: 1 };
+  readonly heatUniforms = createFlagHeatUniforms();
   private yaw: number | null = null;
 
   constructor(env: EnvContext) {
@@ -158,6 +163,7 @@ export class FlagCloth {
         .replace('#include <emissivemap_fragment>', FRAG_EMISSIVE);
     };
     this.mat.customProgramCacheKey = () => 'effigy-flag-v1';
+    applyFlagHeatMaterial(this.mat, this.heatUniforms);
 
     this.depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
     this.depth.onBeforeCompile = (shader) => {
@@ -190,6 +196,9 @@ export class FlagCloth {
     this.uUpdraft.value = drive.updraft;
     this.uIncandescence.value = drive.incandescence;
     this.uUplight.value = drive.uplight;
+    this.heatUniforms.uFlagHeatActive.value = drive.heat.active ? 1 : 0;
+    this.heatUniforms.uFlagHeatColor.value.setRGB(...drive.heat.color);
+    this.heatUniforms.uFlagHeatEmissive.value = drive.heat.emissive;
   }
 
   dispose(): void {

@@ -28,6 +28,7 @@ export class MatchSetup {
   private seed: HTMLInputElement;
   private random: HTMLButtonElement;
   private structures: HTMLInputElement;
+  private bossMode: HTMLInputElement;
   private summary: HTMLElement;
   private note: HTMLElement;
   private enabled = false;
@@ -87,6 +88,15 @@ export class MatchSetup {
         this.seed.value = '';
         this.write({ seed: null });
       }
+    });
+
+    const bossRow = el('label', 'setup-field', rules);
+    const bossLabel = el('span', '', bossRow, 'Boss mode');
+    el('small', 'setup-hint', bossLabel, 'Reveal the giant 90 seconds after The Burn. Camps become allies and share victory if they survive its defeat.');
+    this.bossMode = el('input', '', bossRow);
+    this.bossMode.type = 'checkbox';
+    this.bossMode.addEventListener('change', () => {
+      if (this.enabled) this.changeMatch({ bossMode: this.bossMode.checked });
     });
 
     const structureRow = el('label', 'setup-field', rules);
@@ -201,6 +211,8 @@ export class MatchSetup {
     this.enabled = enabled;
     const settings = this.read();
     const s = normalizeMatch(settings.match);
+    this.bossMode.checked = s.bossMode;
+    this.bossMode.disabled = !enabled;
     this.structures.checked = s.structuresBlockFlagPlacement;
     this.structures.disabled = !enabled;
     for (const { key, input } of this.fields) {
@@ -213,7 +225,7 @@ export class MatchSetup {
     this.difficulty.disabled = this.seed.disabled = this.reset.disabled = this.random.disabled = !enabled;
     setText(this.note, enabled ? 'Changes apply to the next match. Player seats are set in the lobby.' : 'View only. The lobby leader can change settings before the match starts.');
     const duration = s.days === 0 ? 'Unlimited · no scheduled Burn.' : `${s.days} ${s.days === 1 ? 'day' : 'days'} · ${Math.round(s.days * s.dayLength / 60)} minutes · Burn on the last night.`;
-    const solo = s.days === 0 ? 'solo / creative, no time limit' : 'solo / creative, ends on time';
+    const solo = s.days === 0 ? 'solo / creative, no time limit' : s.bossMode ? 'solo / creative, final-night boss reveal' : 'solo / creative, ends on time';
     setText(this.summary, `${s.active.length} ${s.active.length === 1 ? `camp · ${solo}` : 'active camps'}. ${duration}`);
   }
 

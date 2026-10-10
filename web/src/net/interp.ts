@@ -19,7 +19,7 @@ import type { EntityId } from '../sim/types';
 import type { World } from '../sim/world';
 import type { DeltaSnapshot, EntityDelta } from './codec';
 import { NET_HZ } from './protocol';
-import { CM, CODECS, dequant, MRAD } from './schema';
+import { bossFromWire, CM, CODECS, dequant, MRAD, WORLD_FIELDS } from './schema';
 import type { Wire } from './schema';
 
 const FRAME = 1 / NET_HZ;
@@ -100,6 +100,7 @@ class Track {
   /** Teleport: hold the authoritative pose until the next frame applies. */
   snap = false;
   seen = 0;
+  airborne = false;
 }
 
 type MotionKind = 'avatars' | 'hippies' | 'projectiles' | 'flags' | 'buildings';
@@ -126,6 +127,9 @@ const POSE: Record<MotionKind, PoseFields> = {
   flags: { x: CODECS.flags.index('x'), y: CODECS.flags.index('y'), z: CODECS.flags.index('z'), a: -1, p: -1 },
   buildings: { x: CODECS.buildings.index('x'), y: -1, z: CODECS.buildings.index('z'), a: -1, p: -1 },
 };
+
+const BOSS_FIELD = WORLD_FIELDS.findIndex((f) => f.key === 'boss');
+const HIPPIE_AIRBORNE_FIELD = CODECS.hippies.index('airborne');
 
 const MOTION_KINDS: readonly MotionKind[] = ['avatars', 'hippies', 'projectiles', 'flags', 'buildings'];
 
@@ -162,6 +166,7 @@ export class Motion {
     flags: new Map(),
     buildings: new Map(),
   };
+  private boss: Track | null = null;
   private stamp = 0;
   /** Times of the last applied frame and of the next queued one (NaN: none queued). */
   private tA = 0;
@@ -201,6 +206,9 @@ export class Motion {
       t.vz = continuing ? dz / dt : 0;
       t.fx = h.pos.x;
       t.fz = h.pos.z;
+      t.fy = h.airborne?.y ?? 0;
+      t.vy = h.airborne?.vy ?? 0;
+      t.airborne = h.airborne !== undefined;
       t.fa = h.facing;
       t.seen = s;
     }
@@ -232,6 +240,22 @@ export class Motion {
       t.fz = b.pos.z;
       t.seen = s;
     }
+    if (world.boss) {
+      const b = world.boss;
+      const t = this.boss?.id === b.id ? this.boss : new Track();
+      const dx = b.pos.x - t.fx, dz = b.pos.z - t.fz;
+      const continuing = t.seen === prev && dt > 0 && dx * dx + dz * dz <= TELEPORT * TELEPORT;
+      const walking = b.hp > 0 && !b.barrier && (b.action === 'walk' || b.action === 'crouchWalk');
+      t.vx = continuing && walking ? dx / dt : 0;
+      t.vz = continuing && walking ? dz / dt : 0;
+      t.id = b.id;
+      t.fx = b.pos.x;
+      t.fz = b.pos.z;
+      t.fa = b.yaw;
+      t.fp = b.stride;
+      t.seen = s;
+      this.boss = t;
+    } else this.boss = null;
     for (const kind of MOTION_KINDS) {
       for (const t of this.tracks[kind].values()) if (t.seen !== s) this.tracks[kind].delete(t.id);
     }
@@ -249,6 +273,26 @@ export class Motion {
         t.tp = t.fp;
         t.aim = next !== null;
         t.snap = false;
+      }
+    }
+    const boss = this.boss;
+    if (boss) {
+      boss.tx = boss.fx;
+      boss.tz = boss.fz;
+      boss.ta = boss.fa;
+      boss.tp = boss.fp;
+      boss.aim = next !== null;
+      boss.snap = false;
+      const changes = next?.w;
+      if (changes && typeof changes[0] === 'number' && changes[0] & (1 << BOSS_FIELD)) {
+        const b = bossFromWire(valueAt(changes, 1, changes[0], BOSS_FIELD));
+        if (b && b.id === boss.id) {
+          boss.tx = b.pos.x;
+          boss.tz = b.pos.z;
+          boss.ta = b.yaw;
+          boss.tp = b.stride;
+          boss.snap = Math.hypot(boss.tx - boss.fx, boss.tz - boss.fz) > TELEPORT;
+        } else boss.aim = false;
       }
     }
     if (!next) return;
@@ -322,6 +366,10 @@ export class Motion {
       if (mask & (1 << f.z)) t.tz = dequant(valueAt(u, at, mask, f.z), CM);
       if (f.a >= 0 && mask & (1 << f.a)) t.ta = dequant(valueAt(u, at, mask, f.a), MRAD);
       if (f.p >= 0 && mask & (1 << f.p)) t.tp = dequant(valueAt(u, at, mask, f.p), MRAD);
+      if (kind === 'hippies' && mask & (1 << HIPPIE_AIRBORNE_FIELD)) {
+        const airborne = valueAt(u, at, mask, HIPPIE_AIRBORNE_FIELD);
+        t.ty = Array.isArray(airborne) ? dequant(airborne[0], CM) : 0;
+      }
     }
   }
 
@@ -330,6 +378,13 @@ export class Motion {
    * authoritative pose pushed `ext` seconds along its velocity.
    */
   private write(world: World, alpha: number, ext: number, blending: boolean): void {
+    const b = world.boss, t = this.boss;
+    if (b && t && b.id === t.id) {
+      b.pos.x = posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
+      b.pos.z = posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
+      b.yaw = posedAngle(t, t.fa, t.ta, alpha, blending);
+      b.stride = posed(t, t.fp, t.tp, 0, alpha, 0, blending);
+    }
     for (const t of this.tracks.avatars.values()) {
       const av = world.avatars.get(t.id);
       if (!av) continue;
@@ -345,6 +400,9 @@ export class Motion {
       h.pos.x = posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
       h.pos.z = posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
       h.facing = posedAngle(t, t.fa, t.ta, alpha, blending);
+      if (t.airborne || (blending && t.ty > 0)) {
+        h.airborne = { y: Math.max(0, posed(t, t.fy, t.ty, t.vy, alpha, ext, blending)), vy: t.vy };
+      } else delete h.airborne;
       h.vel.x = t.vx;
       h.vel.z = t.vz;
     }

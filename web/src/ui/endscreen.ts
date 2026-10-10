@@ -27,6 +27,14 @@ type Mode = 'hidden' | 'eliminated' | 'victory' | 'defeat' | 'draw' | 'over';
 /** How the match was won; the victory event's reason, absent meaning conquest. */
 type EndReason = 'conquest' | 'dawn';
 
+/** Durable result selection also works on late joins without a victory event. */
+export function finalMode(world: World, player: FactionId | null): 'victory' | 'defeat' | 'draw' | 'over' {
+  if (player === null) return 'over';
+  if (world.bossOutcome) return world.bossOutcome.kind === 'victory' && world.bossOutcome.winners.includes(player)
+    ? 'victory' : 'defeat';
+  return world.winner === player ? 'victory' : world.winner === null ? 'draw' : 'defeat';
+}
+
 const MODES: readonly Exclude<Mode, 'hidden'>[] = ['victory', 'defeat', 'eliminated', 'draw', 'over'];
 
 const ORDINAL: Record<number, string> = { 2: '2nd', 3: '3rd', 4: '4th' };
@@ -84,13 +92,16 @@ export class EndScreen implements UiPart {
   update(world: World | null, now: number): void {
     const s = this.host.app.session;
     let mode: Mode = 'hidden';
+    if (world && !s.spectator && world.factions[s.playerFaction]?.alive === false) {
+      this.eliminated = true;
+      this.eliminatedBy = world.factions[s.playerFaction].eliminatedBy;
+    }
     if (world && s.screen === 'ended') {
       if (this.endedAt === 0) this.endedAt = now;
       // A dawn crowning lets its banner play over the live burn before the cards come up.
-      const held = this.reason === 'dawn' && now - this.endedAt < DAWN_BANNER_S * 1000;
+      const held = !world.bossOutcome && this.reason === 'dawn' && now - this.endedAt < DAWN_BANNER_S * 1000;
       if (!held) {
-        if (s.spectator) mode = 'over';
-        else mode = world.winner === s.playerFaction ? 'victory' : world.winner === null ? 'draw' : 'defeat';
+        mode = finalMode(world, s.spectator ? null : s.playerFaction);
       }
     } else {
       this.endedAt = 0;
@@ -118,14 +129,32 @@ export class EndScreen implements UiPart {
     const P: FactionId | null = s.spectator ? null : s.playerFaction;
     const win = mode === 'victory';
     for (const m of MODES) setClass(this.root, `m-${m}`, m === mode);
-    const dawn = this.reason === 'dawn' && (mode === 'victory' || mode === 'defeat' || mode === 'over');
+    const dawn = !world.bossOutcome && this.reason === 'dawn' && (mode === 'victory' || mode === 'defeat' || mode === 'over');
     setClass(this.root, 'm-dawn', dawn);
     const pick = (lines: readonly string[]): string => lines[Math.floor(Math.random() * lines.length)] ?? '';
     const winner = factionName(world, world.winner, names);
     let title: string;
     let sub: string;
     let verdict = '';
-    if (dawn) {
+    if (world.bossOutcome) {
+      const outcome = world.bossOutcome;
+      const survivors = outcome.winners.map((f) => factionName(world, f, names)).join(', ');
+      if (outcome.kind === 'defeat') {
+        title = 'THE EFFIGY ENDURES';
+        sub = 'Every player camp has fallen. The burn belongs to the Effigy.';
+      } else if (win || mode === 'over') {
+        title = 'THE EFFIGY HAS FALLEN';
+        sub = win ? 'Your camp survived. The remaining camps share the victory.' : 'The surviving camps share the victory.';
+        verdict = `Survivors: ${survivors}.`;
+      } else {
+        title = 'YOUR CAMP HAS FALLEN';
+        sub = 'The Effigy was defeated, but your camp did not survive.';
+        verdict = `Survivors: ${survivors}.`;
+      }
+    } else if (mode === 'eliminated' && world.effigyRevealedAt !== null) {
+      title = 'YOUR CAMP HAS FALLEN';
+      sub = 'No altar remains. You can watch the surviving camps face the Effigy.';
+    } else if (dawn) {
       title = 'DAWN OVER THE BURN';
       sub = win ? 'The Survey is completed. Your Survey stands dominant.' : `${winner}'s Survey stands dominant.`;
       verdict = dawnVerdict(world, P, names);
@@ -204,7 +233,7 @@ function statsTable(parent: HTMLElement, world: World, P: FactionId | null, name
     if (!fac) continue;
     const th = el('th', `${fac.alive ? '' : 'dead'}${f === P ? ' you' : ''}`, head);
     th.style.setProperty('--fc', fac.css);
-    if (world.winner === f) th.innerHTML = iconSvg('star', 'crown');
+    if (world.bossOutcome?.winners.includes(f) || world.winner === f) th.innerHTML = iconSvg('star', 'crown');
     el('span', 'who', th, factionName(world, f, names));
     // Online the character still names the camp under its Signifier's handle.
     if (names[f]) el('span', 'char', th, fac.name);

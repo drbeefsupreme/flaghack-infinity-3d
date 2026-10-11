@@ -134,7 +134,7 @@ export class HudPart implements UiPart {
 
     // ── Clock plaque ──
     const plaque = el('div', 'clock plaque', layout.topCenter);
-    this.bossHud = new BossHud(layout.topCenter, plaque);
+    this.bossHud = new BossHud(layout.topCenter, plaque, layout.center);
     tutorialTarget(plaque, 'clock');
     const main = el('div', 'clock-main', plaque);
     this.todIc = el('span', 'tod-ic', main);

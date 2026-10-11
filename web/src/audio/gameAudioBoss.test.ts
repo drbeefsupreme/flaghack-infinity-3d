@@ -6,6 +6,7 @@ import { AudioEngine } from './engine';
 import { Session } from '../game/session';
 import type { AppApi } from '../game/app';
 import type { BossState } from '../sim/boss';
+vi.mock('./bossSamples', () => ({ BossSamples: class { ready = Promise.resolve(); get() { return { duration: 4 }; } } }));
 vi.mock('./music', () => ({ Music: class { reset() {} update() {} } }));
 vi.mock('./ambience', () => ({ Ambience: class { update() {} } }));
 vi.mock('./mentor', () => ({ MENTOR_CHARS_PER_SEC: 30, MentorVoice: class {} }));
@@ -30,7 +31,7 @@ describe('boss audio through the production GameAudio frame hook', () => {
     b.eye.firedAt = 103.1; world.time = 103.1; frame(); frame();
     b.hp = 0; b.deathAt = 103.2; world.time = 103.2; session.screen = 'ended'; frame();
     expect(voice.mock.calls.map(([s]) => s.key)).toEqual(['boss-emerge', 'boss-charge', 'boss-beam', 'boss-death']);
-    for (const [spec] of voice.mock.calls) { expect(spec.bus).toBe('boss'); expect(spec.directionalOnly).toBe(true); }
+    for (const [spec] of voice.mock.calls) { expect(spec.bus).toBe('boss'); expect(spec.directionalOnly).toBe(spec.key === 'boss-emerge' ? undefined : true); }
   });
   it('observes replicated snapshot replacement without re-playing historical cues', () => {
     const b = bossFixture(); b.action = 'walk'; b.stride = 0;

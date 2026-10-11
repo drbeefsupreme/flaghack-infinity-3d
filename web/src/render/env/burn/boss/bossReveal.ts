@@ -15,6 +15,11 @@ import { groundHeight, TERRAIN_GLSL } from '../../../../sim/terrain';
 import { MAP_HALF } from '../../../../sim/constants';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { applyBossChargeMaterial, bossCharge, bossEmergence, bossFlash, smooth } from './revealTimeline';
+import { bossAwakeningLevel } from '../../../../sim/bossPresentation';
+import { applyBossAwakeningMaterial } from './awakeningMaterial';
+
+/** Above noon sunlight even at the far arena edge, with finite HDR values. */
+export const BOSS_ERUPTION_LIGHT_INTENSITY = 1200;
 
 function clipAtGround(material: THREE.Material, half: number): void {
   const before = material.onBeforeCompile;
@@ -45,10 +50,15 @@ export class BossReveal {
   private age = -1;
   private burnElapsed = 0;
   private uWhite = { value: 0 };
+  private uAwakening = { value: 0 };
+  private readonly fireDistance: number;
+  private readonly fireDecay: number;
   /** Available for diagnostics; an unavailable asset never substitutes a fake boss. */
   loadError: unknown = null;
 
   constructor(private env: EnvContext, loader: BossModelLoader = loadBossModel) {
+    this.fireDistance = env.fireLight.distance;
+    this.fireDecay = env.fireLight.decay;
     const at = env.ctx.world.map.effigy;
     this.root.name = 'boss-reveal';
     this.root.position.set(at.x, 0, at.z);
@@ -74,7 +84,10 @@ export class BossReveal {
         clipAtGround(material, env.ctx.world.map.half ?? MAP_HALF);
         applyBossDeathMaterial(material, combatFx.deathAge);
         // Shader override only: the original material parameters are never mutated.
-        if (material instanceof THREE.MeshStandardMaterial) applyBossChargeMaterial(material, this.uWhite);
+        if (material instanceof THREE.MeshStandardMaterial) {
+          applyBossChargeMaterial(material, this.uWhite);
+          applyBossAwakeningMaterial(material, this.uAwakening);
+        }
       }
       applyBossDeathMaterial(this.depth, combatFx.deathAge);
       this.root.add(model);
@@ -129,11 +142,16 @@ export class BossReveal {
     this.burnElapsed = burnElapsed;
     const world = this.env.ctx.world;
     const revealed = world.effigyRevealedAt;
+    const screen = this.env.ctx.session.screen;
+    const present = screen === 'playing' || screen === 'paused';
+    this.uAwakening.value = present ? bossAwakeningLevel(world) : 0;
     this.age = revealed === null || revealed === undefined ? -1 : Math.max(0, world.time - revealed);
     this.pose();
     this.fx.update(this.age);
     this.impacts.update(world.time);
     const light = this.env.fireLight;
+    light.distance = this.fireDistance;
+    light.decay = this.fireDecay;
     if (this.age < 0) {
       const charge = bossCharge(burnElapsed);
       if (charge > 0) {
@@ -148,6 +166,14 @@ export class BossReveal {
     // The burst surrounds the boss, rather than re-whitening its just-restored materials.
     light.color.setRGB(1, 0.34, 0.08);
     light.intensity = flash * 45 + 24 * Math.exp(-this.age * 0.9);
+    if (this.uAwakening.value > 0) {
+      light.color.setRGB(1, 1, 1);
+      light.distance = (world.map.half ?? MAP_HALF) * 6;
+      // Cinematic map-wide radiance avoids an inverse-square singularity in the
+      // half-float HDR buffer when flying debris passes through the source.
+      light.decay = 0;
+      light.intensity += BOSS_ERUPTION_LIGHT_INTENSITY * this.uAwakening.value;
+    }
     const death = this.combatFx?.deathAge.value ?? -1;
     if (death >= 0 && death < 12 && world.boss) {
       light.position.set(world.boss.pos.x, groundHeight(world.boss.pos.x, world.boss.pos.z, world.map.half ?? MAP_HALF) + 5 * BOSS_GAMEPLAY_SCALE, world.boss.pos.z);
@@ -159,6 +185,10 @@ export class BossReveal {
 
   dispose(): void {
     this.disposed = true;
+    this.uAwakening.value = 0;
+    this.env.fireLight.distance = this.fireDistance;
+    this.env.fireLight.decay = this.fireDecay;
+    this.env.fireLight.intensity = 0;
     this.combatFx?.dispose();
     this.eyeFx?.dispose();
     if (this.model) disposeBossModel(this.model);

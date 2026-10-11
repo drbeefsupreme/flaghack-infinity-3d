@@ -20,6 +20,7 @@ import type { RenderContext } from '../context';
 import { BloomChain } from './bloom';
 import { createGradeMaterial } from './grade';
 import type { GradeUniforms } from './grade';
+import { bossAwakeningLevel } from '../../sim/bossPresentation';
 
 type Quality = RenderContext['quality'];
 
@@ -117,6 +118,8 @@ export class PostFx {
     // The Burn grade follows the fire: full while the effigy blazes, easing as it smoulders
     // (so the night can deepen) and giving way as daylight returns at Dawn.
     const world = ctx.world;
+    const inMatch = ctx.session.screen === 'playing' || ctx.session.screen === 'paused';
+    u.uAwakening.value = inMatch ? bossAwakeningLevel(world) : 0;
     if (world.suddenDeath && this.burnStartedAt === Infinity) this.burnStartedAt = world.options.mode === "tutorial" ? burnStartFor(world.time) : burnTime(world.options);
     const fire = world.suddenDeath
       ? fireIntensity(Math.max(0, world.time - this.burnStartedAt)) * (1 - BURN_DAYLIGHT_FALLOFF * daylight)

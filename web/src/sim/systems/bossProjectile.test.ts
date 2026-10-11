@@ -63,7 +63,7 @@ describe('real boss projectile impacts', () => {
     ['swipe', false, 1.1], ['swipe', true, 2.39],
     ['grab', true, 1.35], ['grab', true, 2.8], ['grab', true, 3.79], ['grab', false, 2.8],
   ] as const) {
-    it(`destroys thrown Flags once and emits 50/100 fireworks at the swept impact in ${action}:${crouched} at ${age}s`, () => {
+    it(`destroys thrown Flags once and emits 100/300 fireworks at the swept impact in ${action}:${crouched} at ${age}s`, () => {
       for (const headshot of [false, true]) {
         const w = setup(action, crouched, age);
         const shapes = sampleBossHitRegions(w.boss!, w.time);
@@ -76,28 +76,28 @@ describe('real boss projectile impacts', () => {
         const events = w.drainEvents().filter((e) => e.t === 'bossImpact');
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({ t: 'bossImpact', bossId: w.boss!.id, by: w.avatarOf(0).id,
-          flagId: flag.id, faction: 0, headshot, amount: headshot ? 100 : 50 });
+          flagId: flag.id, faction: 0, headshot, amount: headshot ? 300 : 100 });
         expect(events[0].pos.x).toBeCloseTo(ray.hit.pos.x);
         expect(events[0].pos.y).toBeCloseTo(ray.hit.pos.y);
         expect(events[0].pos.z).toBeCloseTo(ray.hit.pos.z);
-        expect(w.boss!.hp).toBe(before - (headshot ? 100 : 50));
+        expect(w.boss!.hp).toBe(before - (headshot ? 300 : 100));
         expect(w.flags.has(flag.id)).toBe(false);
         expect(w.projectiles.has(projectile.id)).toBe(false);
         updateProjectiles(w, SIM_DT);
-        expect(w.boss!.hp).toBe(before - (headshot ? 100 : 50));
+        expect(w.boss!.hp).toBe(before - (headshot ? 300 : 100));
         expect(w.drainEvents().some((e) => e.t === 'bossImpact')).toBe(false);
       }
     });
   }
 
-  it('head and hat are separately hittable for 100 damage', () => {
+  it('head and hat are separately hittable for 300 damage', () => {
     for (const [start, end] of [[0, 1], [1, BOSS_HEAD_REGION_COUNT]]) {
       const w = setup();
       const ray = aim(w, true, start, end);
       shoot(w, ray.from, ray.to);
       const before = w.boss!.hp;
       updateProjectiles(w, SIM_DT);
-      expect(w.boss!.hp).toBe(before - 100);
+      expect(w.boss!.hp).toBe(before - 300);
     }
   });
 
@@ -114,15 +114,15 @@ describe('real boss projectile impacts', () => {
       const { flag } = shoot(w, ray.from, ray.to);
       w.drainEvents();
       updateProjectiles(w, SIM_DT);
-      expect(w.boss!.hp, `${action}:${crouched}`).toBe(before - 100);
+      expect(w.boss!.hp, `${action}:${crouched}`).toBe(before - 300);
       expect(w.flags.has(flag.id)).toBe(false);
       expect(w.drainEvents().filter(e => e.t === 'bossImpact')).toMatchObject([
-        { headshot: true, amount: 100, flagId: flag.id },
+        { headshot: true, amount: 300, flagId: flag.id },
       ]);
     }
   });
 
-  it('the aimed head-attached rear drape still awards exactly 100 damage', () => {
+  it('the aimed head-attached rear drape still awards exactly 300 damage', () => {
     const rear = BOSS_HIT_REGION_NAMES.indexOf('hatRearflap');
     for (const crouched of [false, true]) for (const yaw of [0, .9]) {
       const w = setup('idle', crouched, 3), boss = w.boss!;
@@ -131,8 +131,8 @@ describe('real boss projectile impacts', () => {
       const ray = aim(w, true, rear, rear + 1), before = boss.hp;
       const { flag } = shoot(w, ray.from, ray.to);
       w.drainEvents(); updateProjectiles(w, SIM_DT);
-      expect(boss.hp).toBe(before - 100); expect(w.flags.has(flag.id)).toBe(false);
-      expect(w.drainEvents().filter(e => e.t === 'bossImpact')).toMatchObject([{ headshot: true, amount: 100, flagId: flag.id }]);
+      expect(boss.hp).toBe(before - 300); expect(w.flags.has(flag.id)).toBe(false);
+      expect(w.drainEvents().filter(e => e.t === 'bossImpact')).toMatchObject([{ headshot: true, amount: 300, flagId: flag.id }]);
     }
   });
 
@@ -146,7 +146,7 @@ describe('real boss projectile impacts', () => {
       const before = w.boss!.hp;
       shoot(w, ray.from, ray.to);
       updateProjectiles(w, SIM_DT);
-      expect(w.boss!.hp).toBe(before - (headshot ? 100 : 50));
+      expect(w.boss!.hp).toBe(before - (headshot ? 300 : 100));
     }
   });
 
@@ -173,7 +173,7 @@ describe('real boss projectile impacts', () => {
       w.time += SIM_DT;
       updateProjectiles(w, SIM_DT);
     }
-    expect(b.hp).toBe(before - 100);
+    expect(b.hp).toBe(before - 300);
     expect(w.flags.has(flagId)).toBe(false);
     expect(w.drainEvents().filter((e) => e.t === 'bossImpact')).toHaveLength(1);
   });

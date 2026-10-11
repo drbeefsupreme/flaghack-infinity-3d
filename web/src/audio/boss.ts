@@ -3,9 +3,10 @@ import { BOSS_EYE_TIMING, type BossState } from '../sim/boss';
 import type { GameEvent } from '../sim/events';
 import type { V2 } from '../sim/math';
 import type { AudioEngine, VoiceHandle } from './engine';
+import { BossSamples, type BossVocal } from './bossSamples';
 import { BOSS_VOICE_MIX } from './bossMix';
 import { BOSS_CUE_DURATION, synthBoss, type BossCue } from './bossSynth';
-export interface BossAudioSink { play(cue: BossCue, at: V2, age?: number): void; cancel(chargeOnly?: boolean): void; stopBeam?(): void; updateBeam?(at: V2, age: number): void; }
+export interface BossAudioSink { play(cue: BossCue, at: V2, age?: number): void; cancel(chargeOnly?: boolean): void; vocal?(cue: BossVocal): void; stopVocals?(): void; stopBeam?(): void; updateBeam?(at: V2, age: number): void; }
 type Seen = { id: number; deathAt: number | null; chargeAt: number | null; firedAt: number | null;
   now: number; hasImpact: boolean };
 const FRESH = .35;
@@ -36,17 +37,24 @@ export class BossAudioTracker {
       this.seen = snapshot(); return;
     }
     const fresh = (at: number): boolean => now >= at && now - at <= FRESH;
-    if (!prev && b.action === 'emerge' && fresh(b.spawnedAt)) this.sink.play('emerge', b.pos);
+    if (allowAttacks && !prev && b.action === 'emerge' && fresh(b.spawnedAt)) this.sink.play('emerge', b.pos);
     if (b.hp <= 0 || b.deathAt !== null || b.action === 'dead') {
-      this.sink.stopBeam?.();
+      this.sink.stopBeam?.(); this.sink.stopVocals?.();
       if (prev && prev.deathAt === null && b.deathAt !== null) {
         this.sink.cancel(); if (fresh(b.deathAt)) this.sink.play('death', b.pos);
       } else if (b.eye.chargeAt !== prev?.chargeAt || b.eye.firedAt !== prev?.firedAt) this.sink.cancel(true);
       this.seen = snapshot(); return;
     }
     if (!allowAttacks) {
-      this.sink.cancel(true); this.sink.stopBeam?.(); this.seen = snapshot(); return;
+      this.sink.cancel(true); this.sink.stopBeam?.(); this.sink.stopVocals?.(); this.seen = snapshot(); return;
     }
+    // Shared simulation clock and boss ID produce identical sparse vocal slots for
+    // every client. Crossing a slot is required: late joins never replay it.
+    const start = b.spawnedAt + 24 + b.id % 9;
+    const slot = Math.floor((now - start) / 32);
+    const oldSlot = prev ? Math.floor((prev.now - start) / 32) : slot;
+    if (slot >= 0 && slot > oldSlot && fresh(start + slot * 32) && b.action !== 'emerge' &&
+      b.eye.chargeAt === null && b.eye.firedAt === null) this.sink.vocal?.(slot % 2 ? 'growl' : 'roar');
     if (b.eye.chargeAt !== prev?.chargeAt || b.eye.firedAt !== prev?.firedAt) this.sink.cancel(true);
     if (prev && prev.firedAt !== null && b.eye.firedAt !== prev.firedAt) this.sink.stopBeam?.();
     if (b.eye.firedAt !== null && b.eye.firedAt !== prev?.firedAt && now >= b.eye.firedAt && now - b.eye.firedAt < BOSS_EYE_TIMING.beam) {
@@ -75,7 +83,37 @@ export class BossAudio implements BossAudioSink {
   readonly tracker = new BossAudioTracker(this);
   private voices: { cue: BossCue; voice: VoiceHandle; end: number; releaseDuck: () => void }[] = [];
   private lastCrushAt = -Infinity;
-  constructor(private readonly engine: AudioEngine) {}
+  private readonly samples: Pick<BossSamples, 'get' | 'ready'>;
+  private vocalVoice: { source: AudioBufferSourceNode; voice: VoiceHandle; end: number; releaseDuck: () => void } | null = null;
+  private generation = 0;
+  constructor(private readonly engine: AudioEngine, samples?: Pick<BossSamples, 'get' | 'ready'>) {
+    this.samples = samples ?? new BossSamples(engine.ctx);
+  }
+  vocal(cue: BossVocal): void {
+    const e = this.engine;
+    if (this.vocalVoice && this.vocalVoice.end > e.ctx.currentTime) return;
+    const buffer = this.samples.get(cue);
+    if (!buffer) return;
+    // No position or panner: equal signal level for everyone anywhere in the arena.
+    // The foreground boss bus retains SFX/master, pause filtering and final limiter.
+    const voice = e.voice({ key: `boss-${cue}`, bus: 'boss', gain: 1.3,
+      dur: buffer.duration, wet: cue === 'emerge' ? .4 : .3, priority: 3 });
+    if (!voice) return;
+    const source = e.ctx.createBufferSource(); source.buffer = buffer;
+    source.connect(voice.input); source.start(voice.t); source.stop(voice.t + buffer.duration);
+    source.onended = () => { source.disconnect(); };
+    this.vocalVoice = { source, voice, end: voice.t + buffer.duration,
+      releaseDuck: e.duckForBoss(.25, Math.min(3, buffer.duration)) };
+  }
+  stopVocals(): void {
+    this.generation++;
+    const v = this.vocalVoice;
+    if (!v) return;
+    const t = this.engine.ctx.currentTime;
+    v.releaseDuck(); v.voice.input.gain.cancelScheduledValues(t);
+    v.voice.input.gain.setTargetAtTime(0, t, .012);
+    v.source.stop(t + .06); this.vocalVoice = null;
+  }
   /** Only fresh host events reach this path; full snapshots never replay footfalls or rubble. */
   onEvents(events: readonly GameEvent[]): void {
     let crushed: { pos: V2; count: number }[] | null = null;
@@ -102,6 +140,16 @@ export class BossAudio implements BossAudioSink {
     this.play('crush', { x: x / count, z: z / count });
   }
   play(cue: BossCue, at: V2, age = 0): void {
+    if (cue === 'emerge') {
+      if (this.samples.get('emerge')) this.vocal('emerge');
+      else {
+        const generation = this.generation, atTime = this.engine.ctx.currentTime;
+        void this.samples.ready.then(() => {
+          if (this.generation === generation && this.engine.ctx.currentTime - atTime < .35) this.vocal('emerge');
+        });
+      }
+      return;
+    }
     const e = this.engine, dur = Math.max(.02, BOSS_CUE_DURATION[cue] - age);
     this.voices = this.voices.filter(v => v.end > e.ctx.currentTime);
     const mix = BOSS_VOICE_MIX[cue];
@@ -128,7 +176,7 @@ export class BossAudio implements BossAudioSink {
     });
   }
   cancel(chargeOnly = false): void {
-    if (!chargeOnly) this.lastCrushAt = -Infinity;
+    if (!chargeOnly) { this.lastCrushAt = -Infinity; this.stopVocals(); }
     const t = this.engine.ctx.currentTime;
     this.voices = this.voices.filter(v => {
       if (v.end <= t) return false;

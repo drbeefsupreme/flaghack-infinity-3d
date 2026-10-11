@@ -24,6 +24,7 @@ import { LumberPiles } from './piles/lumberPiles';
 import { PropField } from './props/propField';
 import { SkyDome } from './sky';
 import { terrainHeight } from './terrain';
+import { bossAwakeningExposure, bossAwakeningLevel } from '../../sim/bossPresentation';
 import { ATTRACT_CLOCK, computeDayState, createDayState } from './timeOfDay';
 
 /** Ambient warmth the fire adds to the hemisphere ground colour during The Burn. */
@@ -139,7 +140,8 @@ export class EnvRenderer implements RenderModule {
     this.fog.color.copy(day.fogColor);
     this.fog.near = day.fogNear + lift * 0.9;
     this.fog.far = day.fogFar + lift * 1.6;
-    ctx.renderer.toneMappingExposure = day.exposure;
+    const inMatch = ctx.session.screen === 'playing' || ctx.session.screen === 'paused';
+    ctx.renderer.toneMappingExposure = day.exposure * bossAwakeningExposure(inMatch ? bossAwakeningLevel(world) : 0);
     ctx.sunDir.copy(day.lightDir);
     ctx.daylight = day.daylight;
   }

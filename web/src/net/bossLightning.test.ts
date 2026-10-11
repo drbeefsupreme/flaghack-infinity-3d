@@ -17,18 +17,18 @@ it('replicates active Ward/Crystal arcs and host-only DPS to two mirrors and mid
   const hp = boss.hp; host.time++; host.tick++; updateBossLightning(host, boss, 1);
   boss.lightning.push({ kind: 'ward', id: 888888, faction: 0, from: { x: 2.123456, y: 4.5, z: 4 }, to: { ...boss.lightning[0].to } });
   const events = host.drainEvents(), frame = wire({ tick: host.tick, time: host.time, acks: {}, delta: encoder.delta(events), events });
-  expect(boss.hp).toBe(hp - 60);
+  expect(boss.hp).toBe(hp - 75);
   const damage = vi.spyOn(combat, 'damageEntity');
   for (const peer of peers) {
-    peer.push(frame); peer.catchUp(); expect(peer.world.boss!.hp).toBe(hp - 60); expect(peer.world.boss!.lightning).toHaveLength(3);
+    peer.push(frame); peer.catchUp(); expect(peer.world.boss!.hp).toBe(hp - 75); expect(peer.world.boss!.lightning).toHaveLength(3);
     expect(peer.world.boss!.lightning.find(a => a.id === c.id)?.from.y).toBe(75);
     expect(encodeRow(WORLD_FIELDS, peer.world, peer.world)).toEqual(encodeRow(WORLD_FIELDS, host, host));
     expect(peer.world.drainEvents().filter(e => e.t === 'hit')).toHaveLength(2);
     peer.push(frame); peer.catchUp(); for (let i = 0; i < 60; i++) peer.advance(performance.now() + i * 16);
-    expect(peer.world.boss!.hp).toBe(hp - 60); expect(peer.world.drainEvents()).toEqual([]);
+    expect(peer.world.boss!.hp).toBe(hp - 75); expect(peer.world.drainEvents()).toEqual([]);
   }
   const late = NetMirror.create(host.options, wire(encoder.full())); expect(late.world.boss!.lightning).toHaveLength(3);
-  expect(late.world.boss!.hp).toBe(hp - 60); expect(late.world.drainEvents()).toEqual([]);
+  expect(late.world.boss!.hp).toBe(hp - 75); expect(late.world.drainEvents()).toEqual([]);
   for (let i = 0; i < 60; i++) late.advance(performance.now() + i * 16);
   expect(damage).not.toHaveBeenCalled(); damage.mockRestore();
   host.phase = 'ended'; updateBossLightning(host, boss, 1); host.tick++;

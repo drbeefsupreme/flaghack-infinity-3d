@@ -97,8 +97,9 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
 
 ## Boss reveal
 
-- Advanced Game Settings has `bossMode`, default on. Tutorial and the title/lobby
-  attract world opt out; disabling it preserves the approved non-boss sequence.
+- Internal match settings retain `bossMode`, default on, without exposing it in menus.
+  Tutorial and the title/lobby attract world opt out; disabling it in code preserves
+  the approved non-boss sequence.
 - The simulation stores and replicates `effigyRevealedAt` exactly 90 seconds after
   the scheduled Burn. A skipped step or late join reconstructs the same state.
   Protocol version 8 includes this field and the full encounter state, and validates the configurable hoarding threshold. It distinguishes
@@ -110,9 +111,16 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   The actual rig rises through the ground during the 85–90 s white phase, glowing
   white with its arms crossed. In the final 0.55 s it opens its arms and tilts its
   head back, reaching the full gesture at 90 s. The same authoritative frame
-  restores every original material instantly; no rise or glow fade follows the
-  explosion. A short back-shell burst leaves the colored boss visible in front
-  of it, and a persistent black crater remains.
+  ends the white model charge instantly; the original material parameters and geometry
+  remain unchanged. At that moment, **HE IS AWAKENED** appears on an opaque dark HUD
+  plaque and the eruption produces five seconds of intense white illumination. It holds
+  steady for 4.4 seconds, then smoothly recovers normal lighting by the five-second mark.
+  The real, depth-writing rig excludes this point light and marks its HDR alpha coverage,
+  so the existing final grade preserves a dark silhouette against the white halo and
+  illuminated scenery, including through bloom. No new light or post-processing pass is
+  added. The full back shell surrounds the rig from the first eruption frame; the black
+  crater persists afterward. Timing comes from the replicated reveal timestamp, so pause,
+  late join, reset and replay do not restart or prolong the announcement/glare.
 - The original source GLB is unchanged; its original uniform scale makes the complete
   boss 32 m tall including its hat. Per-material runtime consolidation reduces
   594 draws to 31 while preserving all 401,386 triangles and 109 bones. The later
@@ -139,7 +147,7 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   and version-2 zero-day starts. Earlier zero-day-to-Unlimited migration remains separate.
   Staff timing and damage are unchanged; cooperation, Signifiers and thrown Flags shorten
   the encounter.
-- A thrown Flag deals 50 damage to the body or 100 to the head/hat, destroys the Flag, and
+- A thrown Flag deals 100 damage to the body or 300 to the face/head/hat, destroys the Flag, and
   bursts into a colored firework at the exact impact point. Swept collision regions follow
   the approved animated rig, including crouching, arms, skull and hat; walls still stop a
   throw before it reaches the giant.
@@ -168,13 +176,17 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
 - During the fight its health replaces the top-center clock in the same ornate plaque.
   Gentle, single lightning pulses illuminate its original materials for 0.9 seconds,
   spaced 8–14 seconds apart; reveal, death and menu screens do not flash.
-- Distinct procedural bellows accompany emergence and death. Low footstep impacts follow
+- The emergence uses CGEffex’s selected T-rex roar; occasional ecfike/123agumon vocals
+  alternate roughly every 32 seconds during living combat, without vocal overlap or late-join replay.
+  These sampled vocals play at identical level throughout the map, with cached decoding,
+  shared reverb, master/SFX controls and output limiting. See [sound credits](../web/public/audio/boss/CREDITS.md).
+  Death retains its distinct procedural bellow. Low footstep impacts follow
   the actual standing and crouching foot-contact phases; the eye has a three-second
   charging sound, a sustained five-second firing sound, and coalesced impact explosions. Destroyed scenery
   produces a coalesced crushing sound. Footfall and deliberate stomp cues follow the exact
   authoritative damage-contact events. These use the existing spatial SFX,
   volume and mute controls, and do not replay old cues on late join or resume.
-  Boss cues retain horizontal direction but carry across the arena on a dedicated bus;
+  Other boss cues retain horizontal direction but carry across the arena on a dedicated bus;
   their envelopes briefly lower music and other world effects without changing user volume.
 - The original hat eye glows dimly. Every 30 seconds the giant pauses and charges for three
   seconds, tilting its head toward the first target. Its first shot is due 30 seconds after
@@ -202,7 +214,7 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   The host replicates the route, live gaze/impact, sample index and once-per-beam hit ledger for late joins.
   Charge/fire cancel on death or the end of the match.
 - Each fully grown ordinary Crystal shocks the living giant for 25 HP/s while its focus
-  is within 50 m of the giant's ground center. The manifested giant Crystal deals 35 HP/s
+  is within 50 m of the giant's ground center. The manifested giant Crystal deals 50 HP/s
   with unlimited range. Contributions stack independently and crossing-range exposure is
   integrated rather than billed once per frame. Each live Ward deals 25 HP/s while the
   giant is actually grabbing a planted Flag it protects. Existing player pull slowdown is

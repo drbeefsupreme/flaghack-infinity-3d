@@ -5,6 +5,7 @@ import { BossAudio } from './boss';
 import { BOSS_VOICE_MIX } from './bossMix';
 import type { BossCue } from './bossSynth';
 import { Session } from '../game/session';
+vi.mock('./bossSamples', () => ({ BossSamples: class { ready = Promise.resolve(); get() { return { duration: 4 }; } } }));
 function param(p: AudioParam): TestParam { return p as unknown as TestParam; }
 function node(n: AudioNode): TestNode { return n as unknown as TestNode; }
 beforeEach(() => vi.stubGlobal('AudioContext', TestAudioContext));
@@ -110,7 +111,7 @@ describe('arena-wide boss mix in the actual audio engine', () => {
     const impulse = e.reverb.buffer, voice = vi.spyOn(e, 'voice');
     for (const cue of Object.keys(BOSS_VOICE_MIX) as BossCue[]) {
       b.play(cue, { x: 0, z: 0 });
-      expect(voice).toHaveBeenLastCalledWith(expect.objectContaining({ wet: BOSS_VOICE_MIX[cue].wet, gain: BOSS_VOICE_MIX[cue].gain }));
+      expect(voice).toHaveBeenLastCalledWith(expect.objectContaining({ wet: cue === 'emerge' ? .4 : BOSS_VOICE_MIX[cue].wet, gain: BOSS_VOICE_MIX[cue].gain }));
       expect(BOSS_VOICE_MIX[cue].wet).toBeGreaterThan(.2);
     }
     expect(ctx.nodes.filter(n => n.kind === 'convolver')).toHaveLength(1);

@@ -42,14 +42,14 @@ describe('authoritative defensive boss lightning', () => {
   it.each([1, 10, 60, 144])('applies exactly one second of DPS in %s steps', steps => {
     const e = encounter(), start = e.boss.hp; e.crystal(5); e.crystal(-5); e.crystal(500, 500, 10);
     for (let i = 0; i < steps; i++) e.step(1 / steps);
-    expect(start - e.boss.hp).toBeCloseTo(85, 7);
+    expect(start - e.boss.hp).toBeCloseTo(100, 7);
   });
-  it('gives the manifested Easter-egg Crystal unlimited range and 35 DPS independently of ordinary Crystals', () => {
+  it('gives the manifested Easter-egg Crystal unlimited range and 50 DPS independently of ordinary Crystals', () => {
     const e = encounter(), giant = e.crystal(1000, -1000, 10), start = e.boss.hp;
-    e.crystal(1000, 1000); e.crystal(0); e.step(2); expect(e.boss.hp).toBe(start - 120);
+    e.crystal(1000, 1000); e.crystal(0); e.step(2); expect(e.boss.hp).toBe(start - 150);
     expect(activeBossCrystals(e.world, e.boss).map(c => c.id)).toContain(giant.id);
     expect(e.boss.lightning.find(a => a.id === giant.id)?.from).toEqual({ x: 1000, y: 75, z: -1000 });
-    giant.pos = { x: -800, z: 800 }; e.step(1); expect(e.boss.hp).toBe(start - 180);
+    giant.pos = { x: -800, z: 800 }; e.step(1); expect(e.boss.hp).toBe(start - 225);
   });
   it('never shocks from unmanifested, eliminated or removed Crystals', () => {
     const e = encounter(), c = e.crystal(0, 0, 10), start = e.boss.hp;

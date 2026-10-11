@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BossHud } from './bossHud';
+import { BOSS_AWAKENING_SECONDS } from '../sim/bossPresentation';
 import type { World } from '../sim/world';
 
 /** Minimal DOM contract test; actual browser layout is a separate integration check. */
@@ -20,10 +21,10 @@ function setup() {
   vi.stubGlobal('document', { createElement: () => new Node() });
   const root = new Node(), timer = new Node(); timer.className = 'clock plaque'; root.appendChild(timer);
   const hud = new BossHud(root as unknown as HTMLElement, timer as unknown as HTMLElement);
-  const world = { boss: { hp: 4300, maxHp: 5000, action: 'idle', deathAt: null } } as unknown as World;
-  return { root, timer, hud, world, node: hud.element as unknown as Node };
+  const world = { time: 0, effigyRevealedAt: null, options: { mode: 'standard' }, boss: { hp: 4300, maxHp: 5000, action: 'idle', deathAt: null } } as unknown as World;
+  return { root, timer, hud, world, node: hud.element as unknown as Node, announcement: hud.announcement as unknown as Node };
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe('boss health HUD state', () => {
   it('is hidden before an encounter, on the title, and after the boss is dead', () => {
     const { hud, world, node } = setup(); expect(node.classList.contains('is-off')).toBe(true);
@@ -97,5 +98,67 @@ describe('boss health HUD state', () => {
     const { hud, world, timer } = setup();
     hud.update(world, true); expect(timer.classList.contains('is-off')).toBe(true);
     hud.dispose(); expect(timer.classList.contains('is-off')).toBe(false);
+  });
+});
+
+describe('authoritative awakening announcement', () => {
+  it('shows the exact announcement only in the five-second reveal window', () => {
+    const { hud, world, announcement } = setup();
+    const check = (visible: boolean) => {
+      expect(announcement.classList.contains('is-off')).toBe(!visible);
+      expect(announcement.getAttribute('aria-hidden')).toBe(String(!visible));
+      expect(announcement.textContent).toBe(visible ? 'HE IS AWAKENED' : '');
+    };
+    check(false);
+    hud.update(world, true); check(false);
+    world.effigyRevealedAt = 90;
+    world.time = 89.999; hud.update(world, true); check(false);
+    world.time = 90; hud.update(world, true); check(true);
+    world.time = 90 + BOSS_AWAKENING_SECONDS - .001; hud.update(world, true); check(true);
+    world.time = 90 + BOSS_AWAKENING_SECONDS; hud.update(world, true); check(false);
+    world.time = 300; hud.update(world, true); check(false);
+  });
+
+  it('keeps a paused announcement stable without replaying DOM or accessible text writes', () => {
+    vi.useFakeTimers();
+    const { hud, world, root, announcement } = setup();
+    world.effigyRevealedAt = 90; world.time = 92;
+    hud.update(world, true);
+    const setAttribute = vi.spyOn(announcement, 'setAttribute');
+    let text = announcement.textContent;
+    const writeText = vi.fn((value: string) => { text = value; });
+    Object.defineProperty(announcement, 'textContent', { get: () => text, set: writeText });
+    for (let frame = 0; frame < 10; frame++) {
+      vi.advanceTimersByTime(10_000);
+      hud.update(world, true);
+    }
+    expect(announcement.textContent).toBe('HE IS AWAKENED');
+    expect(announcement.classList.contains('is-off')).toBe(false);
+    expect(root.children.filter(node => node === announcement)).toHaveLength(1);
+    expect(setAttribute).not.toHaveBeenCalled();
+    expect(writeText).not.toHaveBeenCalled();
+    world.time = 95; hud.update(world, true);
+    expect(announcement.textContent).toBe('');
+    expect(announcement.classList.contains('is-off')).toBe(true);
+  });
+
+  it('clears title/reset/dead state without spoilers and handles consecutive matches', () => {
+    const { hud, world, announcement, root, timer } = setup();
+    const hidden = () => {
+      expect(announcement.classList.contains('is-off')).toBe(true);
+      expect(announcement.getAttribute('aria-hidden')).toBe('true');
+      expect(announcement.textContent).toBe('');
+    };
+    for (let match = 0; match < 2; match++) {
+      world.effigyRevealedAt = 90; world.time = 91; world.boss!.action = 'emerge';
+      hud.update(world, true); expect(announcement.textContent).toBe('HE IS AWAKENED');
+      hud.update(world, false); hidden();
+      hud.update(null, true); hidden();
+      world.effigyRevealedAt = null; world.time = 0; hud.update(world, true); hidden();
+      world.effigyRevealedAt = 90; world.time = 91; hud.update(world, true);
+      world.boss!.action = 'dead'; hud.update(world, true); hidden();
+    }
+    hud.dispose();
+    expect(root.children).toEqual([timer]);
   });
 });

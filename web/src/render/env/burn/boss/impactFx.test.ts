@@ -8,7 +8,7 @@ function env(): EnvContext {
   return { ctx: { time: 100, world: { time: 100, boss: { id: 99 }, map: { effigy: { x: 20, z: -30 } }, factions: [{ color: 0x33ccff }] },
     renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280,720) }, camera: { fov: 60, position: new THREE.Vector3() } } } as unknown as EnvContext;
 }
-const event: GameEvent = { t: 'bossImpact', bossId: 99, by: 12, flagId: 54, faction: 0, pos: { x: 44, y: 17, z: 8 }, headshot: true, amount: 100 };
+const event: GameEvent = { t: 'bossImpact', bossId: 99, by: 12, flagId: 54, faction: 0, pos: { x: 44, y: 17, z: 8 }, headshot: true, amount: 300 };
 describe('authoritative boss-impact fireworks', () => {
   it('bursts at the exact impact position and does not emit twice for the same destroyed flag', () => {
     const e = env(), fx = new BossImpactFx(e), before = JSON.stringify(e.ctx.world);

@@ -54,23 +54,23 @@ describe('rival AI throws real Flags at the cooperative boss', () => {
     const { flagId, events } = shootOnce(f), impacts = events.filter(e => e.t === 'bossImpact');
     expect(impacts).toHaveLength(1);
     expect(impacts[0]).toMatchObject({ by: av.id, faction: 1, flagId,
-      headshot: crouched, amount: crouched ? 100 : 50 });
-    expect(boss.hp).toBe(hp - (crouched ? 100 : 50));
+      headshot: crouched, amount: crouched ? 300 : 100 });
+    expect(boss.hp).toBe(hp - (crouched ? 300 : 100));
     expect(av.carried).toHaveLength(carried - 1);
     expect(world.flags.has(flagId)).toBe(false);
     expect(world.projectiles.size).toBe(0);
     expect(boss.objectiveAltarId).toBe(altar);
     expect(world.buildings.has(altar!)).toBe(true);
     updateProjectiles(world, SIM_DT);
-    expect(boss.hp).toBe(hp - (crouched ? 100 : 50));
+    expect(boss.hp).toBe(hp - (crouched ? 300 : 100));
   });
 
   it('uses reachable headshots from an elevated firing position', () => {
     const f = fixture(); f.av.pos.y = 20;
     const hp = f.boss.hp;
     const { events } = shootOnce(f);
-    expect(events.filter(e => e.t === 'bossImpact')).toMatchObject([{ headshot: true, amount: 100 }]);
-    expect(f.boss.hp).toBe(hp - 100);
+    expect(events.filter(e => e.t === 'bossImpact')).toMatchObject([{ headshot: true, amount: 300 }]);
+    expect(f.boss.hp).toBe(hp - 300);
   });
 
   it.each([false, true])('aims at rotated targets from multiple directions and distances (crouched=%s)', crouched => {
@@ -107,7 +107,7 @@ describe('rival AI throws real Flags at the cooperative boss', () => {
     const hp = f.boss.hp;
     const { events } = shootOnce(f);
     expect(events.filter(e => e.t === 'bossImpact')).toHaveLength(1);
-    expect(f.boss.hp).toBe(hp - 50);
+    expect(f.boss.hp).toBe(hp - 100);
   });
 
   it('honors the throw cooldown and holds a firing position between releases', () => {

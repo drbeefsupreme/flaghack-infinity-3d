@@ -8,6 +8,7 @@ import { Rng } from '../../../../sim/rng';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
 import { bossFlash, smooth } from './revealTimeline';
+import { BOSS_AWAKENING_SECONDS, bossAwakeningLevel } from '../../../../sim/bossPresentation';
 
 const ADDITIVE = {
   transparent: true, depthWrite: false, blending: THREE.CustomBlending,
@@ -16,15 +17,15 @@ const ADDITIVE = {
 };
 const BURST_VERTEX = `varying vec3 vNormal; varying vec3 vView; varying vec3 vLocal;
 void main() { vec4 p = modelViewMatrix * vec4(position, 1.0); vNormal = normalize(normalMatrix * normal); vView = -p.xyz; vLocal = position; gl_Position = projectionMatrix * p; }`;
-const BURST_FRAGMENT = `uniform float uAge; uniform sampler2D uNoise; varying vec3 vNormal; varying vec3 vView; varying vec3 vLocal;
+const BURST_FRAGMENT = `uniform float uAge; uniform float uAwakening; uniform sampler2D uNoise; varying vec3 vNormal; varying vec3 vView; varying vec3 vLocal;
 void main() {
  float facing = abs(dot(normalize(vNormal), normalize(vView)));
  float n = texture2D(uNoise, vLocal.xy * 1.6 + vec2(uAge * 0.2, -uAge * 0.45)).r;
  n = n * 0.65 + texture2D(uNoise, vLocal.yz * 3.2 + uAge * 0.25).g * 0.35;
  float edge = pow(facing, 3.5) * smoothstep(0.12, 0.66, n + facing * 0.32);
- float fade = pow(1.0 - smoothstep(0.0, 0.28, uAge), 2.0);
- vec3 c = mix(vec3(1.0), vec3(1.0, 0.36, 0.06), smoothstep(0.06, 0.25, uAge));
- gl_FragColor = vec4(c * edge * fade * 3.2, 1.0);
+ float fade = max(pow(1.0 - smoothstep(0.0, 0.28, uAge), 2.0), uAwakening);
+ vec3 c = mix(vec3(1.0), vec3(1.0, 0.36, 0.06), smoothstep(0.06, 0.25, uAge) * (1.0 - uAwakening));
+ gl_FragColor = vec4(c * edge * fade * mix(3.2, 18.0, uAwakening), 1.0);
  #include <colorspace_fragment>
 }`;
 const SHOCK_VERTEX = `varying vec2 vXZ; void main() { vXZ = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -122,6 +123,7 @@ export class RevealFx {
   private embers: THREE.Points;
   private debris: THREE.Mesh;
   private uAge = { value: 0 };
+  private uAwakening = { value: 0 };
   private uPointScale = { value: 600 };
   private size = new THREE.Vector2();
   private geos: THREE.BufferGeometry[] = [];
@@ -158,7 +160,7 @@ export class RevealFx {
     this.burst = add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), new THREE.ShaderMaterial({
       // The back shell is behind the depth-writing boss from every viewing angle:
       // the explosion halo stays visible, while the model appears immediately in front.
-      ...ADDITIVE, side: THREE.BackSide, uniforms: { ...age, uNoise: { value: env.noise } }, vertexShader: BURST_VERTEX, fragmentShader: BURST_FRAGMENT,
+      ...ADDITIVE, side: THREE.BackSide, uniforms: { ...age, uAwakening: this.uAwakening, uNoise: { value: env.noise } }, vertexShader: BURST_VERTEX, fragmentShader: BURST_FRAGMENT,
     })), 'boss-white-burst', 5);
     this.burst.position.y = ground + 14;
     this.shock = add(new THREE.Mesh(new THREE.RingGeometry(0, 50, 80, 24).rotateX(-Math.PI / 2).translate(0, 0.15, 0), new THREE.ShaderMaterial({
@@ -223,11 +225,16 @@ export class RevealFx {
   }
 
   update(age: number): void {
+    const { world, session } = this.env.ctx;
+    this.uAwakening.value = session.screen === 'playing' || session.screen === 'paused' ? bossAwakeningLevel(world) : 0;
     this.group.visible = age >= 0;
     if (age < 0) return;
     this.uAge.value = age;
-    this.burst.visible = age < 0.28;
-    this.burst.scale.set(1.5 + 23 * smooth(0, 0.22, age), 14 + 6 * smooth(0, 0.22, age), 1.5 + 23 * smooth(0, 0.22, age));
+    this.burst.visible = age < 0.28 || (age < BOSS_AWAKENING_SECONDS && this.uAwakening.value > 0);
+    // A narrow initial shell intersects the rig and paints additive white streaks
+    // across its silhouette. Enclose the full rig from the first awakening frame.
+    const expand = this.uAwakening.value > 0 ? 1 : smooth(0, 0.22, age);
+    this.burst.scale.set(1.5 + 23 * expand, 14 + 6 * expand, 1.5 + 23 * expand);
     this.shock.visible = age < 1.8;
     this.smoke.visible = age < 4.5;
     this.embers.visible = age < 6;

@@ -236,3 +236,9 @@ harness `/ratchet` hill-climb. In the browser console, `window.fh` stages scenar
 The repository root still holds the first Godot 4.6 scaffold (`project.godot`, `scripts/`,
 `scenes/`, `tests/`, run with `./scripts/tools/run_gut.sh`). It is superseded by `web/`
 and kept for reference; `web/.gdignore` keeps Godot from scanning the web project.
+
+## Boss audio credits
+
+The boss vocals include recordings by CGEffex (CC BY 4.0), ecfike (CC0), and 123agumon (CC0).
+See [full attribution, source and license links](web/public/audio/boss/CREDITS.md).
+The same credits ship with browser and desktop builds at `audio/boss/CREDITS.md`.

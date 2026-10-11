@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bossFixture } from '../../tests/bossFixture';
 import { Session } from '../game/session';
+import { SnapshotEncoder } from '../net/codec';
+import { NetMirror } from '../net/mirror';
 import { normalizeMatch, UNLIMITED_DAYS } from '../sim/matchSettings';
 import { createMatch } from '../sim/setup';
 import type { UiHost, UiLayout } from './core';
@@ -36,6 +38,35 @@ function setup(days = 1) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('top-center encounter HUD integration', () => {
+  it('mounts the awakening in the central HUD and derives late-join/pause/cleanup from replicated state', () => {
+    const { hud, world, session, regions } = setup();
+    const announcement = regions.center.find('boss-awakening')!;
+    expect(announcement).toBeDefined();
+    expect(regions.topCenter.find('boss-awakening')).toBeUndefined();
+    world.boss = bossFixture(); world.time = 93.5; world.tick = 40; world.effigyRevealedAt = 90;
+    const encoder = new SnapshotEncoder(world);
+    const late = NetMirror.create(world.options, JSON.parse(JSON.stringify(encoder.full())));
+    expect(late.world.drainEvents()).toEqual([]);
+    hud.update(late.world, 0);
+    expect(announcement.textContent).toBe('HE IS AWAKENED');
+    session.screen = 'paused'; hud.update(late.world, 60_000);
+    expect(announcement.textContent).toBe('HE IS AWAKENED');
+    session.screen = 'playing'; late.world.time = 95; hud.update(late.world, 60_100);
+    expect(announcement.textContent).toBe('');
+    expect(announcement.classList.contains('is-off')).toBe(true);
+    world.time = 180; world.tick++; encoder.delta([]);
+    const after = NetMirror.create(world.options, JSON.parse(JSON.stringify(encoder.full())));
+    hud.update(after.world, 60_200);
+    expect(announcement.textContent).toBe('');
+    late.world.time = 94; hud.update(late.world, 60_300);
+    expect(announcement.textContent).toBe('HE IS AWAKENED');
+    session.screen = 'title'; hud.update(late.world, 60_400);
+    expect(announcement.textContent).toBe('');
+    expect(announcement.getAttribute('aria-hidden')).toBe('true');
+    hud.dispose();
+    expect(regions.center.find('boss-awakening')).toBeUndefined();
+  });
+
   it('switches the actual HudPart timer and restores it across death, quit, and consecutive matches', () => {
     const { hud, world, session, timer, bossBar } = setup();
     const check = (boss: boolean) => {

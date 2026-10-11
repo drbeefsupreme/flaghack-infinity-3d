@@ -4,7 +4,7 @@ import { BossAudio, BossAudioTracker } from './boss';
 import { BOSS_EYE_TIMING } from '../sim/boss';
 import type { AudioEngine } from './engine';
 function harness() {
-  const sink = { play: vi.fn(), cancel: vi.fn(), stopBeam: vi.fn(), updateBeam: vi.fn() }, tracker = new BossAudioTracker(sink), b = bossFixture();
+  const sink = { play: vi.fn(), cancel: vi.fn(), stopBeam: vi.fn(), updateBeam: vi.fn(), vocal: vi.fn(), stopVocals: vi.fn() }, tracker = new BossAudioTracker(sink), b = bossFixture();
   b.spawnedAt = 100; b.actionAt = 100; b.action = 'idle'; b.stride = 0;
   return { sink, tracker, b };
 }
@@ -97,11 +97,28 @@ describe('boss shared-view audio lifecycle', () => {
   });
   it('routes every recipe through the capped arena-wide boss bus under the existing volume controls', () => {
     const voice = vi.fn(() => null);
-    const audio = new BossAudio({ voice, ctx: { currentTime: 0 } } as unknown as AudioEngine);
+    const audio = new BossAudio({ voice, ctx: { currentTime: 0 } } as unknown as AudioEngine, { get: () => ({ duration: 4 }) as AudioBuffer, ready: Promise.resolve() });
     for (const cue of ['emerge', 'death', 'step', 'stomp', 'charge', 'beam', 'impact', 'crush'] as const) audio.play(cue, { x: 1, z: 2 });
     expect(voice).toHaveBeenCalledTimes(8);
     for (const [spec] of voice.mock.calls as unknown as [{ bus: string; at: unknown; gain: number; directionalOnly: boolean }][]) {
-      expect(spec.bus).toBe('boss'); expect(spec.at).toEqual({ x: 1, z: 2 }); expect(spec.gain).toBeLessThanOrEqual(1.3); expect(spec.directionalOnly).toBe(true);
+      expect(spec.bus).toBe('boss'); expect(spec.at === undefined || JSON.stringify(spec.at) === JSON.stringify({ x: 1, z: 2 })).toBe(true); expect(spec.gain).toBeLessThanOrEqual(1.3); expect(spec.directionalOnly).toBe(spec.at ? true : undefined);
     }
+  });
+});
+
+describe('synchronized sampled vocal slots', () => {
+  it('alternates sparsely, skips snapshots and suppresses noncombat vocalizations', () => {
+    const { sink, tracker, b } = harness();
+    const at = b.spawnedAt + 24 + b.id % 9;
+    tracker.update(b, at - .1); tracker.update(b, at); tracker.update(b, at + .1);
+    expect(sink.vocal).toHaveBeenCalledExactlyOnceWith('roar');
+    tracker.reset(); sink.vocal.mockClear(); tracker.update(b, at); tracker.update(b, at + .1);
+    expect(sink.vocal).not.toHaveBeenCalled();
+    tracker.update(b, at + 31.9); tracker.update(b, at + 32);
+    expect(sink.vocal).toHaveBeenCalledExactlyOnceWith('growl');
+    tracker.update(b, at + 63.9); tracker.update(b, at + 64, false);
+    expect(sink.vocal).toHaveBeenCalledTimes(1); expect(sink.stopVocals).toHaveBeenCalled();
+    tracker.update(b, at + 95.9); b.hp = 0; tracker.update(b, at + 96);
+    expect(sink.vocal).toHaveBeenCalledTimes(1);
   });
 });

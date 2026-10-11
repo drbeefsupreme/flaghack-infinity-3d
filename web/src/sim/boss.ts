@@ -4,6 +4,9 @@ import type { V2, V3 } from './math';
 import { BOSS_GAMEPLAY_SCALE } from './bossDimensions';
 /** Default encounter health; each new boss reads the pregame Boss HP setting. */
 export const BOSS_MAX_HP = 50000;
+export const BOSS_FLAG_BODY_DAMAGE = 100;
+/** Existing face/head/hat region, including its attached drape. */
+export const BOSS_FLAG_HEAD_DAMAGE = 300;
 export const BOSS_RADIUS = 2.35 * BOSS_GAMEPLAY_SCALE;
 export const BOSS_DEATH_DURATION = 12;
 export const BOSS_EYE_TIMING = { period: 30, charge: 3, beam: 5 } as const;

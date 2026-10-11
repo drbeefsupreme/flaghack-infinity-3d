@@ -106,7 +106,7 @@ describe('durable boss replication', () => {
       host.flags.delete(flag.id);
       const impact = { t: 'bossImpact' as const, bossId: host.boss.id, by: host.avatarOf(0).id,
         flagId: flag.id, faction: 0 as const, pos: { x: 1.25, y: headshot ? 18.75 : 6.25, z: -2.5 },
-        headshot, amount: headshot ? 100 : 50 };
+        headshot, amount: headshot ? 300 : 100 };
       host.boss.hp -= impact.amount;
       host.time += 1; host.tick++;
       const events = [impact];

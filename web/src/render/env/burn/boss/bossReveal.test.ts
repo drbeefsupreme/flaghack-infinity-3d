@@ -6,6 +6,7 @@ import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { normalizeMatch } from '../../../../sim/matchSettings';
 import { BOSS_HEIGHT, BOSS_SCALE, disposeBossModel, prepareBossModel } from './bossModel';
 import { prepareBossRearDrapeSeam } from './rearFlapPose';
+import { BOSS_ERUPTION_LIGHT_INTENSITY } from './bossReveal';
 import { bossCharge, bossEmergence, bossFlash } from './revealTimeline';
 import { Effigy } from '../effigy';
 import { createDayState } from '../../timeOfDay';
@@ -19,7 +20,7 @@ function env(bossMode = true, tutorial = false): EnvContext {
   return {
     ctx: {
       world: { options: { mode: tutorial ? 'tutorial' : 'standard', match: normalizeMatch({ bossMode }) }, time: 500, effigyRevealedAt: null,
-        map: { half: 150, seed: 'boss-reveal-test', effigy: { x: 0, z: 0 } } }, quality: 'low', time: 0, session: { viewBlend: 0 }, camera: { fov: 60 },
+        map: { half: 150, seed: 'boss-reveal-test', effigy: { x: 0, z: 0 } } }, quality: 'low', time: 0, session: { viewBlend: 0, screen: 'playing' }, camera: { fov: 60 },
       renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280, 720) },
     } as unknown as EnvContext['ctx'],
     root: new THREE.Group(), day: createDayState(), burn: { active: true, startedAt: 500, elapsed: 0, progress: 0 },
@@ -154,6 +155,8 @@ describe('boss reveal presentation', () => {
       expect(values()).toEqual(original);
     }
     at(environment, effect, 90.3);
+    expect(environment.root.getObjectByName('boss-white-burst')!.visible).toBe(true);
+    at(environment, effect, 95);
     expect(environment.root.getObjectByName('boss-white-burst')!.visible).toBe(false);
     // Reverse/skip sampling also reconstructs the visual phase without mutating authority.
     at(environment, effect, 89.999);
@@ -165,6 +168,31 @@ describe('boss reveal presentation', () => {
     expect(model.position.y).toBe(2);
     expect(shaders.every((s) => s.uniforms.uBossCharge.value === 0)).toBe(true);
     effect.dispose();
+  });
+  it('reuses the fire light for a sustained white eruption and restores its state on recovery/reset/disposal', async () => {
+    const environment = env(), light = environment.fireLight;
+    light.distance = 140; light.decay = 1.4;
+    const effect = new Effigy(environment, async () => new THREE.Group()); await effect.ready;
+    const children = [...environment.root.children];
+    at(environment, effect, 89.999); expect(light.intensity).toBeLessThan(BOSS_ERUPTION_LIGHT_INTENSITY);
+    for (const t of [90, 91, 94.4, 92]) {
+      at(environment, effect, t);
+      expect(light.color.toArray()).toEqual([1, 1, 1]);
+      expect(light.intensity).toBeGreaterThanOrEqual(BOSS_ERUPTION_LIGHT_INTENSITY);
+      expect(light.distance).toBe(900); expect(light.decay).toBe(0);
+      expect(environment.root.getObjectByName('boss-white-burst')!.visible).toBe(true);
+      expect(environment.root.getObjectByName('boss-white-burst')!.scale.toArray()).toEqual([24.5, 20, 24.5]);
+    }
+    at(environment, effect, 94.7); expect(light.intensity).toBeCloseTo(BOSS_ERUPTION_LIGHT_INTENSITY * .5 + 24 * Math.exp(-4.7 * .9));
+    at(environment, effect, 95); expect(light.distance).toBe(140); expect(light.decay).toBe(1.4);
+    expect(light.intensity).toBeLessThan(1);
+    at(environment, effect, 92); environment.ctx.session.screen = 'title'; effect.update(0);
+    expect(light.intensity).toBeLessThan(BOSS_ERUPTION_LIGHT_INTENSITY);
+    environment.ctx.session.screen = 'playing'; at(environment, effect, 0, null);
+    expect(light.distance).toBe(140); expect(light.decay).toBe(1.4);
+    expect(environment.root.children).toEqual(children);
+    at(environment, effect, 90); effect.dispose();
+    expect(light.intensity).toBe(0); expect(light.distance).toBe(140); expect(light.decay).toBe(1.4);
   });
   it('preserves the off-mode plinth and never loads the boss in tutorial or off-mode', async () => {
     for (const [bossMode, tutorial] of [[false, false], [true, true]]) {

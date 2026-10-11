@@ -1,5 +1,5 @@
 /**
- * Procedural WebAudio (no asset files): festival soundscape, generative pentatonic music with
+ * WebAudio with licensed cached boss vocals and procedural synthesis: festival soundscape, generative pentatonic music with
  * tension layers, positional event SFX (plant chimes, pulls, throws, swings, ley hums,
  * crystal choir, phason glass glitches, discharges, capture alarms, Burn fireworks, UI blips).
  * Owner: Audio agent.

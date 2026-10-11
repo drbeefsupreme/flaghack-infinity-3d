@@ -13,7 +13,7 @@ import { sampleBossHeadPose } from './hitRegions';
 
 export const BOSS_CRYSTAL_LIGHTNING_RANGE = 50;
 export const BOSS_CRYSTAL_LIGHTNING_DPS = 25;
-export const BOSS_GIANT_CRYSTAL_LIGHTNING_DPS = 35;
+export const BOSS_GIANT_CRYSTAL_LIGHTNING_DPS = 50;
 /** Wards previously only slowed player pulls; the giant's defensive damage is 25 HP/s. */
 export const BOSS_WARD_LIGHTNING_DPS = 25;
 const FLAG_ATTACK_REACH = 8 * BOSS_GAMEPLAY_SCALE + .5;

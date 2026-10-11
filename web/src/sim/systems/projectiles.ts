@@ -5,6 +5,7 @@
  * Owner: Units agent.
  */
 import { AVATAR, MAP_HALF, PROJECTILE } from '../constants';
+import { BOSS_FLAG_BODY_DAMAGE, BOSS_FLAG_HEAD_DAMAGE } from '../boss';
 import { clamp } from '../math';
 import type { FactionId, Hippie, Projectile } from '../types';
 import type { World } from '../world';
@@ -67,7 +68,7 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
   if (victim) { bonk(world, p, victim); return; }
   if (impact && world.boss) {
     recordBossFlagThreat(world, p.thrower);
-    const amount = impact.headshot ? 100 : 50;
+    const amount = impact.headshot ? BOSS_FLAG_HEAD_DAMAGE : BOSS_FLAG_BODY_DAMAGE;
     damageEntity(world, world.boss.id, amount, p.thrower);
     const flagId = p.flagId;
     destroyFlag(world, flagId);

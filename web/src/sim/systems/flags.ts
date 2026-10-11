@@ -15,7 +15,6 @@ import type { V2, V3 } from '../math';
 import { NEUTRAL } from '../types';
 import type { Avatar, Building, Crystal, EntityId, FactionId, Flag, FlagState, Hippie, Owner } from '../types';
 import type { World } from '../world';
-import { bossEncounterActive } from './boss/damage';
 import { isFlagProtected } from './abilities';
 import { isCollapsed } from './buildings';
 import { isFactionId } from './rules/factions';
@@ -160,7 +159,8 @@ export function collapseSimulacrum(world: World, fl: Flag, keep: number): void {
  * carried by them (owner = carrier faction); otherwise it drops loose at its position (or at
  * `dropAt`, e.g. an Omega Pulse flinging it outward). Emits flagPulled. Counts flagsStolen
  * when prev owner differs. Enemy pulls (and knock-loose pulls with carrier -1) respect Stabilize
- * L3 protection. A loose Flag nobody can hold stays put (returns false).
+ * L3 protection. Boss alliances suppress damage, not ordinary pickup or pull ownership changes.
+ * A loose Flag nobody can hold stays put (returns false).
  */
 export function pullFlag(world: World, flagId: EntityId, carrier: EntityId | -1, dropAt?: V3): boolean {
   const fl = world.flags.get(flagId);
@@ -168,7 +168,6 @@ export function pullFlag(world: World, flagId: EntityId, carrier: EntityId | -1,
   const c = carrier >= 0 ? carrierOf(world, carrier) : undefined;
   const puller: Owner = c ? c.faction : NEUTRAL;
   const prevOwner = fl.owner;
-  if (bossEncounterActive(world) && prevOwner >= 0 && puller >= 0 && prevOwner !== puller) return false;
   const wasPlanted = fl.state === 'planted';
   if (wasPlanted && prevOwner !== puller && isFlagProtected(world, fl)) return false;
   const taker = c ? holdingFaction(world, c) : null;

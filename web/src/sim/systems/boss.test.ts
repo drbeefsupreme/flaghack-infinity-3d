@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch } from '../setup';
+import { normalizeMatch } from '../matchSettings';
 import { BOSS_MAX_HP, BOSS_RADIUS, BOSS_TIMING } from '../boss';
 import { AVATAR, SIM_DT } from '../constants';
 import { spawnBuilding, spawnHippie } from '../factory';
@@ -13,8 +14,8 @@ import { pullFlag } from './flags';
 import { bossLoopEdges, sweepBossLoops, sweepCircleSegment } from './boss/barriers';
 import type { World } from '../world';
 
-function encounter(): World {
-  const w = createMatch({ seed: 'boss-combat', difficulty: 'normal', humans: [0], mode: 'standard' });
+function encounter(bossHp?: number): World {
+  const w = createMatch({ seed: 'boss-combat', difficulty: 'normal', humans: [0], mode: 'standard', match: normalizeMatch({ bossHp }) });
   w.time = 1000; w.effigyRevealedAt = 1000; w.suddenDeath = true;
   spawnBoss(w); w.boss!.action = 'idle'; w.boss!.nextAttackAt = 0;
   for (const h of w.hippies.values()) { h.pos.x = 90; h.pos.z = 90; }
@@ -23,11 +24,30 @@ function encounter(): World {
 }
 function tick(w: World, seconds: number): void { for (let i = 0; i < Math.ceil(seconds / SIM_DT); i++) { w.time += SIM_DT; updateBoss(w, SIM_DT); } }
 
+function handAttackEncounter(attack: 'swipe' | 'grab') {
+  const w = encounter(), b = w.boss!;
+  b.pos = { x: 0, z: 0 }; b.yaw = 0;
+  // Isolate stance selection from boundary detours; boundary interception has its own tests.
+  w.survey.edgeLey.fill(-1); w.survey.version++;
+  const target = attack === 'swipe' ? w.avatarOf(0) : w.hearthOf(1)!;
+  target.pos.x = 0; target.pos.z = 6;
+  if (attack === 'swipe') { b.retaliateId = target.id; b.retaliateUntil = w.time + 100; }
+  else w.factions[1].stats.cmi = 10000;
+  return { w, b, target };
+}
+
 describe('authoritative boss encounter', () => {
-  it('spawns once with the current testing HP', () => {
+  it('spawns once with the 50,000 HP default', () => {
     const w = encounter(), b = w.boss!;
-    expect(b.hp).toBe(5000); expect(b.maxHp).toBe(BOSS_MAX_HP);
+    expect(b.hp).toBe(50000); expect(b.maxHp).toBe(BOSS_MAX_HP);
     expect(spawnBoss(w)).toBe(b); expect(w.drainEvents().filter(e => e.t === 'notify' && e.text.includes('awakened'))).toHaveLength(1);
+  });
+  it.each([100, 12345, 1000000])('reads configured HP %s at spawn and never heals from a later settings edit', hp => {
+    const w = encounter(hp), b = w.boss!;
+    expect(b.hp).toBe(hp); expect(b.maxHp).toBe(hp);
+    damageEntity(w, b.id, 25, w.avatarOf(0).id);
+    w.options.match = normalizeMatch({ bossHp: 50000 });
+    expect(spawnBoss(w)).toBe(b); expect(b.hp).toBe(hp - 25); expect(b.maxHp).toBe(hp);
   });
   it('targets faction CMI, not hearth count or survey size', () => {
     const w = encounter(); w.factions[2].stats.cmi = 500;
@@ -43,16 +63,69 @@ describe('authoritative boss encounter', () => {
     w.time = b.retaliateUntil + 1; b.action = 'idle'; updateBoss(w, SIM_DT);
     expect(b.target).toEqual({ kind: 'building', id: w.hearthOf(3)!.id });
   });
+  for (const attack of ['swipe', 'grab'] as const) {
+    it(`${attack} waits for the full crouch transition and stays crouched through recovery`, () => {
+      const { w, b, target } = handAttackEncounter(attack);
+      const start = w.time;
+      updateBoss(w, SIM_DT);
+      expect(b.action).toBe('crouch'); expect(b.crouched).toBe(false);
+      expect(b.actionAt).toBe(start);
+      w.time = start + BOSS_TIMING.transition - .001; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('crouch'); expect(b.crouched).toBe(false);
+      w.time = start + BOSS_TIMING.transition; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('idle'); expect(b.crouched).toBe(true);
+      w.time += SIM_DT; updateBoss(w, SIM_DT);
+      expect(b.action).toBe(attack); expect(b.crouched).toBe(true);
+      const attackAt = b.actionAt, attackSeq = b.actionSeq;
+      // A target leaving during windup must not interrupt the low attack or recovery.
+      target.pos.z = 40;
+      for (const age of [.1, BOSS_TIMING[attack] - .001]) {
+        w.time = attackAt + age; updateBoss(w, SIM_DT);
+        expect(b.action).toBe(attack); expect(b.crouched).toBe(true);
+        expect(b.actionAt).toBe(attackAt); expect(b.actionSeq).toBe(attackSeq);
+      }
+      w.time = attackAt + BOSS_TIMING[attack]; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('idle'); expect(b.crouched).toBe(true);
+      expect(b.nextAttackAt).toBeCloseTo(w.time + .55);
+      w.time += SIM_DT; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('rise'); expect(b.crouched).toBe(true);
+      w.time = b.actionAt + BOSS_TIMING.transition - .001; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('rise'); expect(b.crouched).toBe(true);
+      w.time = b.actionAt + BOSS_TIMING.transition; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('idle'); expect(b.crouched).toBe(false);
+    });
+    it(`${attack} can start directly from crouch-walk without another stance transition`, () => {
+      const { w, b } = handAttackEncounter(attack);
+      b.action = 'crouchWalk'; b.crouched = true;
+      updateBoss(w, SIM_DT);
+      expect(b.action).toBe(attack); expect(b.crouched).toBe(true);
+      expect(b.actionAt).toBe(w.time);
+    });
+    it(`${attack} repairs a stale stance bit without restarting its timing or held target`, () => {
+      const { w, b } = handAttackEncounter(attack);
+      b.action = attack; b.crouched = false; b.actionAt = w.time - .2;
+      b.actionSeq = 40; b.hitSeq = 39;
+      b.held = { kind: 'flag', id: 123456, faction: -1, x: 0, z: 6 };
+      const at = b.actionAt, held = b.held;
+      updateBoss(w, SIM_DT);
+      expect(b.crouched).toBe(true); expect(b.action).toBe(attack);
+      expect(b.actionAt).toBe(at); expect(b.actionSeq).toBe(40); expect(b.hitSeq).toBe(39);
+      expect(b.held).toBe(held);
+      b.crouched = false;
+      w.time = at + BOSS_TIMING[attack]; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('idle'); expect(b.crouched).toBe(true);
+    });
+  }
   it('swipe damage happens once at its hit window and launches both kinds of unit', () => {
     const w = encounter(), b = w.boss!; b.pos = { x: 0, z: 0 }; b.yaw = 0;
     const a = w.avatarOf(0); a.pos = { x: 0, y: 0, z: 6 };
     const h = spawnHippie(w, 0, { x: 1, z: 6 });
     b.crouched = true; b.action = 'swipe'; b.actionAt = w.time; b.actionSeq = 20;
     w.time += BOSS_TIMING.swipeHit - .01; updateBoss(w, SIM_DT); expect(a.hp).toBe(AVATAR.maxHp);
-    w.time += .02; updateBoss(w, SIM_DT); expect(a.hp).toBe(AVATAR.maxHp - 55); expect(h.hp).toBe(45);
+    w.time += .02; updateBoss(w, SIM_DT); expect(a.hp).toBe(AVATAR.maxHp - 100); expect(h.hp).toBe(0);
     expect(a.vel.y).toBeGreaterThan(10); expect(h.airborne?.vy).toBe(15);
     for (let i = 0; i < 12; i++) updateBoss(w, SIM_DT);
-    expect(a.hp).toBe(AVATAR.maxHp - 55); expect(h.hp).toBe(45);
+    expect(a.hp).toBe(AVATAR.maxHp - 100); expect(h.hp).toBe(0); expect(h.status).toBe('ko');
     const x = h.pos.x; w.time += SIM_DT; updateHippies(w, SIM_DT);
     expect(h.airborne!.y).toBeGreaterThan(0); expect(h.pos.x).toBeGreaterThan(x);
   });
@@ -84,16 +157,16 @@ describe('authoritative boss encounter', () => {
     tick(w, 11.5); expect(b.action).toBe('death'); expect(w.phase).toBe('playing');
     w.time = at + 12.01; updateBoss(w, SIM_DT); expect(b.action).toBe('dead');
   });
-  it('blocks friendly damage, knockback, flag theft after reveal but allows preboss combat', () => {
+  it('blocks friendly damage after reveal but allows flag pulling and preboss combat', () => {
     const w = encounter(), a = w.avatarOf(0), ally = w.avatarOf(1), b = w.boss!;
     ally.pos = { x: 0, y: 0, z: 2 }; a.pos = { x: 0, y: 0, z: 0 }; b.pos = { x: 40, z: 40 };
     expect(damageEntity(w, ally.id, 25, a.id)).toBe(false); expect(ally.hp).toBe(AVATAR.maxHp);
     const flag = [...w.flags.values()].find(f => f.owner === 1 && f.state === 'planted')!;
-    expect(pullFlag(w, flag.id, a.id)).toBe(false);
+    expect(pullFlag(w, flag.id, a.id)).toBe(true);
     w.effigyRevealedAt = null; expect(damageEntity(w, ally.id, 25, a.id)).toBe(true); expect(ally.hp).toBe(AVATAR.maxHp - 25);
   });
-  it('current testing HP takes about 137 seconds at the unchanged held staff cadence', () => {
-    const w = encounter(), b = w.boss!, a = w.avatarOf(0); b.pos = { x: 0, z: 3 }; a.pos = { x: 0, y: 0, z: 0 };
+  it('a configured 5,000 HP baseline still takes about 137 seconds at the unchanged held staff cadence', () => {
+    const w = encounter(5000), b = w.boss!, a = w.avatarOf(0); b.pos = { x: 0, z: 3 }; a.pos = { x: 0, y: 0, z: 0 };
     a.yaw = 0; a.input.yaw = 0;
     // Continuous contact baseline excludes evasion, walking and boss damage, just like the approved diagnostic.
     w.collision = { moveCharacter: () => ({ onGround: true }), supportHeight: () => 0 } as unknown as World['collision'];
@@ -113,7 +186,7 @@ describe('authoritative boss encounter', () => {
         accumulator -= SIM_DT;
       }
     }
-    console.log(JSON.stringify({ bossStaffTestingHP: BOSS_MAX_HP, elapsed: w.time - start }));
+    console.log(JSON.stringify({ bossStaffTestingHP: b.maxHp, elapsed: w.time - start }));
     expect(b.hp).toBe(0); expect(w.time - start).toBeGreaterThan(134); expect(w.time - start).toBeLessThan(141);
   });
   it('NPC rival issues allied movement and damages the boss through ordinary staff commands', () => {

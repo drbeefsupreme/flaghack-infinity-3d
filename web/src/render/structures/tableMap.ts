@@ -36,10 +36,11 @@ export class TableMap {
   /** Pixels per metre. */
   private readonly k: number;
   private readonly g: CanvasRenderingContext2D;
-  private readonly bg: HTMLCanvasElement;
+  private bg: HTMLCanvasElement;
   private readonly lattice: HTMLCanvasElement;
   private readonly latticeG: CanvasRenderingContext2D;
   private latticeVersion = -1;
+  private sceneryCount = -1;
   private acc = REDRAW_INTERVAL;
   /** Line-width unit (1 px at 1024). */
   private readonly lw: number;
@@ -53,6 +54,7 @@ export class TableMap {
     this.g = g;
     [this.lattice, this.latticeG] = makeCanvas(this.size, this.size);
     this.bg = this.paintBackground(world);
+    this.sceneryCount = world.destroyedScenery.size;
     this.texture = new THREE.CanvasTexture(canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = anisotropy;
@@ -72,6 +74,10 @@ export class TableMap {
   }
 
   private redraw(world: World, t: number): void {
+    if (this.sceneryCount !== world.destroyedScenery.size) {
+      this.sceneryCount = world.destroyedScenery.size;
+      this.bg = this.paintBackground(world);
+    }
     const g = this.g;
     const lat = world.lattice;
     const sv = world.survey;
@@ -364,6 +370,7 @@ export class TableMap {
     }
     // Props: tents as tiny triangles, domes as hatched circles, trees as washes.
     for (const o of world.map.obstacles) {
+      if (world.destroyedScenery.has(o.id)) continue;
       const x = this.px(o.x);
       const y = this.px(o.z);
       const r = Math.max(1.5 * lw, (o.shape === 'circle' ? o.radius : Math.max(o.hx, o.hz)) * this.k);

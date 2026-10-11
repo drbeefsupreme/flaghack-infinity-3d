@@ -1,5 +1,6 @@
 import type { EntityId } from '../../types';
 import type { World } from '../../world';
+import { clearBossEyeCharge } from '../../boss';
 
 /** Cooperation begins at the reveal, independent of rendering or model loading. */
 export function bossEncounterActive(world: World): boolean { return world.effigyRevealedAt !== null; }
@@ -20,6 +21,7 @@ export function damageBoss(world: World, amount: number, by: EntityId | -1): boo
     }
   }
   if (boss.hp === 0) {
+    clearBossEyeCharge(boss);
     boss.action = 'death';
     boss.actionAt = boss.deathAt = world.time;
     boss.actionSeq++;

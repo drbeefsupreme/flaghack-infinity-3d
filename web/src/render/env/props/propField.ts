@@ -74,16 +74,24 @@ export class PropField implements EnvPart {
   private spinners: Spinner[] = [];
   private show: StageShow | null = null;
   private signs: StageSigns | null = null;
+  private sceneryCount = -1;
   private spin = new THREE.Matrix4();
   private posed = new THREE.Matrix4();
 
   constructor(env: EnvContext) {
     this.env = env;
+    this.build();
+  }
+
+  /** Rare direct beam hits invalidate the static batches, including all prop accessories. */
+  private build(): void {
+    const env = this.env;
+    this.sceneryCount = env.ctx.world.destroyedScenery.size;
     this.group.name = 'props';
     const ctx = env.ctx;
     const map = ctx.world.map;
     const byKind: Record<ObstacleKind, Obstacle[]> = { tent: [], dome: [], art: [], porta: [], tree: [], rock: [], stage: [], shade: [], car: [], effigy: [] };
-    for (const o of map.obstacles) byKind[o.kind].push(o);
+    for (const o of map.obstacles) if (!ctx.world.destroyedScenery.has(o.id)) byKind[o.kind].push(o);
 
     const out = createBatches(ctx.quality);
     const kit = createClutterKit();
@@ -147,6 +155,11 @@ export class PropField implements EnvPart {
   }
 
   update(_dt: number): void {
+    if (this.sceneryCount !== this.env.ctx.world.destroyedScenery.size) {
+      this.dispose();
+      this.group = new THREE.Group();
+      this.build();
+    }
     const t = this.env.uniforms.uTime.value;
     for (let s = 0; s < this.spinners.length; s++) {
       const { mesh, rotors, axis } = this.spinners[s];
@@ -171,6 +184,8 @@ export class PropField implements EnvPart {
     for (const m of this.materials) disposeEnvMaterial(m);
     this.show?.dispose();
     this.signs?.dispose();
+    this.show = null;
+    this.signs = null;
     this.geometries.clear();
     this.instanced = [];
     this.batched = [];

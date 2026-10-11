@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AVATAR, SIM_DT } from '../constants';
 import { EFFIGY_BOSS_REVEAL_AT, bossRevealEnabled, bossRevealTime } from '../effigyBurn';
-import { burnTime, endTime, normalizeMatch } from '../matchSettings';
+import { burnTime, endTime, UNLIMITED_DAYS, normalizeMatch } from '../matchSettings';
 import { createMatch } from '../setup';
 import { Simulation } from '../simulation';
 import type { MatchOptions } from '../types';
@@ -129,7 +129,7 @@ describe('authoritative boss reveal', () => {
     const cases = [
       { ...options(), mode: 'tutorial' as const },
       { ...options({ bossMode: false }), humans: [] },
-      options({ days: 0 }),
+      options({ days: UNLIMITED_DAYS }),
     ];
     for (const opts of cases) {
       const world = createMatch(opts);

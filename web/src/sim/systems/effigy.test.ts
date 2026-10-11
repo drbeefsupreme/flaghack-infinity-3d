@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AVATAR, SIM_DT } from '../constants';
 import { EFFIGY_POLE_CONSUMED_AT, effigyPoleConsumed } from '../effigyBurn';
-import { burnTime, normalizeMatch } from '../matchSettings';
+import { burnTime, UNLIMITED_DAYS, normalizeMatch } from '../matchSettings';
 import { createMatch } from '../setup';
 import { Simulation } from '../simulation';
 import type { MatchOptions } from '../types';
@@ -82,9 +82,9 @@ describe('consumed effigy pole collision', () => {
       expect(world.winner).toBeNull();
     }
     for (const opts of [options(), { ...options(), mode: 'tutorial' as const },
-      { ...options(), match: normalizeMatch({ bossMode: false, days: 0 }) }]) {
+      { ...options(), match: normalizeMatch({ bossMode: false, days: UNLIMITED_DAYS }) }]) {
       expect(effigyPoleConsumed({ options: opts, time: 1e6, suddenDeath: false })).toBe(false);
-      if (opts.mode === 'tutorial' || opts.match!.days === 0) {
+      if (opts.mode === 'tutorial' || opts.match!.days === UNLIMITED_DAYS) {
         expect(effigyPoleConsumed({ options: opts, time: 1e6, suddenDeath: true })).toBe(false);
       }
     }

@@ -92,7 +92,7 @@ export function eliminate(world: World, faction: FactionId, by: FactionId | null
   world.emit({
     t: 'notify',
     faction: 'all',
-    text: cause === 'boss' ? `${fac.name} falls. The Effigy has consumed its altar.` : `${fac.name} is Flagless${overwriter}. "Losing the flags is the first step to finding them."`,
+    text: cause === 'boss' ? `${fac.name} falls. The Effigy has destroyed its last altar.` : `${fac.name} is Flagless${overwriter}. "Losing the flags is the first step to finding them."`,
     severity: 'epic',
   });
 }

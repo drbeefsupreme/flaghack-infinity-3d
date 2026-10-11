@@ -380,10 +380,14 @@ export class Motion {
   private write(world: World, alpha: number, ext: number, blending: boolean): void {
     const b = world.boss, t = this.boss;
     if (b && t && b.id === t.id) {
-      b.pos.x = posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
-      b.pos.z = posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
-      b.yaw = posedAngle(t, t.fa, t.ta, alpha, blending);
-      b.stride = posed(t, t.fp, t.tp, 0, alpha, 0, blending);
+      // A shot's muzzle/ray is frozen in world space. Do not anticipate the first
+      // post-shot walking frame while its predecessor still displays that beam.
+      // The expiry snapshot releases this lock; charge turning keeps interpolating.
+      const firing = b.eye?.firedAt != null;
+      b.pos.x = firing ? t.fx : posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
+      b.pos.z = firing ? t.fz : posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
+      b.yaw = firing ? t.fa : posedAngle(t, t.fa, t.ta, alpha, blending);
+      b.stride = firing ? t.fp : posed(t, t.fp, t.tp, 0, alpha, 0, blending);
     }
     for (const t of this.tracks.avatars.values()) {
       const av = world.avatars.get(t.id);

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { EFFIGY_BOSS_REVEAL_AT } from '../../../../sim/effigyBurn';
 import { smooth } from './revealTimeline';
+import { BossRearFlapPose } from './rearFlapPose';
 
 export const BOSS_OPEN_ARMS_AT = EFFIGY_BOSS_REVEAL_AT - .55;
 
@@ -19,6 +20,7 @@ const Z = new THREE.Vector3(0, 0, 1);
  */
 export class BossRevealPose {
   private readonly joints: JointPose[];
+  private readonly rearFlap: BossRearFlapPose;
   private readonly modelWorldRotation: THREE.Quaternion;
   private readonly neck: THREE.Bone;
   private readonly head: THREE.Bone;
@@ -31,6 +33,7 @@ export class BossRevealPose {
       if (!(found instanceof THREE.Bone)) throw new Error(`Boss reveal rig is missing bone ${name}`);
       return found;
     };
+    this.rearFlap = new BossRearFlapPose(model);
     this.modelWorldRotation = model.getWorldQuaternion(new THREE.Quaternion());
     this.neck = bone('neck');
     this.head = bone('head');
@@ -60,6 +63,8 @@ export class BossRevealPose {
   setOpen(open: number): void {
     const t = Number.isFinite(open) ? THREE.MathUtils.clamp(open, 0, 1) : 0;
     for (const j of this.joints) j.bone.quaternion.slerpQuaternions(j.crossed, j.spread, t);
+    // Rear drape follows the upper back while the approved head-back gesture remains intact.
+    this.rearFlap.apply();
     // Bone matrices are current even for direct seeks before the renderer runs.
     this.model.updateWorldMatrix(true, true);
   }

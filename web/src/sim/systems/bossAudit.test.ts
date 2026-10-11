@@ -43,7 +43,7 @@ describe('cooperative encounter audit', () => {
     expect(damageEntity(w, altar.id, 40, a.id)).toBe(false); expect(altar.hp).toBe(hp);
     expect(damageEntity(w, piece.id, 40, a.id)).toBe(false);
     const flag = [...w.flags.values()].find((f) => f.owner === 1 && f.state === 'planted')!;
-    expect(pullFlag(w, flag.id, a.id)).toBe(false);
+    expect(pullFlag(w, flag.id, a.id)).toBe(true);
     altar.hearth!.stage = 'overwritten'; altar.hearth!.attacker = 0; altar.hearth!.overwriteAt = w.time - 1;
     updateCapture(w, SIM_DT); captureHearth(w, altar, 0);
     expect(altar.faction).toBe(1); expect(altar.hearth!.stage).toBe('safe');

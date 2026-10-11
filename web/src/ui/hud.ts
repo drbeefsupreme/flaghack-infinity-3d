@@ -1,4 +1,4 @@
-import { burnTime, endTime, dayClock, matchSettings } from "../sim/matchSettings";
+import { burnTime, endTime, dayClock, matchSettings, UNLIMITED_DAYS } from "../sim/matchSettings";
 /**
  * Core HUD: the ornate "N FLAGS" resource frame (top-left), the clock plaque with time of
  * day, Phason Tide, Burn and (after The Burn) Dawn countdowns (top-centre), the C.M.I. frame
@@ -98,7 +98,6 @@ export class HudPart implements UiPart {
 
   constructor(host: UiHost, layout: UiLayout) {
     this.host = host;
-    this.bossHud = new BossHud(layout.topCenter);
 
     // ── Resource frame (homage to the 2017 "20 FLAGS" frame) ──
     const frame = el('div', 'res frame', layout.colLeft);
@@ -137,6 +136,7 @@ export class HudPart implements UiPart {
 
     // ── Clock plaque ──
     const plaque = el('div', 'clock plaque', layout.topCenter);
+    this.bossHud = new BossHud(layout.topCenter, plaque);
     tutorialTarget(plaque, 'clock');
     const main = el('div', 'clock-main', plaque);
     this.todIc = el('span', 'tod-ic', main);
@@ -243,7 +243,10 @@ export class HudPart implements UiPart {
     const t = world.time;
     const cycle = dayClock(world.options,t);
     const burnAt = burnTime(world.options), endAt = endTime(world.options);
-    setText(this.clockT, `Day ${Math.min(matchSettings(world.options).days || Infinity,Math.floor(t/matchSettings(world.options).dayLength)+1)} · ${fmtClock(t)}`);
+    const settings = matchSettings(world.options);
+    const dayLimit = settings.days === UNLIMITED_DAYS ? Infinity : settings.days;
+    const dayLabel = settings.days === 0 ? 'Burn' : `Day ${Math.min(dayLimit, Math.floor(t / settings.dayLength) + 1)}`;
+    setText(this.clockT, `${dayLabel} · ${fmtClock(t)}`);
     const phase: TimeOfDay =
       cycle >= SUNRISE_AT ? 'dawn' : cycle >= FIRST_LIGHT_AT ? 'first' : cycle >= NIGHT_AT ? 'night' : cycle >= DUSK_AT ? 'dusk' : 'day';
     if (phase !== this.todPhase) {

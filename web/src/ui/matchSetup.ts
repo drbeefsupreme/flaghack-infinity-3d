@@ -1,6 +1,6 @@
 import { MAX_SEED_LENGTH } from '../net/protocol';
 import type { LobbySettings } from '../net/protocol';
-import { DEFAULT_MATCH, MATCH_RANGES, normalizeMatch } from '../sim/matchSettings';
+import { DEFAULT_MATCH, MATCH_RANGES, UNLIMITED_DAYS, normalizeMatch } from '../sim/matchSettings';
 import type { MatchSettings } from '../sim/matchSettings';
 import { DIFFICULTIES, DIFFICULTY_INFO } from './catalog';
 import { button, el, setText, show } from './dom';
@@ -9,6 +9,7 @@ import { iconSvg } from './icons';
 type NumericKey = keyof typeof MATCH_RANGES;
 const FIELDS: { key: NumericKey; label: string; hint: string; group: string }[] = [
   { key: 'dayLength', label: 'Day length (seconds)', hint: 'Length of one complete day and night.', group: 'Time' },
+  { key: 'bossHp', label: 'Boss HP', hint: 'Starting health for the next boss encounter. Default: 50,000 HP.', group: 'Boss encounter' },
   { key: 'gridScale', label: 'Grid scale (metres)', hint: 'Spacing between Ley Lattice nodes.', group: 'World' },
   { key: 'jumpHeight', label: 'Jump height multiplier', hint: '1.0 is the original height; 2.0 jumps twice as high.', group: 'Characters' },
   { key: 'maxSignifiers', label: 'Maximum Signifiers (whole world)', hint: 'Shared population, including neutral and knocked-out hippies. Camp capacity is a soft attention limit.', group: 'Characters' },
@@ -152,7 +153,9 @@ export class MatchSetup {
     const row = el('label', 'setup-field', parent);
     el('span', '', row, 'Number of days');
     const input = el('select', 'field-in', row);
-    for (const n of [1, 2, 3, 4, 5, 0]) el('option', '', input, n === 0 ? 'Unlimited' : String(n)).value = String(n);
+    for (const n of [0, 1, 2, 3, 4, 5, UNLIMITED_DAYS]) {
+      el('option', '', input, n === UNLIMITED_DAYS ? 'Unlimited' : n === 0 ? '0 · Start at The Burn' : String(n)).value = String(n);
+    }
     input.addEventListener('change', () => { if (this.enabled) this.changeMatch({ days: Number(input.value) }); });
     this.fields.push({ key: 'days', input });
   }
@@ -224,8 +227,10 @@ export class MatchSetup {
     if (document.activeElement !== this.seed || !enabled) this.seed.value = settings.seed ?? '';
     this.difficulty.disabled = this.seed.disabled = this.reset.disabled = this.random.disabled = !enabled;
     setText(this.note, enabled ? 'Changes apply to the next match. Player seats are set in the lobby.' : 'View only. The lobby leader can change settings before the match starts.');
-    const duration = s.days === 0 ? 'Unlimited · no scheduled Burn.' : `${s.days} ${s.days === 1 ? 'day' : 'days'} · ${Math.round(s.days * s.dayLength / 60)} minutes · Burn on the last night.`;
-    const solo = s.days === 0 ? 'solo / creative, no time limit' : s.bossMode ? 'solo / creative, final-night boss reveal' : 'solo / creative, ends on time';
+    const duration = s.days === UNLIMITED_DAYS ? 'Unlimited · no scheduled Burn.'
+      : s.days === 0 ? `0 days · Burn starts immediately.${s.bossMode ? ' Boss reveal after 90 seconds.' : ''}`
+        : `${s.days} ${s.days === 1 ? 'day' : 'days'} · ${Math.round(s.days * s.dayLength / 60)} minutes · Burn on the last night.`;
+    const solo = s.days === UNLIMITED_DAYS ? 'solo / creative, no time limit' : s.bossMode ? 'solo / creative, boss encounter' : 'solo / creative, ends on time';
     setText(this.summary, `${s.active.length} ${s.active.length === 1 ? `camp · ${solo}` : 'active camps'}. ${duration}`);
   }
 

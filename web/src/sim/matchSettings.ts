@@ -1,8 +1,9 @@
 import { BURN_TIME, DAWN_TIME } from './constants';
+import { BOSS_MAX_HP } from './boss';
 import type { MatchOptions, FactionId } from './types';
 export interface MatchSettings {
   active: FactionId[];
-  days: number; // 0 = unlimited
+  days: number; // 0 = begin at The Burn; UNLIMITED_DAYS = no scheduled Burn or Dawn
   dayLength: number; // seconds per complete day/night cycle
   gridScale: number;
   startingLumber: number;
@@ -12,7 +13,10 @@ export interface MatchSettings {
   maxSignifiers: number; // fixed shared world population (alive and knocked out)
   structuresBlockFlagPlacement: boolean;
   bossMode: boolean; // reveal the boss 90 seconds after The Burn
+  bossHp: number; // starting and maximum boss health, sampled once at encounter creation
 }
+/** A distinct, JSON-safe value so zero days can start at ignition. */
+export const UNLIMITED_DAYS = -1;
 export const DEFAULT_MATCH: MatchSettings = {
   active: [0, 1, 2, 3],
   days: 1,
@@ -25,9 +29,11 @@ export const DEFAULT_MATCH: MatchSettings = {
   maxSignifiers: 40,
   structuresBlockFlagPlacement: false,
   bossMode: true,
+  bossHp: BOSS_MAX_HP,
 };
 export const MATCH_RANGES = {
   dayLength: [300, 7200, 60],
+  bossHp: [100, 1000000, 100],
   gridScale: [6, 12, 0.5],
   startingLumber: [0, 1000, 25],
   startingFlags: [0, 100, 1],
@@ -43,7 +49,7 @@ export function normalizeMatch(value: Partial<MatchSettings> = {}): MatchSetting
     const active = [0, 1, 2, 3].filter((f) => a.includes(f as FactionId)) as FactionId[];
     if (active.length) out.active = active;
   }
-  if (Number.isInteger(value.days) && value.days! >= 0 && value.days! <= 5) out.days = value.days!;
+  if (isMatchDays(value.days)) out.days = value.days;
   if (typeof value.bossMode === 'boolean') out.bossMode = value.bossMode;
   if (typeof value.structuresBlockFlagPlacement === 'boolean') out.structuresBlockFlagPlacement = value.structuresBlockFlagPlacement;
   for (const k of Object.keys(MATCH_RANGES) as (keyof typeof MATCH_RANGES)[]) {
@@ -52,21 +58,30 @@ export function normalizeMatch(value: Partial<MatchSettings> = {}): MatchSetting
     if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.max(min, Math.min(max, v));
   }
   out.maxSignifiers = Math.floor(out.maxSignifiers);
+  out.bossHp = Math.floor(out.bossHp);
   out.startingSignifiers = Math.min(Math.floor(out.startingSignifiers), Math.floor(out.maxSignifiers / out.active.length));
   return out;
+}
+export function isMatchDays(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= UNLIMITED_DAYS && value <= 5;
 }
 export function matchSettings(options: MatchOptions): MatchSettings {
   return normalizeMatch(options.match);
 }
 export function endTime(options: MatchOptions): number {
   const s = matchSettings(options);
-  return s.days === 0 ? Infinity : s.days * s.dayLength;
+  if (s.days === UNLIMITED_DAYS) return Infinity;
+  // Zero days skips the pre-Burn daylight, not the remaining normal-mode night.
+  return s.days === 0 ? s.dayLength * (1 - BURN_TIME / DAWN_TIME) : s.days * s.dayLength;
 }
 export function burnTime(options: MatchOptions): number {
   const s = matchSettings(options);
+  if (s.days === 0) return 0;
   return endTime(options) - s.dayLength * (1 - BURN_TIME / DAWN_TIME);
 }
 export function dayClock(options: MatchOptions, time: number): number {
   const s = matchSettings(options);
-  return time >= endTime(options) ? DAWN_TIME : ((time % s.dayLength) / s.dayLength) * DAWN_TIME;
+  if (time >= endTime(options)) return DAWN_TIME;
+  const offset = s.days === 0 ? s.dayLength * BURN_TIME / DAWN_TIME : 0;
+  return (((time + offset) % s.dayLength) / s.dayLength) * DAWN_TIME;
 }

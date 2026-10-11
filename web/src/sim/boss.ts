@@ -1,10 +1,32 @@
 /** Durable, host-owned encounter state. Renderers never advance gameplay. */
 import type { EntityId, FactionId, Owner } from './types';
-import type { V2 } from './math';
-/** Temporary testing balance. Original four-minute held-staff calibration: 8,800 HP. */
-export const BOSS_MAX_HP = 5000;
+import type { V2, V3 } from './math';
+/** Default encounter health; each new boss reads the pregame Boss HP setting. */
+export const BOSS_MAX_HP = 50000;
 export const BOSS_RADIUS = 2.35;
 export const BOSS_DEATH_DURATION = 12;
+export const BOSS_EYE_TIMING = { period: 30, charge: 3, beam: 0.5 } as const;
+export const BOSS_EYE_BLAST_RADIUS = 5;
+export const BOSS_EYE_DAMAGE = 1000;
+export const BOSS_EYE_MAX_RANGE = 240;
+export interface BossEyeState {
+  nextFireAt: number;
+  chargeAt: number | null;
+  firedAt: number | null;
+  /** Ground/world target chosen at charge start; firing never sweeps damage. */
+  target: V3 | null;
+  origin: V3 | null;
+  direction: V3 | null;
+  impact: V3 | null;
+}
+export function createBossEyeState(spawnedAt: number): BossEyeState {
+  return { nextFireAt: spawnedAt + BOSS_EYE_TIMING.period, chargeAt: null, firedAt: null,
+    target: null, origin: null, direction: null, impact: null };
+}
+export function clearBossEyeCharge(boss: BossState): void {
+  boss.eye.chargeAt = null; boss.eye.firedAt = null; boss.eye.target = null;
+  boss.eye.origin = null; boss.eye.direction = null; boss.eye.impact = null;
+}
 export const BOSS_ACTIONS = ['emerge', 'idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'death', 'dead'] as const;
 export type BossAction = typeof BOSS_ACTIONS[number];
 export type BossTargetKind = 'avatar' | 'hippie' | 'building' | 'piece' | 'flag';
@@ -18,7 +40,7 @@ export interface BossState {
   maxHp: number;
   spawnedAt: number;
   action: BossAction;
-  /** Current stable stance; transitions interpolate from this state. */
+  /** Current stable stance; transitions interpolate from this state. Swipe/grab stay crouched through recovery. */
   crouched: boolean;
   actionAt: number;
   /** Monotonic attack sequence; each hit is consumed exactly once on the host. */
@@ -35,6 +57,7 @@ export interface BossState {
   stride: number;
   /** Attached target stays readable even after removal from the live entity maps. */
   held: { kind: BossTargetKind; id: EntityId; faction: Owner; x: number; z: number } | null;
+  eye: BossEyeState;
 }
 export interface BossOutcome { kind: 'victory' | 'defeat'; winners: FactionId[]; at: number; }
 

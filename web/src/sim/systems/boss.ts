@@ -1,8 +1,9 @@
 /** Host-only giant AI, movement and once-per-action impact windows. */
-import { BOSS_DEATH_DURATION, BOSS_MAX_HP, BOSS_RADIUS, BOSS_TIMING } from '../boss';
+import { BOSS_DEATH_DURATION, BOSS_RADIUS, BOSS_TIMING, createBossEyeState } from '../boss';
 import type { BossAction, BossState, BossTarget } from '../boss';
 import { BUILDINGS, MAP_HALF } from '../constants';
 import { angleDiff, clamp, distToSegment } from '../math';
+import { matchSettings } from '../matchSettings';
 import type { V2 } from '../math';
 import type { Building, EntityId, FactionId, Owner } from '../types';
 import type { World } from '../world';
@@ -13,17 +14,19 @@ import { applyEffect } from './effects';
 import { destroyFlag } from './flags';
 import { destroyPiece, piecePosition } from './pieces';
 import { eliminateByBoss } from './victory';
+import { cancelBossEye, updateBossEye } from './boss/eye';
 
 const WALK_SPEED = 4.3, CROUCH_SPEED = 2.0, GRAB_REACH = 8, SWIPE_REACH = 9;
-const SWIPE_DAMAGE = 55, STOMP_DAMAGE = 140, STOMP_RADIUS = 4.6;
+const SWIPE_DAMAGE = 100, STOMP_DAMAGE = 140, STOMP_RADIUS = 4.6;
 
 export function spawnBoss(world: World): BossState | null {
   if (world.boss || world.effigyRevealedAt === null || world.phase !== 'playing') return world.boss;
   const at = world.effigyRevealedAt;
+  const hp = matchSettings(world.options).bossHp;
   world.boss = { id: world.newId(), pos: { x: world.map.effigy.x, z: world.map.effigy.z }, yaw: 0,
-    hp: BOSS_MAX_HP, maxHp: BOSS_MAX_HP, spawnedAt: at, action: 'emerge', crouched: false, actionAt: at,
+    hp, maxHp: hp, spawnedAt: at, action: 'emerge', crouched: false, actionAt: at,
     actionSeq: 0, hitSeq: -1, target: null, focusFaction: null, retaliateId: null, retaliateUntil: 0,
-    nextAttackAt: at + BOSS_TIMING.emerge, deathAt: null, barrier: null, stride: 0, held: null };
+    nextAttackAt: at + BOSS_TIMING.emerge, deathAt: null, barrier: null, stride: 0, held: null, eye: createBossEyeState(at) };
   world.emit({ t: 'notify', faction: 'all', text: 'The giant has awakened. Rival camps stand together. Protect your altars and bring it down!', severity: 'epic' });
   return world.boss;
 }
@@ -44,6 +47,9 @@ function face(b: BossState, to: V2, dt: number): void {
   b.yaw += clamp(angleDiff(b.yaw, goal), -2.4 * dt, 2.4 * dt);
 }
 function action(world: World, b: BossState, next: BossAction): void {
+  // Hand attacks may only begin from the settled crouch. Keep the full transition
+  // even if another attack-selection path is added or the incoming stance is stale.
+  if ((next === 'swipe' || next === 'grab') && !b.crouched) next = 'crouch';
   if (b.action === next) return;
   b.action = next; b.actionAt = world.time; b.actionSeq++; b.held = null;
 }
@@ -83,7 +89,9 @@ function target(world: World, b: BossState): BossTarget | null {
   if (altar) {
     let obstacle: BossTarget | null = null, gap = GRAB_REACH - 0.5;
     for (const s of world.buildings.values()) {
-      if (s.id === altar.id || s.kind === 'hearth' || s.gcc && s.gcc.destroyedUntil > world.time) continue;
+      // Every gameplay structure is edible, including another altar, unfinished
+      // construction and the remains of a collapsed GCC.
+      if (s.id === altar.id) continue;
       const d = distance(s.pos, b.pos);
       if (d < gap && distToSegment(s.pos.x, s.pos.z, b.pos.x, b.pos.z, altar.pos.x, altar.pos.z) < 3) { gap = d; obstacle = { kind: 'building', id: s.id }; }
     }
@@ -102,17 +110,24 @@ export function updateBoss(world: World, dt: number): void {
   const b = spawnBoss(world);
   if (!b || world.phase !== 'playing') return;
   if (b.hp <= 0) {
+    cancelBossEye(b);
     if (b.deathAt === null) { b.deathAt = world.time; action(world, b, 'death'); }
     if (world.time - b.deathAt >= BOSS_DEATH_DURATION) action(world, b, 'dead');
     return;
   }
   const age = world.time - b.actionAt + 1e-9;
   if (b.action === 'emerge') { if (age >= BOSS_TIMING.emerge) action(world, b, 'idle'); return; }
+  // Eye charge/fire is an authoritative interrupt: release any unconsumed grasp,
+  // settle in the current stance and stop moving until the frozen beam expires.
+  if (updateBossEye(world, b, dt)) return;
   if (b.action === 'crouch' || b.action === 'rise') {
     if (age >= BOSS_TIMING.transition) { b.crouched = b.action === 'crouch'; action(world, b, 'idle'); }
     return;
   }
   if (b.action === 'swipe' || b.action === 'stomp' || b.action === 'grab') {
+    // Swipe/grab clips stay low through recovery. Repair an older/stale stance
+    // bit without restarting the action clock, held target or once-only impact.
+    if (b.action === 'swipe' || b.action === 'grab') b.crouched = true;
     const hitAt = b.action === 'swipe' ? BOSS_TIMING.swipeHit : b.action === 'stomp' ? BOSS_TIMING.stompHit : BOSS_TIMING.consume;
     if (b.action === 'grab' && age >= BOSS_TIMING.grasp && age < BOSS_TIMING.consume && !b.held) holdTarget(world, b);
     if (age >= hitAt && b.hitSeq !== b.actionSeq) {
@@ -129,8 +144,11 @@ export function updateBoss(world: World, dt: number): void {
   if (!at || !b.target) { action(world, b, 'idle'); return; }
   const d = distance(at, b.pos), isUnit = b.target.kind === 'avatar' || b.target.kind === 'hippie';
   face(b, at, dt);
-  // Stomp a body beneath a standing foot; wider targets get the crouched hand sweep.
-  if (isUnit && d < 4.2 && !b.crouched && world.time >= b.nextAttackAt) { action(world, b, 'stomp'); return; }
+  const isStructure = b.target.kind === 'building' || b.target.kind === 'piece';
+  const isAltar = b.target.kind === 'building' && world.buildings.get(b.target.id)?.kind === 'hearth';
+  // Bodies and structures under a standing foot can both provoke a stomp. Flags
+  // still require the boundary-aware hand action; feet never bypass a forcefield.
+  if ((isUnit || isStructure && !isAltar) && d < 4.2 && !b.crouched && world.time >= b.nextAttackAt) { action(world, b, 'stomp'); return; }
   const wantCrouch = d < 15;
   if (wantCrouch !== b.crouched) { action(world, b, wantCrouch ? 'crouch' : 'rise'); return; }
   const reach = isUnit ? SWIPE_REACH : GRAB_REACH;
@@ -145,7 +163,11 @@ export function updateBoss(world: World, dt: number): void {
       if (flags[0]) b.target = { kind: 'flag', id: flags[0].id };
       action(world, b, 'idle'); return;
     }
-    action(world, b, isUnit ? 'swipe' : 'grab'); return;
+    // Alternate some close structure encounters into a swipe, rather than making
+    // structure damage depend on a conveniently adjacent player. Action sequence
+    // is authoritative and replicated, so this choice needs no client RNG.
+    const structureSwipe = isStructure && !isAltar && b.actionSeq % 3 === 1;
+    action(world, b, isUnit || structureSwipe ? 'swipe' : 'grab'); return;
   }
   if (d <= reach) { action(world, b, 'idle'); return; }
   const speed = b.crouched ? CROUCH_SPEED : WALK_SPEED;
@@ -210,8 +232,10 @@ export function consumeFlag(world: World, id: EntityId): void {
   destroyFlag(world, id);
 }
 
-export function consumeBuilding(world: World, building: Building): void {
+export function consumeBuilding(world: World, building: Building, destroyed = false): void {
   if (world.buildings.get(building.id) !== building) return;
+  // Altars are consumed only by the eating path, never any destructive impact.
+  if (destroyed && building.kind === 'hearth') return;
   for (const f of [...world.flags.values()]) if (f.holder === building.id) consumeFlag(world, f.id);
   world.buildings.delete(building.id);
   registerBuildingShape(world, building);
@@ -221,7 +245,7 @@ export function consumeBuilding(world: World, building: Building): void {
     if (building.kind === 'hearth') {
       fac.hearthIds = fac.hearthIds.filter(id => id !== building.id && world.buildings.has(id));
       if (fac.hearthIds.length === 0) eliminateByBoss(world, fac.id);
-      else world.emit({ t: 'notify', faction: fac.id, text: 'The giant swallowed an altar. Your remaining altars keep your camp alive.', severity: 'danger' });
+      else world.emit({ t: 'notify', faction: fac.id, text: `The giant ${destroyed ? 'destroyed' : 'swallowed'} an altar. Your remaining altars keep your camp alive.`, severity: 'danger' });
     }
     if (fac.gccId === building.id) fac.gccId = null;
   }
@@ -262,7 +286,12 @@ function swipe(world: World, b: BossState): void {
   for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < 12 && inSwipe(b, h.pos) && attackReaches(world, b, h.pos)) {
     damageEntity(world, h.id, SWIPE_DAMAGE, b.id); launch(world, b, h.id);
   }
-  for (const s of [...world.buildings.values()]) if (inSwipe(b, s.pos) && attackReaches(world, b, s.pos)) damageEntity(world, s.id, 110, b.id);
+  for (const s of [...world.buildings.values()]) if (inSwipe(b, s.pos) && attackReaches(world, b, s.pos)) {
+    // Ordinary building damage disables/rebuilds and floors altar HP at one.
+    // A lethal giant swipe removes non-altars and all owned references. Altars must be eaten.
+    if (s.kind !== 'hearth' && s.hp <= 110) consumeBuilding(world, s, true);
+    else damageEntity(world, s.id, 110, b.id);
+  }
   for (const p of [...world.pieces.values()]) { const at = piecePosition(world, p); if (at && inSwipe(b, at) && attackReaches(world, b, at)) damageEntity(world, p.id, 150, b.id); }
 }
 function stomp(world: World, b: BossState): void {
@@ -273,7 +302,7 @@ function stomp(world: World, b: BossState): void {
 function crushObjects(world: World, b: BossState, at: V2, radius: number): void {
   for (const s of [...world.buildings.values()]) if (distance(s.pos, at) < radius + BUILDINGS[s.kind].radius && attackReaches(world, b, s.pos)) {
     if (s.kind === 'hearth') damageEntity(world, s.id, 250, b.id);
-    else consumeBuilding(world, s);
+    else consumeBuilding(world, s, true);
   }
   for (const p of [...world.pieces.values()]) { const pos = piecePosition(world, p); if (pos && distance(pos, at) < radius + 1.5 && attackReaches(world, b, pos)) destroyPiece(world, p); }
   // Boundary flags are dismantled by the grab/eat action; foot impacts cannot bypass a field.

@@ -180,7 +180,8 @@ export function registerBuildingShape(world: World, b: Building): void {
     st.buildingShapes.set(b.id, ids);
   }
   world.nav.unblock(b.id);
-  if (world.buildings.get(b.id) !== b || isCollapsed(b)) return;
+  if (world.buildings.get(b.id) !== b) { st.buildingShapes.delete(b.id); return; }
+  if (isCollapsed(b)) return;
   const r = BUILDINGS[b.kind].radius;
   ids.push(world.collision.addCylinder(b.pos.x, b.pos.z, r, 0, BUILDING_HEIGHT[b.kind], b.id));
   world.nav.blockCircle(b.pos.x, b.pos.z, r, b.id);

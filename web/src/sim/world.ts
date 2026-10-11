@@ -82,6 +82,8 @@ export class World {
   /** Durable authoritative encounter and result, including late joins. */
   boss: BossState | null = null;
   bossOutcome: BossOutcome | null = null;
+  /** Canonical map obstacle IDs removed by direct boss beam hits; replicated for late joins. */
+  destroyedScenery = new Set<number>();
 
   lattice!: Lattice;
   map!: MapLayout;

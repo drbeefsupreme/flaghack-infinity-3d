@@ -105,6 +105,7 @@ export class Minimap implements UiPart {
   private px = 0;
   private needsResize = true;
   private baseDirty = true;
+  private sceneryCount = -1;
   private surveyVersion = -1;
   private flashes: Flash[] = [];
   private mesh: HTMLElement;
@@ -243,6 +244,10 @@ export class Minimap implements UiPart {
       }
     }
     if (this.px === 0) return;
+    if (this.sceneryCount !== world.destroyedScenery.size) {
+      this.sceneryCount = world.destroyedScenery.size;
+      this.baseDirty = true;
+    }
     if (this.baseDirty) {
       this.drawBase(world);
       this.baseDirty = false;
@@ -310,7 +315,7 @@ export class Minimap implements UiPart {
     }
     ctx.fillStyle = 'rgba(8, 10, 8, 0.55)';
     for (const o of map.obstacles) {
-      if (o.kind === 'effigy') continue;
+      if (o.kind === 'effigy' || world.destroyedScenery.has(o.id)) continue;
       const r = Math.max(0.6 * u, (o.shape === 'circle' ? o.radius : Math.max(o.hx, o.hz)) * k);
       ctx.beginPath();
       ctx.arc(this.sx(o.x), this.sy(o.z), r, 0, Math.PI * 2);

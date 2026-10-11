@@ -18,9 +18,10 @@ class Node {
 }
 function setup() {
   vi.stubGlobal('document', { createElement: () => new Node() });
-  const root = new Node(), hud = new BossHud(root as unknown as HTMLElement);
+  const root = new Node(), timer = new Node(); timer.className = 'clock plaque'; root.appendChild(timer);
+  const hud = new BossHud(root as unknown as HTMLElement, timer as unknown as HTMLElement);
   const world = { boss: { hp: 4300, maxHp: 5000, action: 'idle', deathAt: null } } as unknown as World;
-  return { root, hud, world, node: hud.element as unknown as Node };
+  return { root, timer, hud, world, node: hud.element as unknown as Node };
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('boss health HUD state', () => {
@@ -37,11 +38,45 @@ describe('boss health HUD state', () => {
     expect(bar.getAttribute('role')).toBe('progressbar'); expect(bar.getAttribute('aria-valuenow')).toBe('4300');
     expect(bar.getAttribute('aria-valuemax')).toBe('5000'); expect(fill.properties.get('--boss-health')).toBe(String(4300 / 5000));
     expect(node.children[0].children[1].textContent).toBe('4,300 / 5,000');
+    expect(node.classList.contains('plaque')).toBe(true);
   });
   it('keeps the zero-health death state visible until the authoritative dead action', () => {
-    const { hud, world, node, root } = setup(); world.boss!.hp = 0; world.boss!.deathAt = 200; world.boss!.action = 'death';
+    const { hud, world, node, root, timer } = setup(); world.boss!.hp = 0; world.boss!.deathAt = 200; world.boss!.action = 'death';
     hud.update(world, true); expect(node.classList.contains('is-off')).toBe(false); expect(node.classList.contains('boss-hud-dying')).toBe(true);
+    expect(timer.classList.contains('is-off')).toBe(true);
     expect(node.children[2].textContent).toBe('THE EFFIGY FALLS');
-    hud.dispose(); expect(root.children).toHaveLength(0);
+    hud.dispose(); expect(root.children).toEqual([timer]); expect(timer.classList.contains('is-off')).toBe(false);
+  });
+  it.each([50000, 72500, 1000000])('uses configured maximum %s for the label and fill ratio', maxHp => {
+    const { hud, world, node } = setup();
+    world.boss!.maxHp = maxHp; world.boss!.hp = maxHp * .75;
+    hud.update(world, true);
+    const bar = node.children[1];
+    expect(bar.getAttribute('aria-valuemax')).toBe(String(maxHp));
+    expect(bar.getAttribute('aria-valuenow')).toBe(String(maxHp * .75));
+    expect(bar.children[0].properties.get('--boss-health')).toBe('0.75');
+    expect(node.children[0].children[1].textContent).toBe(`${(maxHp * .75).toLocaleString()} / ${maxHp.toLocaleString()}`);
+  });
+  it('replaces the timer only for the encounter and restores it after death, title, or reset', () => {
+    const { hud, world, node, timer } = setup();
+    const check = (active: boolean) => {
+      expect(node.classList.contains('is-off')).toBe(!active);
+      expect(timer.classList.contains('is-off')).toBe(active);
+    };
+    hud.update(null, true); check(false);
+    for (let round = 0; round < 3; round++) {
+      world.boss!.action = 'emerge'; hud.update(world, true); check(true);
+      world.boss!.action = 'idle'; hud.update(world, true); check(true);
+      hud.update(world, false); check(false);
+      hud.update(world, true); check(true);
+      world.boss!.action = 'death'; hud.update(world, true); check(true);
+      world.boss!.action = 'dead'; hud.update(world, true); check(false);
+      hud.update({ boss: null } as World, true); check(false);
+    }
+  });
+  it('restores the clock when disposed during a live encounter', () => {
+    const { hud, world, timer } = setup();
+    hud.update(world, true); expect(timer.classList.contains('is-off')).toBe(true);
+    hud.dispose(); expect(timer.classList.contains('is-off')).toBe(false);
   });
 });

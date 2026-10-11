@@ -9,8 +9,9 @@ export class BossHud {
   private readonly value: HTMLElement;
   private readonly status: HTMLElement;
 
-  constructor(parent: HTMLElement) {
-    this.element = el('section', 'boss-hud is-off', parent);
+  constructor(parent: HTMLElement, private readonly timer: HTMLElement) {
+    // Reuse the clock's actual plaque frame, rather than approximating its border.
+    this.element = el('section', 'boss-hud plaque is-off', parent);
     this.element.setAttribute('aria-label', 'Effigy boss');
     const title = el('div', 'boss-hud-title', this.element);
     el('span', 'boss-hud-name', title, 'THE EFFIGY');
@@ -24,8 +25,11 @@ export class BossHud {
 
   update(world: World | null, visible: boolean): void {
     const boss = world?.boss;
-    show(this.element, visible && !!boss && boss.action !== 'dead');
-    if (!visible || !world || !boss) return;
+    const active = visible && !!boss && boss.action !== 'dead';
+    show(this.element, active);
+    // Run before every early return so leaving/restarting a match cannot strand the clock.
+    show(this.timer, !active);
+    if (!active || !boss) return;
     const hp = Math.max(0, Math.ceil(boss.hp));
     setVar(this.fill, '--boss-health', String(Math.max(0, Math.min(1, boss.hp / boss.maxHp))));
     setText(this.value, `${hp.toLocaleString()} / ${boss.maxHp.toLocaleString()}`);
@@ -35,5 +39,5 @@ export class BossHud {
     this.element.classList.toggle('boss-hud-dying', boss.deathAt !== null);
   }
 
-  dispose(): void { this.element.remove(); }
+  dispose(): void { show(this.timer, true); this.element.remove(); }
 }

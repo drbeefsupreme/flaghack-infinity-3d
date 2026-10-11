@@ -1,4 +1,4 @@
-import { normalizeMatch } from "../sim/matchSettings";
+import { UNLIMITED_DAYS, normalizeMatch } from "../sim/matchSettings";
 import { normalizeControls } from "../game/bindings";
 import { controlSettings } from "./controlSettings";
 /**
@@ -14,6 +14,8 @@ import { button, el, setAttr, setClass, setText, show } from './dom';
 import { iconSvg } from './icons';
 
 const STORAGE_KEY = 'fh.settings.v1';
+/** Before version 2, persisted days=0 meant Unlimited. Keep that intent on upgrade. */
+const MATCH_SETTINGS_VERSION = 2;
 const QUALITIES: readonly Settings['quality'][] = ['low', 'medium', 'high'];
 
 type RangeKey = 'masterVolume' | 'musicVolume' | 'sfxVolume' | 'mouseSensitivity';
@@ -44,7 +46,11 @@ export function loadSettings(target: Settings): void {
   }
   if (typeof raw !== 'object' || raw === null) return;
   const src: Record<string, unknown> = { ...raw };
-  target.match = normalizeMatch(src.match as never);
+  const match = src.match;
+  const legacy = typeof src.matchSettingsVersion !== 'number' || src.matchSettingsVersion < MATCH_SETTINGS_VERSION;
+  target.match = normalizeMatch(legacy && typeof match === 'object' && match !== null && 'days' in match && match.days === 0
+    ? { ...match, days: UNLIMITED_DAYS }
+    : match as never);
   target.controls = normalizeControls(src.controls);
   for (const r of RANGES) {
     const v = src[r.key];
@@ -62,7 +68,7 @@ export function loadSettings(target: Settings): void {
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...s, matchSettingsVersion: MATCH_SETTINGS_VERSION }));
   } catch {
     // Private mode / quota: settings still apply for this session.
   }

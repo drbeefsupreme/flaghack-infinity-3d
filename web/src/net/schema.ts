@@ -16,7 +16,8 @@
  */
 import type { SurveyState, World } from '../sim/world';
 import { BOSS_ACTIONS } from '../sim/boss';
-import type { BossState, BossTargetKind } from '../sim/boss';
+import type { BossEyeState, BossState, BossTargetKind } from '../sim/boss';
+import type { V3 } from '../sim/math';
 import { econ } from '../sim/systems/econ/state';
 import { isFactionId } from '../sim/systems/rules/factions';
 import { CHAKRAS, DRUGS, FACTION_IDS, JOBS, NEUTRAL } from '../sim/types';
@@ -1337,6 +1338,16 @@ export const FACTION_MASK_ALL = (1 << FACTION_FIELDS.length) - 1;
 // ── World scalars ────────────────────────────────────────────────────────────
 
 const BOSS_TARGET_KINDS: readonly BossTargetKind[] = ['avatar', 'hippie', 'building', 'piece', 'flag'];
+/** Sub-millimetre beam geometry prevents a far endpoint drifting when quantized. */
+const EYE_GEOMETRY = 1000000;
+const eyeVector = (v: V3 | null): Wire => v ? [quant(v.x, EYE_GEOMETRY), quant(v.y, EYE_GEOMETRY), quant(v.z, EYE_GEOMETRY)] : null;
+function eyeVectorFromWire(v: Wire): V3 | null {
+  return Array.isArray(v) && v.length === 3 ? { x: dequant(v[0], EYE_GEOMETRY), y: dequant(v[1], EYE_GEOMETRY), z: dequant(v[2], EYE_GEOMETRY) } : null;
+}
+function eyeWire(e: BossEyeState): Wire {
+  return [quant(e.nextFireAt, MS), e.chargeAt === null ? null : quant(e.chargeAt, MS),
+    e.firedAt === null ? null : quant(e.firedAt, MS), eyeVector(e.target), eyeVector(e.origin), eyeVector(e.direction), eyeVector(e.impact)];
+}
 
 /** Boss row is durable world state, never reconstructed from animation events. */
 function bossWire(b: BossState | null): Wire {
@@ -1347,14 +1358,16 @@ function bossWire(b: BossState | null): Wire {
     b.focusFaction, b.retaliateId, quant(b.retaliateUntil, MS), quant(b.nextAttackAt, MS),
     b.deathAt === null ? null : quant(b.deathAt, MS),
     b.barrier ? [b.barrier.edge, b.barrier.faction, quant(b.barrier.x, CM), quant(b.barrier.z, CM), quant(b.barrier.at, MS)] : null,
-    quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched];
+    quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched, eyeWire(b.eye)];
 }
 
 export function bossFromWire(v: Wire): BossState | null {
-  if (!Array.isArray(v) || v.length < 21 || !oneOf(v[7], BOSS_ACTIONS)) return null;
+  if (!Array.isArray(v) || v.length < 22 || !oneOf(v[7], BOSS_ACTIONS)) return null;
   const target = list(v[11]);
   const barrier = list(v[17]);
   const held = list(v[19]);
+  const eye = list(v[21]);
+  if (eye.length !== 7) return null;
   return {
     id: int(v[0], -1), pos: { x: dequant(v[1], CM), z: dequant(v[2], CM) }, yaw: dequant(v[3], MRAD),
     hp: dequant(v[4], TENTH), maxHp: dequant(v[5], TENTH), spawnedAt: dequant(v[6], MS), action: v[7],
@@ -1368,10 +1381,20 @@ export function bossFromWire(v: Wire): BossState | null {
     stride: dequant(v[18], CM), crouched: v[20] === true,
     held: oneOf(held[0], BOSS_TARGET_KINDS) ? { kind: held[0], id: int(held[1], -1), faction: owner(held[2]),
       x: dequant(held[3], CM), z: dequant(held[4], CM) } : null,
+    eye: { nextFireAt: dequant(eye[0], MS), chargeAt: eye[1] === null ? null : dequant(eye[1], MS),
+      firedAt: eye[2] === null ? null : dequant(eye[2], MS), target: eyeVectorFromWire(eye[3]),
+      origin: eyeVectorFromWire(eye[4]), direction: eyeVectorFromWire(eye[5]), impact: eyeVectorFromWire(eye[6]) },
   };
 }
 
 export const WORLD_FIELDS: readonly Field<World>[] = [
+  {
+    key: 'destroyedScenery',
+    enc: (w) => [...w.destroyedScenery].sort((a, b) => a - b),
+    same: (w, prev) => wireEqual([...w.destroyedScenery].sort((a, b) => a - b), prev),
+    dec: (w, v) => { w.destroyedScenery = new Set(ints(v).filter((id) => id >= 0 &&
+      w.map.obstacles.some((o) => o.id === id && o.kind !== 'effigy'))); },
+  },
   {
     key: 'boss',
     enc: (w) => bossWire(w.boss),

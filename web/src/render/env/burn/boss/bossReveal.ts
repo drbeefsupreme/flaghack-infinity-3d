@@ -8,6 +8,7 @@ import { BossRevealPose } from './revealPose';
 import { BossCombatPose, BOSS_COMBAT_TIMING } from './combatPose';
 import { BossCombatFx, applyBossDeathMaterial } from './combatFx';
 import { BossImpactFx } from './impactFx';
+import { BossEyeBeamFx } from './eyeBeamFx';
 import type { GameEvent } from '../../../../sim/events';
 import { EFFIGY_BOSS_REVEAL_AT } from '../../../../sim/effigyBurn';
 import { applyBossChargeMaterial, bossCharge, bossEmergence, bossFlash, smooth } from './revealTimeline';
@@ -32,6 +33,7 @@ export class BossReveal {
   private gesture: BossRevealPose | null = null;
   private combat: BossCombatPose | null = null;
   private combatFx: BossCombatFx | null = null;
+  private eyeFx: BossEyeBeamFx | null = null;
   private fx: RevealFx;
   private impacts: BossImpactFx;
   private depth = new THREE.MeshDepthMaterial();
@@ -56,6 +58,7 @@ export class BossReveal {
       this.model = model;
       // Capture the real bind/rest pose before the reveal constructor changes the arms.
       this.combat = new BossCombatPose(model);
+      this.eyeFx = new BossEyeBeamFx(model, () => this.combat?.stabilizeRearFlap());
       const combatFx = this.combatFx = new BossCombatFx(env, model);
       const materials = new Set<THREE.Material>();
       model.traverse((o) => {
@@ -72,6 +75,7 @@ export class BossReveal {
       applyBossDeathMaterial(this.depth, combatFx.deathAge);
       this.root.add(model);
       this.root.add(combatFx.group);
+      this.root.add(this.eyeFx.group);
       this.gesture = new BossRevealPose(model);
       this.pose();
       // The model is loaded at match start, long before ignition. Warm its real skinning shaders.
@@ -95,7 +99,8 @@ export class BossReveal {
     if (!this.model) return;
     const world = this.env.ctx.world, boss = world.boss;
     if (boss && this.age >= 0 && this.age >= BOSS_COMBAT_TIMING.emerge && boss.action !== 'emerge') {
-      this.combat?.sample(boss, world.time);
+      // The host bakes a zero-phase idle pivot while the eye attack holds still.
+      this.combat?.sample(boss, boss.eye?.chargeAt != null ? boss.spawnedAt : world.time);
     } else {
       this.combat?.restoreRest();
       this.gesture?.sample(this.age >= 0 ? EFFIGY_BOSS_REVEAL_AT + this.age : this.burnElapsed);
@@ -108,6 +113,10 @@ export class BossReveal {
     this.model.rotation.y = boss && this.age >= 0 ? boss.yaw : 0;
     this.model.position.y = BOSS_HEIGHT * (emerged - 1);
     this.model.updateMatrixWorld(true);
+    // End screens freeze match time. Never leave a final killing beam stuck on screen.
+    const eyeBoss = this.age >= 0 && world.phase !== 'ended' ? boss : null;
+    this.eyeFx?.aim(eyeBoss, world.time);
+    this.eyeFx?.update(eyeBoss, world.time);
     this.combatFx?.update(this.age >= 0 ? boss : null, world.time);
   }
 
@@ -146,6 +155,7 @@ export class BossReveal {
   dispose(): void {
     this.disposed = true;
     this.combatFx?.dispose();
+    this.eyeFx?.dispose();
     if (this.model) disposeBossModel(this.model);
     this.depth.dispose();
     this.fx.dispose();

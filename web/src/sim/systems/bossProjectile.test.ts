@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bossFixture } from '../../../tests/bossFixture';
 import type { BossAction } from '../boss';
-import { BOSS_HEAD_REGION_COUNT, BOSS_HIT_REGION_STRIDE } from '../bossHitPoseData';
+import { BOSS_HEAD_REGION_COUNT, BOSS_HIT_REGION_NAMES, BOSS_HIT_REGION_STRIDE } from '../bossHitPoseData';
 import { AVATAR, SIM_DT } from '../constants';
 import { spawnFlag, spawnProjectile } from '../factory';
 import { normalizeMatch } from '../matchSettings';
@@ -58,8 +58,11 @@ describe('real boss projectile impacts', () => {
   for (const [action, crouched, age] of [
     ['idle', false, .3], ['idle', true, .3], ['walk', false, .3],
     ['crouchWalk', true, .3], ['rise', true, .3], ['swipe', true, 1.1],
+    ['crouch', false, .025], ['rise', true, .625],
+    ['swipe', false, 1.1], ['swipe', true, 2.39],
+    ['grab', true, 1.35], ['grab', true, 2.8], ['grab', true, 3.79], ['grab', false, 2.8],
   ] as const) {
-    it(`destroys thrown Flags once and emits 50/100 fireworks at the swept impact in ${action}:${crouched}`, () => {
+    it(`destroys thrown Flags once and emits 50/100 fireworks at the swept impact in ${action}:${crouched} at ${age}s`, () => {
       for (const headshot of [false, true]) {
         const w = setup(action, crouched, age);
         const shapes = sampleBossHitRegions(w.boss!, w.time);
@@ -94,6 +97,41 @@ describe('real boss projectile impacts', () => {
       const before = w.boss!.hp;
       updateProjectiles(w, SIM_DT);
       expect(w.boss!.hp).toBe(before - 100);
+    }
+  });
+
+  it('the stabilized rear hat remains a headshot region through locomotion and attacks', () => {
+    const rear = BOSS_HIT_REGION_NAMES.indexOf('hatRearflap');
+    expect(rear).toBeLessThan(BOSS_HEAD_REGION_COUNT);
+    for (const [action, crouched, age] of [
+      ['idle', false, .3], ['idle', true, .3], ['walk', false, .3], ['crouchWalk', true, .3],
+      ['swipe', true, 1.1], ['grab', true, 2.8], ['emerge', false, .1],
+    ] as const) {
+      const w = setup(action, crouched, age);
+      const ray = aim(w, true, rear, rear + 1);
+      const before = w.boss!.hp;
+      const { flag } = shoot(w, ray.from, ray.to);
+      w.drainEvents();
+      updateProjectiles(w, SIM_DT);
+      expect(w.boss!.hp, `${action}:${crouched}`).toBe(before - 100);
+      expect(w.flags.has(flag.id)).toBe(false);
+      expect(w.drainEvents().filter(e => e.t === 'bossImpact')).toMatchObject([
+        { headshot: true, amount: 100, flagId: flag.id },
+      ]);
+    }
+  });
+
+  it('the aimed head-attached rear drape still awards exactly 100 damage', () => {
+    const rear = BOSS_HIT_REGION_NAMES.indexOf('hatRearflap');
+    for (const crouched of [false, true]) for (const yaw of [0, .9]) {
+      const w = setup('idle', crouched, 3), boss = w.boss!;
+      boss.yaw = yaw; boss.eye.chargeAt = w.time - 3;
+      boss.eye.target = { x: boss.pos.x - 15, y: 2, z: boss.pos.z - 10 };
+      const ray = aim(w, true, rear, rear + 1), before = boss.hp;
+      const { flag } = shoot(w, ray.from, ray.to);
+      w.drainEvents(); updateProjectiles(w, SIM_DT);
+      expect(boss.hp).toBe(before - 100); expect(w.flags.has(flag.id)).toBe(false);
+      expect(w.drainEvents().filter(e => e.t === 'bossImpact')).toMatchObject([{ headshot: true, amount: 100, flagId: flag.id }]);
     }
   });
 

@@ -320,6 +320,15 @@ export class CollisionWorld {
     this.free.push(id);
   }
 
+  /** Remove every live shape belonging to one stable map obstacle tag. */
+  removeObstacle(obstacleId: number): void {
+    const tag = -1 - obstacleId;
+    for (let id = 0; id < this.shapes.length; id++) {
+      const shape = this.shapes[id];
+      if (shape.alive && shape.tag === tag) this.remove(id);
+    }
+  }
+
   /** Retire consumed poles only; stable tags, pedestal shapes and other handles stay intact. */
   removeEffigyMasts(): void {
     for (const id of this.effigyMasts) this.remove(id);

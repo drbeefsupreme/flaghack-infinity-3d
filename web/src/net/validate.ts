@@ -1,4 +1,4 @@
-import { MATCH_RANGES, normalizeMatch } from "../sim/matchSettings";
+import { MATCH_RANGES, isMatchDays, normalizeMatch } from "../sim/matchSettings";
 /**
  * Host-side validation of untrusted client messages: JSON parse, exact shape and type checks for
  * every ClientMessage and every Command variant (numbers finite and in range, ids integers,
@@ -167,11 +167,11 @@ function settingsPatch(v: unknown): Partial<LobbySettings> | null {
     } else if(k === 'match') {
       const m=v.match; if(!isRec(m))return null;
       if(!Array.isArray(m.active)||m.active.length<1||m.active.length>4||m.active.some(f=>!Number.isInteger(f)||f<0||f>3)||new Set(m.active).size!==m.active.length)return null;
-      if(typeof m.days!=='number'||!Number.isInteger(m.days)||m.days<0||m.days>5)return null;
+      if(!isMatchDays(m.days))return null;
       for(const key of Object.keys(MATCH_RANGES) as (keyof typeof MATCH_RANGES)[]){const n=m[key];const [min,max]=MATCH_RANGES[key];if(typeof n!=='number'||!Number.isFinite(n)||n<min||n>max)return null;}
       if(typeof m.bossMode !== 'boolean')return null;
       if(typeof m.structuresBlockFlagPlacement !== 'boolean')return null;
-      if(!Number.isInteger(m.maxSignifiers)||!Number.isInteger(m.startingSignifiers))return null;
+      if(!Number.isInteger(m.maxSignifiers)||!Number.isInteger(m.startingSignifiers)||!Number.isInteger(m.bossHp))return null;
       if(Object.keys(m).some(key=>!['active','days','bossMode','structuresBlockFlagPlacement',...Object.keys(MATCH_RANGES)].includes(key)))return null;
       out.match=normalizeMatch(m);
     } else if (k === 'seed') {

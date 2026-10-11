@@ -159,6 +159,22 @@ describe('parseCommand', () => {
 });
 
 describe('parseClientMessage', () => {
+  it.each([100, 101, 12345, 50000, 1000000])('accepts whole-number boss HP %s through the wire', (bossHp) => {
+    const message = { t: 'settings', settings: { match: normalizeMatch({ bossHp }) } };
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+  });
+  it.each([0, -1, 99, 1000001, 50000.5, '50000', undefined, null, NaN, Infinity, -Infinity])('rejects malformed or out-of-range boss HP %s', (bossHp) => {
+    const message = { t: 'settings', settings: { match: { ...normalizeMatch(), bossHp } } };
+    expect(parseClientMessage(JSON.stringify(message))).toBeNull();
+  });
+  it.each([-1, 0, 1, 2, 3, 4, 5])('accepts and preserves day setting %s through the wire', (days) => {
+    const message = { t: 'settings', settings: { match: normalizeMatch({ days }) } };
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+  });
+  it.each([-2, 6, 0.5, '0', null, NaN, Infinity])('rejects malformed day setting %s', (days) => {
+    const message = { t: 'settings', settings: { match: { ...normalizeMatch(), days } } };
+    expect(parseClientMessage(JSON.stringify(message))).toBeNull();
+  });
   it('accepts new match options and rejects malformed or out-of-range values', () => {
     const match = normalizeMatch({ jumpHeight: 1.5, maxSignifiers: 9, structuresBlockFlagPlacement: true });
     const message = { t: 'settings', settings: { match } };

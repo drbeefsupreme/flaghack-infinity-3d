@@ -4,15 +4,16 @@
 
 Begin the Survey opens the lobby for local games; joining a host opens the multiplayer lobby. Each of the four player seats has an On/Off toggle, and the number of days is selected in the lobby. At least one seat remains on. Offline, choose any enabled character with Play this character; other enabled seats use AI. Turning off the selected local seat moves you to another enabled seat. Disabled seats show a neutral numbered placeholder and have no avatar, Hearth, GCC, starting stock or Signifiers in the match. They also stay out of the Hearth rail, standings and end-of-match statistics. Their camp scenery remains part of the map.
 
-In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 6; all players must use the same build.
+In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 7; all players must use the same build.
 
-Choose 1–5 days or Unlimited. A day means one complete daylight/night cycle. Default: 1 day at 1,800 seconds, preserving the original 14:00 Burn and 30:00 Dawn deadline. With multiple days, the Burn occurs at the same point in the **last** cycle. The sky repeats each cycle. Conquest can finish a competitive match earlier; a single-camp creative/solo match finishes only at its time limit. Unlimited has no time limit or scheduled Burn; competitive conquest still works.
+Choose 0–5 days or Unlimited. A day means one complete daylight/night cycle. Default: 1 day at 1,800 seconds, preserving the original 14:00 Burn and 30:00 Dawn deadline. With multiple days, the Burn occurs at the same point in the **last** cycle. The sky repeats each cycle. Zero days begins at ignition, with the Burn sky and simulation time 0:00; the boss still reveals 90 seconds later. With boss mode off, zero days retains the full remaining Burn night before Dawn (16 minutes at the default day length, or 160 seconds with a 300-second day). Conquest can finish a competitive match earlier; a single-camp creative/solo match finishes only at its time limit. Unlimited remains a separate choice with no time limit or scheduled Burn; competitive conquest still works. Previously saved Unlimited choices are migrated without changing their meaning.
 
 Advanced Game Settings opens a separate window with a scrolling body, a fixed header and footer, and Done, close, Escape and backdrop dismissal. It contains the number of days, rival difficulty, random or fixed world seed, and all configurable match parameters below. Reset defaults preserves the lobby's player-seat selection. Online guests can inspect the settings; only the leader can edit them before the match. Advanced settings are bounded and applied at match creation:
 
 | Setting | Range | Default |
 | --- | --- | --- |
 | Full day length | 300–7,200 seconds | 1,800 |
+| Boss HP | 100–1,000,000 whole HP (100-HP spinner steps) | 50,000 |
 | Lattice edge spacing | 6–12 metres | 8 |
 | Starting lumber | 0–1,000 | 150 |
 | Stock Flags per Hearth | 0–100 | 14 |
@@ -85,7 +86,8 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   attract world opt out; disabling it preserves the approved non-boss sequence.
 - The simulation stores and replicates `effigyRevealedAt` exactly 90 seconds after
   the scheduled Burn. A skipped step or late join reconstructs the same state.
-  Protocol version 6 includes this field and the full encounter state.
+  Protocol version 7 includes this field and the full encounter state, and distinguishes
+  zero-day ignition from Unlimited (`days: -1`). Older clients must reload.
 - Reveal clears both original pedestal and mast collision, rebuilding static
   navigation and lattice plantability without discarding dynamic blockers.
 - The last five seconds charge the original structure white. At 90 seconds it
@@ -96,9 +98,10 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   restores every original material instantly; no rise or glow fade follows the
   explosion. A short back-shell burst leaves the colored boss visible in front
   of it, and a persistent black crater remains.
-- Boss source geometry is unchanged; a uniform 0.625 scale makes the complete
+- The original source GLB is unchanged; a uniform 0.625 scale makes the complete
   boss 20 m tall including its hat. Per-material runtime consolidation reduces
-  594 draws to 31 while preserving all 401,386 triangles and 109 bones.
+  594 draws to 31 while preserving all 401,386 triangles and 109 bones. The later
+  rear-drape seam repair is confined to runtime-prepared cloth vertices, as described below.
 - The reveal starts the cooperative encounter below. Ordinary Dawn and conquest
   endings stop during the fight. With a 300-second day the Burn is at 140 s and
   reveal at 230 s; the former 300-second Dawn deadline no longer ends the fight.
@@ -108,21 +111,53 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
 When the default-on boss option reaches its reveal, the giant becomes an authoritative
 encounter. The approved 85–90 second effigy reveal is unchanged. Before that moment camps
 remain rivals; afterward player-controlled and NPC camps are allies. Rival damage,
-knockback, flag theft, Dialectics conversion and altar overwrites stop. NPC vexillomancers
+knockback, Dialectics conversion and altar overwrites stop. Players can still pick up and
+pull each other's Flags; ordinary pull timing, Ward/Crystal slowdown and Stabilize L3
+protection still apply. NPC vexillomancers
 and their Signifiers attack the giant. Priority Beacons can direct your Signifiers at it.
 
-- For testing, the giant starts with 5,000 HP: about 137 seconds of one player's actual
-  held, unbuffed staff attacks in continuous contact. Staff timing and damage are unchanged.
-  The earlier four-minute calibration was 8,800 HP; the lower value is a deliberate testing
-  override. Cooperation, Signifiers and thrown Flags shorten the encounter.
+- The giant starts with 50,000 HP by default. Advanced Game Settings → Boss HP sets its
+  starting and maximum health for the next match, from 100 to 1,000,000 whole HP. The choice
+  persists locally, resets to 50,000 with Reset defaults, and is controlled by the host's
+  lobby leader online. Changing settings cannot heal or resize a running boss's health pool.
+  Staff timing and damage are unchanged; cooperation, Signifiers and thrown Flags shorten
+  the encounter.
 - A thrown Flag deals 50 damage to the body or 100 to the head/hat, destroys the Flag, and
   bursts into a colored firework at the exact impact point. Swept collision regions follow
   the approved animated rig, including crouching, arms, skull and hat; walls still stop a
   throw before it reaches the giant.
 - The giant prioritizes the living faction with the highest CMI, briefly retaliates against
   attacking vexillomancers, walks standing over distance, and crouches for hand attacks.
-  Sweeps launch units through real ballistic flight. Stomps and steps crush units and built
-  structures. Grabs consume Flags, walls and buildings, including altars.
+  Swipes deal 100 damage to players and Signifiers and launch them through real ballistic
+  flight. Swipes deal 110 damage to buildings and 150 to build pieces; lethal hits permanently
+  destroy them, except altars. Stomps and steps crush other built structures. Grabs instantly
+  consume any of the six camp-building types or wall/deck/ramp pieces on the authoritative
+  eat event, regardless of remaining HP, construction progress or disabled/collapsed state.
+  The giant can select a structure for a stomp, swipe or grab without a player standing nearby.
+  Altars can only be destroyed by eating: swipe, foot and beam damage stop at 1 HP, and
+  the giant deliberately crouches to eat an altar rather than stomping it indefinitely.
+- During the fight its health replaces the top-center clock in the same ornate plaque.
+  Gentle, single lightning pulses illuminate its original materials for 0.9 seconds,
+  spaced 8–14 seconds apart; reveal, death and menu screens do not flash.
+- Distinct procedural bellows accompany emergence and death. Low footstep impacts follow
+  the actual standing and crouching foot-contact phases; the eye has a three-second
+  charging sound and a half-second firing sound. These use the existing spatial SFX,
+  volume and mute controls, and do not replay old cues on late join or resume.
+- The original hat eye glows dimly. Every 30 seconds the giant pauses, charges for three
+  seconds, and tilts its head toward a locked target point. Its first shot is due 30 seconds
+  after reveal. The complete white beam appears instantly for half a second along the
+  actual pupil's gaze, stopping at the first terrain/structure hit (240 m maximum reach).
+  A single 5 m spherical burst at that impact deals 1,000 damage to units, buildings and
+  build pieces. Surviving targets retain their remaining HP; lethal hits remove non-altar
+  structures. Altars retain at least 1 HP. Flags in the burst fall loose and
+  remain recoverable, including carried/thrown Flags and both nodes of a simulacrum.
+  Stock Flags in the burst fall out of their surviving altar. Damage is at the impact only,
+  never along the beam.
+  Only a scenery prop struck directly by the beam explodes: tents, domes, art, portas,
+  trees, rocks, stages, shades and cars. Nearby scenery and resource piles stay intact;
+  terrain receives the normal impact burst. Crystals follow their ordinary sustaining-Flag
+  rules when a knocked-down Flag breaks the pentacle. Charge/fire and the explosion are
+  host-authoritative, cancel on boss death, and reconstruct for late joins.
 - Every intact Flag cycle, including nested loops and implied-Flag loops, blocks the whole
   giant footprint. Contact flashes the owner's color. The giant must consume real supporting
   boundary Flags, rather than teleporting through a defense. A small loop also prevents a
@@ -138,11 +173,20 @@ Combat decisions, hits and outcomes run on the host's fixed simulation clock. Sn
 state frames include movement, HP, action times, stance, held targets, barriers, airborne
 Signifiers and the shared result. Late joins reconstruct the current state without replaying
 old fireworks. Clients animate the approved 20 m, 109-bone model in place; its 594 source
-primitives remain consolidated into 31 equal-material skinned draws without geometry or
-color changes. Boss-off mode and the Training Burn keep their original behavior.
+primitives remain consolidated into 31 equal-material skinned draws. The original GLB,
+topology, skin weights and material colors are preserved; a bounded preparation correction
+is confined to the rear hat drape's shell/lining/edge/seam vertices to keep the skull covered.
+Boss-off mode and the Training Burn keep their original behavior.
+Standing travel uses an 8° forward lean and a 4.875 m stride while keeping its 4.3 m/s
+speed; distance-driven cadence prevents the larger steps from speeding it up. Front coat
+panels follow the legs, swipe/eat actions stay crouched, and the resting jaw is slightly
+open. The rear hat drape stays attached to the hat while its lower portion follows the coat,
+without jiggle; the ear flaps and cords retain their motion.
 
 Verification includes simulation/action-window tests, full encounter runs, animated-region
 projectile tests, real host/two-client/late-join tests, and production-shader visual proofs.
 The current cloud executor cannot launch Chromium's socket service; the shader proofs are
 not a browser gameplay certification. A final interactive browser playtest is still useful
 before release. Publishing this branch does not deploy the game.
+Boss sound scheduling and synthesis have automated coverage; audible output still needs
+checking in a browser with Web Audio enabled.

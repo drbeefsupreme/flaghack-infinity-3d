@@ -127,6 +127,7 @@ export function segmentClearance(
   const mz = (az + bz) / 2;
   const reach = Math.hypot(bx - ax, bz - az) / 2 + halfWidth;
   for (const o of map.obstacles) {
+    if (world.destroyedScenery.has(o.id)) continue;
     if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
     if (o.height <= y0) continue;
     const bound = obstacleBound(o) + reach;
@@ -171,6 +172,7 @@ export function polygonClearance(world: World, xs: number[], zs: number[], y0: n
   let reach = 0;
   for (let i = 0; i < n; i++) reach = Math.max(reach, Math.hypot(xs[i] - cx, zs[i] - cz));
   for (const o of map.obstacles) {
+    if (world.destroyedScenery.has(o.id)) continue;
     if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
     if (o.height <= y0) continue;
     const bound = obstacleBound(o) + reach;

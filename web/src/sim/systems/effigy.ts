@@ -1,5 +1,5 @@
 import { bossRevealEnabled, bossRevealTime, effigyPoleConsumed } from '../effigyBurn';
-import { makeIsBlockedAt } from '../map/mapgen';
+import { rebuildSceneryBlocking } from './scenery';
 import type { World } from '../world';
 
 /** Derived geometry is applied once per World, independently of replicated transition state. */
@@ -19,14 +19,7 @@ export function syncEffigy(world: World): void {
   if (world.effigyRevealedAt !== null && bossRevealEnabled(world.options)) {
     if (cleared.has(world)) return;
     world.collision.removeEffigy();
-    // Keep canonical obstacle definitions for render setup, including fresh late-join renderers.
-    const obstacles = world.map.obstacles.filter((o) => o.kind !== 'effigy');
-    world.map.isBlockedAt = makeIsBlockedAt(obstacles, world.map.water);
-    world.nav.rebuildStatic({ obstacles, water: world.map.water });
-    world.lattice.isBlockedAt = world.map.isBlockedAt;
-    for (const node of world.lattice.nodes) node.blocked = world.map.isBlockedAt(node.x, node.z);
-    // lattice.version counts phason flips on the wire; clearing a prop is not a topology change.
-    world.survey.dirty = true;
+    rebuildSceneryBlocking(world);
     cleared.add(world);
   } else if (effigyPoleConsumed(world)) {
     world.collision.removeEffigyMasts();

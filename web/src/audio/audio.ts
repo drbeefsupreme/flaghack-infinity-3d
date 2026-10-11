@@ -14,6 +14,7 @@ import type { ChatLine } from '../net/protocol';
 import type { GameEvent } from '../sim/events';
 import type { World } from '../sim/world';
 import { Ambience } from './ambience';
+import { BossAudio } from './boss';
 import { Cues } from './cues';
 import { AudioEngine } from './engine';
 import { MENTOR_CHARS_PER_SEC, MentorVoice } from './mentor';
@@ -45,6 +46,7 @@ export interface AudioStats {
 interface Parts {
   engine: AudioEngine;
   sfx: Sfx;
+  boss: BossAudio;
   music: Music;
   ambience: Ambience;
   mentor: MentorVoice;
@@ -98,6 +100,7 @@ export class GameAudio {
       this.parts = {
         engine,
         sfx: new Sfx(engine),
+        boss: new BossAudio(engine),
         music: new Music(engine),
         ambience: new Ambience(engine),
         mentor: new MentorVoice(engine),
@@ -132,8 +135,10 @@ export class GameAudio {
     engine.setListener(cam.position.x, cam.position.y, cam.position.z, cam.matrixWorld.elements);
 
     const w = this.app.world;
+    if (!w || session.screen === 'title' || session.screen === 'lobby' || session.screen === 'paused') parts.boss.tracker.reset();
     if (w) {
       this.syncWorld(w, parts);
+      if (!title && session.screen !== 'paused') parts.boss.tracker.update(w.boss, w.time);
       this.measureTimer -= dt;
       if (this.measureTimer <= 0) {
         this.measureTimer = MEASURE_INTERVAL;
@@ -178,6 +183,7 @@ export class GameAudio {
     if (w !== this.world) {
       this.world = w;
       parts.music.reset();
+      parts.boss.tracker.reset();
       this.measureTimer = 0;
       this.fireworkTimer = 2;
     }

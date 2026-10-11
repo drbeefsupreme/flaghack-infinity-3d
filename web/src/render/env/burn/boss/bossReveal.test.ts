@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it } from 'vitest';
 import { normalizeMatch } from '../../../../sim/matchSettings';
 import { BOSS_HEIGHT, BOSS_SCALE, disposeBossModel, prepareBossModel } from './bossModel';
+import { prepareBossRearDrapeSeam } from './rearFlapPose';
 import { bossCharge, bossEmergence, bossFlash } from './revealTimeline';
 import { Effigy } from '../effigy';
 import { createDayState } from '../../timeOfDay';
@@ -53,6 +54,8 @@ function geometrySignature(root: THREE.Object3D) {
 describe('actual skeletal boss asset', () => {
   it('retains all 401386 triangles, every weighted vertex and all 109 bones while reducing 594 draws to 31', async () => {
     const original = await sourceModel();
+    // The explicit no-skull-peek repair is a bounded rear-cloth-only exception.
+    prepareBossRearDrapeSeam(original);
     const before = geometrySignature(original);
     const root = prepareBossModel(original);
     const after = geometrySignature(root);

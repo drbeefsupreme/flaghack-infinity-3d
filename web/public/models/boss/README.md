@@ -16,7 +16,8 @@ The original external source remains unchanged.
 
 The asset is intentionally stored in `public` so Vite and the host serve the same
 binary. Tests parse it through Three's actual GLTFLoader, validate triangle,
-vertex, normal, weight and joint preservation, and measure its resulting height.
+topology, material, weight and joint preservation, and measure its resulting height.
+The bounded cloth-only preparation exception below is checked separately.
 
 ## Runtime animation
 
@@ -30,3 +31,23 @@ from the exact animated rig; its header records source hashes and coordinate rul
 This character was created for this project; no third-party character asset,
 texture pack or animation library was added. The original authored source files
 remain outside this runtime asset directory.
+
+## Rear-drape attachment repair
+
+The GLB remains byte-for-byte unchanged. To prevent the authored rear seam from
+showing the skull through the cloth below the hat band, preparation applies a
+small rearward corrective shape to exactly 1,174 vertices in seven named
+rear-drape shell, lining, gold-bound edge and sewn-panel primitives. Maximum
+movement is 0.18 source units (11.25 cm at the 20 m game scale), along Z only.
+The original affected source-coordinate bounds are X −1.799090 to 1.798913,
+Y 25.500854 to 26.613836, Z −1.614735 to −0.100583. Vertices outside this local
+selection are bitwise unchanged. Normals are recomputed only on those drape
+primitives; indices, weights, materials and bone count are unchanged. The repair
+is idempotent and still consolidates into the same 31 draws.
+
+The rear flap has no secondary physics or baked oscillation. Its upper control
+keeps the original head-relative attachment. The lower control stretches and
+bends toward a coat-relative anchor, with a flatter cross-section over the upper
+back and extra deterministic clearance during deep head bends. The pose is
+reapplied after eye aiming. Projectile regions are baked from this exact prepared
+mesh and the same final poses, including the rear-drape deformation.

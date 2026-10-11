@@ -14,6 +14,7 @@
 import { createMatch } from '../sim/setup';
 import { registerBuildingShape } from '../sim/systems/buildings';
 import { syncEffigy } from '../sim/systems/effigy';
+import { syncScenery } from '../sim/systems/scenery';
 import { attachPiece, detachPiece } from '../sim/systems/pieces';
 import type { Avatar, EntityId, MatchOptions } from '../sim/types';
 import type { World } from '../sim/world';
@@ -217,6 +218,7 @@ export class NetMirror {
     w.tick = snap.tick;
     w.time = snap.time;
     syncEffigy(w);
+    syncScenery(w);
   }
 
   private loadSurvey(sv: SurveySnapshot): void {
@@ -278,6 +280,7 @@ export class NetMirror {
     w.tick = d.tick;
     w.time = d.time;
     syncEffigy(w);
+    syncScenery(w);
     for (const e of frame.events) w.emit(e);
   }
 

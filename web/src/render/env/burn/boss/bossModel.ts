@@ -1,5 +1,6 @@
 /** The approved rig, uniformly resized from 32 m to 20 m including the hat. */
 import * as THREE from 'three';
+import { prepareBossRearDrapeSeam } from './rearFlapPose';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -11,6 +12,7 @@ export type BossModelLoader = () => Promise<THREE.Group>;
 /** Merge only equal-material/equal-bind meshes. No decimation, recolouring or rig changes. */
 export function prepareBossModel(source: THREE.Group): THREE.Group {
   source.updateMatrixWorld(true);
+  prepareBossRearDrapeSeam(source);
   const meshes: THREE.SkinnedMesh[] = [];
   source.traverse((o) => { if (o instanceof THREE.SkinnedMesh) meshes.push(o); });
   if (!meshes.length) throw new Error('Boss asset has no skinned geometry');
@@ -50,6 +52,7 @@ export function prepareBossModel(source: THREE.Group): THREE.Group {
   root.userData.sourceHeight = BOSS_SOURCE_HEIGHT;
   root.userData.height = BOSS_HEIGHT;
   root.userData.originalDraws = meshes.length;
+  root.userData.rearDrapeCorrection = source.userData.rearDrapeCorrection;
   root.userData.consolidatedDraws = byMaterial.size;
   root.updateMatrixWorld(true);
   return root;

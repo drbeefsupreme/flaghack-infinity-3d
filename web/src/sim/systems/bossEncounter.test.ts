@@ -5,6 +5,7 @@ import { createAi } from '../../ai';
 import { bossRevealTime } from '../effigyBurn';
 import { SIM_HZ } from '../constants';
 import { BOSS_MAX_HP } from '../boss';
+import { normalizeMatch } from '../matchSettings';
 
 describe('live boss encounter vertical slice', () => {
   it('runs all systems, traverses the field, blocks/eats defenses and receives cooperative attacks', () => {
@@ -32,7 +33,10 @@ describe('live boss encounter vertical slice', () => {
     expect(world.boss?.hp).toBeLessThan(BOSS_MAX_HP);
   }, 30000);
   it('completes a cooperative all-system battle and waits for the final burn before ending', () => {
-    const world = createMatch({ seed: 'boss-cooperative-finish', difficulty: 'normal', humans: [0, 1], mode: 'standard' });
+    // Keep this completion regression bounded independently of the configurable
+    // default. The live-encounter test above exercises the full 50,000 HP default.
+    const world = createMatch({ seed: 'boss-cooperative-finish', difficulty: 'normal', humans: [0, 1], mode: 'standard',
+      match: normalizeMatch({ bossHp: 5000 }) });
     world.time = bossRevealTime(world.options); world.suddenDeath = true;
     // Controllers submit ordinary player commands for all four camps to exercise completion.
     const ai = createAi(world, [0, 1, 2, 3]), sim = new Simulation(world);

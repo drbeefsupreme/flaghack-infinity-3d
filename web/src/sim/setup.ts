@@ -1,4 +1,4 @@
-import { matchSettings } from "./matchSettings";
+import { burnTime, matchSettings } from "./matchSettings";
 /**
  * Match setup: map, lattice, physics, nav, factions, four corner camps (Hearth + GCC +
  * avatar + hippies + stock + home ring), lumber piles, neutral hippies.
@@ -34,6 +34,7 @@ import { setupTrainingBurn } from './scenarios/tutorial';
 import { registerBuildingShape } from './systems/buildings';
 import { canPlantAt, plantFlag } from './systems/flags';
 import { geometryOwners, updateSurvey } from './systems/survey';
+import { updateVictory } from './systems/victory';
 import { FACTION_IDS } from './types';
 import type { Building, FactionId, MatchOptions } from './types';
 import { createSurveyState, World } from './world';
@@ -94,6 +95,9 @@ export function createMatch(options: MatchOptions): World {
   // planting and ley-line events (and the planting stats) from the home rings is discarded.
   world.drainEvents();
   for (const fac of world.factions) fac.stats.flagsPlanted = 0;
+  // Instant-Burn matches are already ignited in the first rendered/replicated snapshot.
+  // Keep simulation time at zero so the 90-second reveal and all other timers run normally.
+  if (options.mode !== 'tutorial' && burnTime(options) === 0) updateVictory(world, 0);
   return world;
 }
 

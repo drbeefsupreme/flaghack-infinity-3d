@@ -129,6 +129,16 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   endings stop during the fight. With a 300-second day the Burn is at 140 s and
   reveal at 230 s; the former 300-second Dawn deadline no longer ends the fight.
 
+### Neutral Burn spectators
+
+Neutral hippies gather during the final 120 seconds before ignition, using ordinary
+pathing to stable, spaced audience positions around the effigy. The ring starts 16 m
+from its center, beyond the guy-line anchors, and expands for large crowds or enlarged
+effigy footprints. Arrived spectators face the effigy. Zero-day games initialize only
+starting neutrals in safe ring positions; Unlimited and tutorial worlds keep wandering.
+Recruitment, KO and combat still interrupt watching. After the ordinary burn is consumed
+the audience disperses; an active giant encounter instead takes priority immediately.
+
 ### Cooperative giant encounter
 
 When the hidden, default-on encounter reaches its reveal, the giant becomes an authoritative

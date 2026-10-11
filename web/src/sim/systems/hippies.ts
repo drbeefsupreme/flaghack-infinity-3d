@@ -26,6 +26,7 @@ import { beginTask, brainOf, releaseTask, setStatus } from './units/brain';
 import type { Brain } from './units/brain';
 import { decide, needsDecision, startEngage, startFlee } from './units/decide';
 import { allocateJobs } from './units/jobs';
+import { faceEffigy, prepareEffigyAudience, watchEffigy } from './units/effigySpectators';
 import { moveTo, locomote, servicePathQueue, slide } from './units/move';
 import { unitsState } from './units/state';
 import type { UnitsState } from './units/state';
@@ -188,7 +189,8 @@ export function updateHippies(world: World, dt: number): void {
     sys.nextAllocAt[f] = world.time + HIPPIE_AI.jobInterval;
     allocateJobs(world, sys, f);
   }
-  for (const h of world.hippies.values()) updateHippie(world, sys, h, dt);
+  const audience = prepareEffigyAudience(world);
+  for (const h of world.hippies.values()) updateHippie(world, sys, h, dt, audience);
 }
 
 function bump(m: Map<EntityId, number>, key: EntityId): void {
@@ -266,7 +268,7 @@ function sweepClaims(world: World, sys: UnitsState): void {
   });
 }
 
-function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number): void {
+function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number, audience: boolean): void {
   const b = brainOf(h);
   if (stepHippieAirborne(world, h, dt)) return;
   if (b.faction !== h.faction) convert(world, h, b);
@@ -296,7 +298,13 @@ function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number): voi
   if (fightBoss(world, sys, h, b, dt)) return;
   const f = h.faction;
   if (f === NEUTRAL) {
-    // Neutrals wander between sound camps and spawns; they never fight.
+    // The audience uses normal movement; recruitment, KO and boss combat take priority.
+    if (audience && watchEffigy(world, sys, h, b)) {
+      locomote(world, sys, h, b, dt);
+      faceEffigy(world, h, b);
+      return;
+    }
+    // Outside the final Burn, neutrals wander between sound camps and spawns.
     if (b.task !== 'wander') {
       beginTask(world, h, b, 'wander');
       pickWanderSpot(world, h, b);

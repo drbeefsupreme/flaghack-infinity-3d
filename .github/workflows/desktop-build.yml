@@ -30,7 +30,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/iteration' &&
-       github.event.head_commit.message == 'Add Windows launcher [desktop-build:0.1.1-iteration.1:20261011]')
+       github.event.head_commit.message == 'Preserve Windows source hashes [desktop-build:0.1.1-iteration.1:20261011-retry1]')
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:

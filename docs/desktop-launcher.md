@@ -140,7 +140,7 @@ To create the first installer without changing the default branch, the workflow
 also listens for pushes to `iteration`. Its Windows job runs on a push only when
 the head commit message equals this exact approved marker:
 
-`Add Windows launcher [desktop-build:0.1.1-iteration.1:20261011]`
+`Preserve Windows source hashes [desktop-build:0.1.1-iteration.1:20261011-retry1]`
 
 That route checks out the event's immutable commit SHA and fixes the channel to
 `iteration` and version to `0.1.1-iteration.1`. It does not consume manual inputs,

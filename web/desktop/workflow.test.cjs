@@ -7,7 +7,7 @@ const { runInNewContext } = require('node:vm');
 const yaml = require('js-yaml');
 const workflow = yaml.load(readFileSync(join(__dirname, '../../.github/workflows/desktop-build.yml'), 'utf8'));
 const job = workflow.jobs.windows;
-const marker = 'Add Windows launcher [desktop-build:0.1.1-iteration.1:20261011]';
+const marker = 'Preserve Windows source hashes [desktop-build:0.1.1-iteration.1:20261011-retry1]';
 test('initial push build is restricted to the exact authorized iteration marker', () => {
   assert.deepEqual(workflow.on.push.branches, ['iteration']);
   assert.equal(job.if.replace(/\s+/g, ' ').trim(), `github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/iteration' && github.event.head_commit.message == '${marker}')`);

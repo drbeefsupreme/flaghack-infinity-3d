@@ -1,4 +1,4 @@
-/** Read-only eye charge, aimed original pupil, instantaneous beam and 5 m impact flash. */
+/** Read-only eye charge, aimed original pupil, live sweeping beam and 5 m contact explosion. */
 import * as THREE from 'three';
 import type { BossState } from '../../../../sim/boss';
 import { BOSS_EYE_TIMING, BOSS_EYE_BLAST_RADIUS, BOSS_EYE_MAX_RANGE } from '../../../../sim/boss';
@@ -92,8 +92,8 @@ export class BossEyeBeamFx {
         vNormal=normalize(normalMatrix*normal);vView=normalize(-p.xyz);vWorldY=(modelMatrix*vec4(position,1.0)).y;gl_Position=projectionMatrix*p;}`,
       fragmentShader: `uniform float uShotAge;varying vec3 vNormal;varying vec3 vView;varying float vWorldY;void main(){
         if(vWorldY<.025)discard;float edge=pow(1.0-abs(dot(normalize(vNormal),normalize(vView))),3.0);
-        float fade=1.0-clamp(uShotAge/${BOSS_EYE_TIMING.beam.toFixed(1)},0.0,1.0);
-        float a=(.04+edge*.6)*fade*fade;gl_FragColor=vec4(vec3(1.0),a);\n#include <colorspace_fragment>}`,
+        float pulse=.78+.22*sin(uShotAge*31.0);
+        float a=(.04+edge*.6)*pulse;gl_FragColor=vec4(vec3(1.0),a);\n#include <colorspace_fragment>}`,
     })), 'boss-eye-impact-explosion'); this.impact.scale.setScalar(BOSS_EYE_BLAST_RADIUS); this.impact.renderOrder = 10;
     // Crossed tapered rays turn the spherical edge into an explosive impact,
     // while their exact outer bound stays inside the authoritative 5 m radius.
@@ -116,8 +116,8 @@ export class BossEyeBeamFx {
       uniforms: { uShotAge: this.shotAge },
       vertexShader: `uniform float uShotAge;varying float vRadius;void main(){vRadius=length(position);
         gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-      fragmentShader: `uniform float uShotAge;varying float vRadius;void main(){float fade=1.0-clamp(uShotAge/${BOSS_EYE_TIMING.beam.toFixed(1)},0.0,1.0);
-        float a=(1.0-vRadius*.5)*fade*fade;gl_FragColor=vec4(vec3(1.0),a);\n#include <colorspace_fragment>}`,
+      fragmentShader: `uniform float uShotAge;varying float vRadius;void main(){float pulse=.74+.26*sin(uShotAge*43.0+vRadius*6.0);
+        float a=(1.0-vRadius*.5)*pulse;gl_FragColor=vec4(vec3(1.0),a);\n#include <colorspace_fragment>}`,
     })), 'boss-eye-impact-rays'); this.impactRays.scale.setScalar(BOSS_EYE_BLAST_RADIUS); this.impactRays.renderOrder = 11;
     this.group.visible = false; this.beam.visible = false; this.impact.visible = false; this.impactRays.visible = false;
   }
@@ -125,11 +125,15 @@ export class BossEyeBeamFx {
   /** Called after the ordinary combat pose and model world placement, before any eye FX. */
   aim(boss: BossState | null | undefined, now: number): void {
     const eye = boss?.eye;
-    if (!boss || boss.hp <= 0 || boss.deathAt !== null || !eye || eye.chargeAt === null || !eye.target) return;
+    if (!boss || boss.hp <= 0 || boss.deathAt !== null || !eye || eye.chargeAt === null || !eye.target || now < eye.chargeAt) return;
+    // A delayed expiry snapshot must not keep the eye glowing or aimed after five seconds.
+    if (eye.firedAt !== null && now >= eye.firedAt + BOSS_EYE_TIMING.beam) return;
     this.head.getWorldPosition(this.headPosition); this.head.getWorldQuaternion(this.headRotation);
-    const fired = eye.firedAt !== null && now >= eye.firedAt && now < eye.firedAt + BOSS_EYE_TIMING.beam;
+    const fired = eye.firedAt !== null && now >= eye.firedAt;
     const blend = fired ? 1 : smooth(0, BOSS_EYE_TIMING.charge, now - eye.chargeAt);
-    const pose = solveBossEyeAim(this.headPosition, this.headRotation.toArray(), eye.target, blend);
+    // Aim through the exact displayed first contact. Independent host-pose/wire rounding
+    // and mirror interpolation must never detach the live beam from the original pupil.
+    const pose = solveBossEyeAim(this.headPosition, this.headRotation.toArray(), fired && eye.impact ? eye.impact : eye.target, blend);
     this.headRotation.fromArray(pose.headQuaternion);
     this.head.parent!.getWorldQuaternion(this.parentRotation).invert();
     this.head.quaternion.copy(this.parentRotation.multiply(this.headRotation)).normalize();
@@ -143,19 +147,22 @@ export class BossEyeBeamFx {
     const eye = boss?.eye;
     const age = eye?.firedAt === null || eye?.firedAt === undefined ? -1 : now - eye.firedAt;
     const fired = alive && age >= 0 && age < BOSS_EYE_TIMING.beam && !!eye?.origin && !!eye?.direction;
-    this.power.value = fired ? 1 : alive && eye?.chargeAt !== null && eye?.chargeAt !== undefined
-      ? smooth(0, BOSS_EYE_TIMING.charge, now - eye.chargeAt) : 0;
+    const charging = alive && eye?.chargeAt !== null && eye?.chargeAt !== undefined && age < 0;
+    this.power.value = fired ? 1 : charging ? smooth(0, BOSS_EYE_TIMING.charge, now - eye.chargeAt!) : 0;
     this.group.visible = alive && this.model.visible;
     this.beam.visible = fired; this.impact.visible = fired && !!eye?.impact; this.impactRays.visible = this.impact.visible;
-    readBossEyeGaze(this.head, this.origin, this.direction);
-    this.halo.position.copy(this.group.worldToLocal(this.origin));
+    // Reuse the vectors/meshes for every frame. The renderer follows authoritative
+    // live contact facts and never raycasts, advances the sweep or applies damage.
+    this.head.updateWorldMatrix(true, false);
+    this.origin.set(BOSS_EYE_HEAD_LOCAL_ORIGIN.x, BOSS_EYE_HEAD_LOCAL_ORIGIN.y, BOSS_EYE_HEAD_LOCAL_ORIGIN.z).applyMatrix4(this.head.matrixWorld);
+    this.direction.set(BOSS_EYE_HEAD_LOCAL_FORWARD.x, BOSS_EYE_HEAD_LOCAL_FORWARD.y, BOSS_EYE_HEAD_LOCAL_FORWARD.z).transformDirection(this.head.matrixWorld);
+    this.halo.position.copy(this.origin); this.group.worldToLocal(this.halo.position);
     if (!fired || !eye?.origin || !eye.direction) return;
-    // Host samples one ray at firing. The complete segment appears on its first frame;
-    // it is neither a moving projectile nor a growing/retracting beam.
-    this.origin.set(eye.origin.x, eye.origin.y, eye.origin.z); this.group.worldToLocal(this.origin);
+    // The whole white segment appears immediately, then follows the real head and
+    // current host impact throughout the sweep. Old impacts have no retained FX.
     if (eye.impact) this.end.set(eye.impact.x, eye.impact.y, eye.impact.z);
-    else this.end.set(eye.origin.x + eye.direction.x * BOSS_EYE_MAX_RANGE, eye.origin.y + eye.direction.y * BOSS_EYE_MAX_RANGE, eye.origin.z + eye.direction.z * BOSS_EYE_MAX_RANGE);
-    this.group.worldToLocal(this.end);
+    else this.end.copy(this.origin).addScaledVector(this.direction, BOSS_EYE_MAX_RANGE);
+    this.group.worldToLocal(this.origin); this.group.worldToLocal(this.end);
     this.direction.copy(this.end).sub(this.origin);
     const length = this.direction.length();
     this.beam.position.copy(this.origin); this.beam.quaternion.setFromUnitVectors(Z, this.direction.normalize());

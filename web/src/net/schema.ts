@@ -1347,7 +1347,7 @@ function eyeVectorFromWire(v: Wire): V3 | null {
 }
 function eyeWire(e: BossEyeState): Wire {
   return [quant(e.nextFireAt, MS), e.chargeAt === null ? null : quant(e.chargeAt, MS),
-    e.firedAt === null ? null : quant(e.firedAt, MS), eyeVector(e.target), eyeVector(e.origin), eyeVector(e.direction), eyeVector(e.impact)];
+    e.firedAt === null ? null : quant(e.firedAt, MS), eyeVector(e.target), eyeVector(e.origin), eyeVector(e.direction), eyeVector(e.impact), e.impactTag, e.route.map(eyeVector), e.sample, [...e.damaged], [...e.knockedFlags]];
 }
 
 /** Boss row is durable world state, never reconstructed from animation events. */
@@ -1360,17 +1360,20 @@ function bossWire(b: BossState | null): Wire {
     b.deathAt === null ? null : quant(b.deathAt, MS),
     b.barrier ? [b.barrier.edge, b.barrier.faction, quant(b.barrier.x, CM), quant(b.barrier.z, CM), quant(b.barrier.at, MS)] : null,
     quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched, eyeWire(b.eye),
-    b.objectiveAltarId, quant(b.routeStartStride, CM), quant(b.nextSceneryStompStride, CM), quant(b.opportunisticAfter, MS)];
+    b.objectiveAltarId, quant(b.routeStartStride, CM), quant(b.nextSceneryStompStride, CM), quant(b.opportunisticAfter, MS),
+    b.lightning.map(l => [l.kind, l.id, l.faction, eyeVector(l.from), eyeVector(l.to)])];
 }
 
 export function bossFromWire(v: Wire): BossState | null {
-  if (!Array.isArray(v) || v.length < 26 || !oneOf(v[7], BOSS_ACTIONS)) return null;
+  if (!Array.isArray(v) || v.length < 27 || !oneOf(v[7], BOSS_ACTIONS)) return null;
   const target = list(v[11]);
   const barrier = list(v[17]);
   const held = list(v[19]);
   const eye = list(v[21]);
-  if (eye.length !== 7) return null;
+  if (eye.length !== 12) return null;
   return {
+    lightning: list(v[26]).flatMap(value => { const a = list(value), from = eyeVectorFromWire(a[3]), to = eyeVectorFromWire(a[4]);
+      return (a[0] === 'ward' || a[0] === 'crystal') && from && to ? [{ kind: a[0], id: int(a[1], -1), faction: faction(a[2]), from, to }] : []; }),
     id: int(v[0], -1), pos: { x: dequant(v[1], CM), z: dequant(v[2], CM) }, yaw: dequant(v[3], MRAD),
     hp: dequant(v[4], TENTH), maxHp: dequant(v[5], TENTH), spawnedAt: dequant(v[6], MS), action: v[7],
     actionAt: dequant(v[8], MS), actionSeq: int(v[9], 0), hitSeq: int(v[10], 0),
@@ -1387,7 +1390,9 @@ export function bossFromWire(v: Wire): BossState | null {
       x: dequant(held[3], CM), z: dequant(held[4], CM) } : null,
     eye: { nextFireAt: dequant(eye[0], MS), chargeAt: eye[1] === null ? null : dequant(eye[1], MS),
       firedAt: eye[2] === null ? null : dequant(eye[2], MS), target: eyeVectorFromWire(eye[3]),
-      origin: eyeVectorFromWire(eye[4]), direction: eyeVectorFromWire(eye[5]), impact: eyeVectorFromWire(eye[6]) },
+      origin: eyeVectorFromWire(eye[4]), direction: eyeVectorFromWire(eye[5]), impact: eyeVectorFromWire(eye[6]), impactTag: eye[7] === null ? null : int(eye[7], 0),
+      route: list(eye[8]).map(eyeVectorFromWire).filter((p): p is V3 => p !== null), sample: int(eye[9], -1),
+      damaged: ints(eye[10]), knockedFlags: ints(eye[11]) },
   };
 }
 

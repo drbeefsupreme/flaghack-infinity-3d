@@ -1,7 +1,8 @@
 import { footprintDistance, makeIsBlockedAt } from '../map/mapgen';
 import type { Obstacle } from '../map/mapgen';
 import { distToSegment } from '../math';
-import type { V2 } from '../math';
+import type { V2, V3 } from '../math';
+import { sweptBodyDistanceSquared } from './boss/blastGeometry';
 import type { World } from '../world';
 
 const applied = new WeakMap<World, Set<number>>();
@@ -96,6 +97,32 @@ export function crushScenery(
   if (count > 0) {
     syncScenery(world);
     world.emit({ t: 'sceneryCrushed', pos: { x: to.x, z: to.z }, count });
+  }
+  return count;
+}
+
+/** Beam impact sphere/capsule only: every static gameplay prop in the blast may shatter.
+ * Ray-surface continuity is decided by the caller; never bridge an occlusion jump here. */
+export function destroySceneryBlast(world: World, at: V3, radius: number, from: V3 | null = null): number {
+  if (![at.x, at.y, at.z, radius, ...(from ? [from.x, from.y, from.z] : [])].every(Number.isFinite) || radius < 0) return 0;
+  const first = from ?? at, radius2 = radius * radius;
+  let count = 0;
+  for (const obstacle of world.map.obstacles) {
+    if (obstacle.kind === 'effigy' || world.destroyedScenery.has(obstacle.id)) continue;
+    const r = obstacle.shape === 'circle' ? obstacle.radius : Math.hypot(obstacle.hx, obstacle.hz);
+    if (obstacle.x + r + radius < Math.min(first.x, at.x) || obstacle.x - r - radius > Math.max(first.x, at.x) ||
+        obstacle.z + r + radius < Math.min(first.z, at.z) || obstacle.z - r - radius > Math.max(first.z, at.z) ||
+        obstacle.height + radius < Math.min(first.y, at.y) || -radius > Math.max(first.y, at.y)) continue;
+    const distance = sweptBodyDistanceSquared(from, at, (x, y, z) => {
+      const dxz = footprintDistance(obstacle, x, z), dy = Math.max(-y, 0, y - obstacle.height);
+      return dxz * dxz + dy * dy;
+    });
+    if (distance > radius2 + 1e-9) continue;
+    world.destroyedScenery.add(obstacle.id); count++;
+  }
+  if (count > 0) {
+    syncScenery(world);
+    world.emit({ t: 'sceneryCrushed', pos: { x: at.x, z: at.z }, count });
   }
   return count;
 }

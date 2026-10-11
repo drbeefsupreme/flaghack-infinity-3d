@@ -1,7 +1,8 @@
 /** Original procedural boss voices; no downloaded samples or third-party audio assets. */
 import { noise, tone } from './synth';
+import { BOSS_EYE_TIMING } from '../sim/boss';
 export type BossCue = 'emerge' | 'death' | 'step' | 'stomp' | 'charge' | 'beam' | 'impact' | 'crush';
-export const BOSS_CUE_DURATION: Record<BossCue, number> = { emerge: 4.3, death: 6.2, step: 1.25, stomp: 1.8, charge: 3, beam: .5, impact: 1.8, crush: 1.3 };
+export const BOSS_CUE_DURATION: Record<BossCue, number> = { emerge: 4.3, death: 6.2, step: 1.25, stomp: 1.8, charge: BOSS_EYE_TIMING.charge, beam: BOSS_EYE_TIMING.beam, impact: 1.8, crush: 1.3 };
 
 /** Schedule into a caller-owned, cancellable SFX voice. Supports OfflineAudioContext for QA. */
 export function synthBoss(ctx: BaseAudioContext, out: AudioNode, pink: AudioBuffer, white: AudioBuffer,
@@ -75,11 +76,20 @@ export function synthBoss(ctx: BaseAudioContext, out: AudioNode, pink: AudioBuff
     noise(ctx, out, t, { buf: pink, filter: 'bandpass', f: 160 * 8 ** progress, f2: 1280,
       sweep: remaining, q: 2, env: { a: Math.max(.002, remaining - .025), d: Math.min(.025, remaining - .002), peak: .2 } });
   } else {
-    const remaining = Math.max(.02, .5 - age);
-    tone(ctx, out, t, { type: 'sawtooth', f: 1150, f2: 85, glide: remaining,
-      env: { a: .003, d: remaining - .003, peak: .13 } });
-    tone(ctx, out, t, { f: 120, f2: 58, glide: remaining, env: { a: .005, d: remaining - .005, peak: .40, curve: 'linear' } });
-    noise(ctx, out, t, { buf: white, filter: 'bandpass', f: 2400, f2: 220, sweep: remaining, q: .65,
-      env: { a: .003, h: remaining * .35, d: remaining * .65 - .003, peak: .26 } });
+    const duration = BOSS_EYE_TIMING.beam, remaining = Math.max(.02, duration - age);
+    const progress = Math.min(1, age / duration), attack = Math.min(.015, remaining * .2);
+    const release = Math.min(.12, remaining * .2), hold = Math.max(0, remaining - attack - release);
+    // One sustained beam graph for the entire sweep, not one blast per sim tick.
+    // A bass engine and restrained electrical rasp hold their body until switch-off.
+    tone(ctx, out, t, { type: 'sawtooth', f: 330 * (230 / 330) ** progress, f2: 230,
+      glide: remaining, vib: 12, vibRate: 16,
+      env: { a: attack, h: hold, d: release, peak: .10, curve: 'linear' } });
+    tone(ctx, out, t, { f: 94 * (70 / 94) ** progress, f2: 70, glide: remaining,
+      env: { a: attack, h: hold, d: release, peak: .30, curve: 'linear' } });
+    noise(ctx, out, t, { buf: white, filter: 'bandpass', f: 1500, f2: 700,
+      sweep: remaining, q: .65, env: { a: attack, h: hold, d: release, peak: .10, curve: 'linear' } });
+    // Startup crack is omitted when joining/resuming a beam that is already firing.
+    if (age < .15) noise(ctx, out, t, { buf: white, filter: 'bandpass', f: 2400, f2: 220,
+      sweep: .25, q: .65, env: { a: .003, d: Math.min(.25, remaining - .003), peak: .20 } });
   }
 }

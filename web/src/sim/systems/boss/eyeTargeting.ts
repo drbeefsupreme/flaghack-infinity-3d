@@ -4,10 +4,17 @@ import type { BossState } from '../../boss';
 import { BOSS_GAMEPLAY_SCALE } from '../../bossDimensions';
 import { AVATAR, BUILDINGS, BUILDING_HEIGHT, HIPPIE, LEVEL_HEIGHT } from '../../constants';
 import type { V3 } from '../../math';
+import { footprintDistance } from '../../map/mapgen';
 import type { World } from '../../world';
 import { pieceBottom } from '../econ/pieceGeometry';
 import { piecePosition } from '../pieces';
 import { pieceClosest } from '../units/reach';
+import { activeBossCrystals } from './lightning';
+import { sampleBossHeadPose } from './hitRegions';
+import { solveBossEyeAim } from '../../bossEyeRig';
+import type { BossEyeQuaternion } from '../../bossEyeRig';
+import { crystalDimensions } from '../../crystalGeometry';
+import { bossSceneryBrightness } from './sceneryBrightness';
 import { BOSS_FLAG_THREAT_SECONDS, recentBossFlagThreats } from './eyeThreats';
 
 /** Keep the entire five-meter blast beyond the giant's footprint, plus a half-meter margin. */
@@ -28,9 +35,8 @@ function bodyInside(at: V3, x: number, z: number, y: number, top: number, radius
 /** Deterministic utility: each actual blast victim +2, each live non-altar building +7,
  * each build piece +4, and each recent Flag attacker +12 fading to +6 over 12s.
  * A lone ordinary unit (or a pair) is never enough to spend the weapon. */
-export function chooseBossEyeTarget(world: World, boss: BossState): V3 | null {
-  const retry = world.scratch.bossEyeRetry as { bossId: number; at: number } | undefined;
-  if (retry?.bossId === boss.id && world.time < retry.at) return null;
+interface RatedTarget { at: V3; score: number; distance: number; brightness: number; }
+function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
   const threats = recentBossFlagThreats(world), units: Unit[] = [], candidates: V3[] = [];
   const farEnough = (x: number, z: number) => Math.hypot(x - boss.pos.x, z - boss.pos.z) >= BOSS_EYE_MIN_TARGET_DISTANCE;
   const unit = (id: number, x: number, z: number, y: number, height: number, radius: number, threat = 0) => {
@@ -61,12 +67,21 @@ export function chooseBossEyeTarget(world: World, boss: BossState): V3 | null {
   for (const b of buildings) candidates.push({ x: b.pos.x, y: BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z });
   const pieces = [...world.pieces.values()].filter(p => p.hp > 0);
   for (const p of pieces) { const at = piecePosition(world, p); if (at) candidates.push({ ...at }); }
-  let best: V3 | null = null, bestScore = -Infinity, bestDistance = Infinity;
+  const crystalAims = activeBossCrystals(world, boss).map(c => ({ x: c.pos.x, y: crystalDimensions(c).height * .6, z: c.pos.z }));
+  candidates.push(...crystalAims);
+  const bright = world.map.obstacles.filter(o => !world.destroyedScenery.has(o.id) && bossSceneryBrightness(o) > 0);
+  for (const o of bright) candidates.push({ x: o.x, y: o.height / 2, z: o.z });
+  const ranked: RatedTarget[] = [];
   const reach = { x: 0, z: 0, dist: 0 };
   for (const at of candidates) {
     const distance = Math.hypot(at.x - boss.pos.x, at.z - boss.pos.z);
     // Scale the pupil envelope with the giant (38.4 m at 32 m tall), never the 240 m ray limit.
-    if (!farEnough(at.x, at.z) || Math.hypot(distance, at.y) > BOSS_EYE_MAX_RANGE - ORIGIN_ENVELOPE) continue;
+    const crystal = crystalAims.includes(at);
+    // Crystal retaliation uses the exact future-idle pupil range, avoiding the ordinary
+    // conservative origin envelope that would unnecessarily exclude a distant giant.
+    if (crystal) {
+      if (crystalAimDistance(boss, at) > BOSS_EYE_MAX_RANGE) continue;
+    } else if (!farEnough(at.x, at.z) || Math.hypot(distance, at.y) > BOSS_EYE_MAX_RANGE - ORIGIN_ENVELOPE) continue;
     let count = 0, aggression = 0, structure = 0;
     for (const u of units) if (bodyInside(at, u.x, u.z, u.y, u.y + u.height, u.radius)) { count++; aggression += u.threat; }
     for (const b of buildings) if (bodyInside(at, b.pos.x, b.pos.z, 0, BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius)) structure += 7;
@@ -75,14 +90,53 @@ export function chooseBossEyeTarget(world: World, boss: BossState): V3 | null {
       const dy = Math.max(pieceBottom(p.kind, p.level) - at.y, 0, at.y - (p.level + 1) * LEVEL_HEIGHT);
       if (reach.dist ** 2 + dy ** 2 <= radius2 + 1e-9) structure += 4;
     }
-    if (count < BOSS_EYE_MIN_GROUP && !aggression && !structure) continue;
-    const score = 2 * count + aggression + structure;
-    if (score > bestScore || score === bestScore && (distance < bestDistance || distance === bestDistance &&
-        (!best || at.x < best.x || at.x === best.x && (at.z < best.z || at.z === best.z && at.y < best.y)))) {
-      best = at; bestScore = score; bestDistance = distance;
+    let brightness = crystal ? 4 : 0;
+    for (const o of bright) {
+      const horizontal = footprintDistance(o, at.x, at.z), vertical = Math.max(-at.y, 0, at.y - o.height);
+      if (horizontal ** 2 + vertical ** 2 <= radius2 + 1e-9) brightness = Math.max(brightness, bossSceneryBrightness(o));
     }
+    if (count < BOSS_EYE_MIN_GROUP && !aggression && !structure && !brightness) continue;
+    const score = 2 * count + aggression + structure;
+    ranked.push({ at, score, distance, brightness });
   }
+  return ranked.sort((a, b) => b.brightness - a.brightness || b.score - a.score || a.distance - b.distance ||
+    a.at.x - b.at.x || a.at.z - b.at.z || a.at.y - b.at.y);
+}
+
+/** Rainbow installations outrank other bright scenery, then ordinary crowd/structure utility. */
+export function chooseBossEyeTarget(world: World, boss: BossState): V3 | null {
+  const retry = world.scratch.bossEyeRetry as { bossId: number; at: number } | undefined;
+  if (retry?.bossId === boss.id && world.time < retry.at) return null;
+  const best = rankedBossEyeTargets(world, boss)[0]?.at ?? null;
   if (!best) world.scratch.bossEyeRetry = { bossId: boss.id, at: world.time + RETRY_SECONDS };
   else delete world.scratch.bossEyeRetry;
   return best ? { ...best } : null;
+}
+
+/** Up to five distinct useful blast centers make a finite, deterministic five-second sweep.
+ * Nearby candidate duplicates never waste the route on the same crowd/installation. */
+export function planBossEyeSweep(world: World, boss: BossState, first: V3): V3[] {
+  const route = [{ ...first }], candidates = rankedBossEyeTargets(world, boss);
+  while (route.length < 5) {
+    const last = route[route.length - 1];
+    const remaining = candidates.filter(c => route.every(p => Math.hypot(c.at.x - p.x, c.at.y - p.y, c.at.z - p.z) >= BOSS_EYE_BLAST_RADIUS * 1.6));
+    remaining.sort((a, b) => b.brightness - a.brightness ||
+      (b.score / (1 + Math.hypot(b.at.x - last.x, b.at.y - last.y, b.at.z - last.z) / 40)) -
+      (a.score / (1 + Math.hypot(a.at.x - last.x, a.at.y - last.y, a.at.z - last.z) / 40)) ||
+      Math.hypot(a.at.x - last.x, a.at.y - last.y, a.at.z - last.z) - Math.hypot(b.at.x - last.x, b.at.y - last.y, b.at.z - last.z) ||
+      a.at.x - b.at.x || a.at.z - b.at.z || a.at.y - b.at.y);
+    if (!remaining.length) break;
+    route.push({ ...remaining[0].at });
+  }
+  return route;
+}
+
+function crystalAimDistance(boss: BossState, target: V3): number {
+  const head = sampleBossHeadPose({ ...boss, action: 'idle', actionAt: boss.spawnedAt }, boss.spawnedAt);
+  const c = Math.cos(boss.yaw), s = Math.sin(boss.yaw), sy = Math.sin(boss.yaw / 2), cy = Math.cos(boss.yaw / 2), q = head.quaternion;
+  const position = { x: boss.pos.x + c * head.position.x + s * head.position.z, y: head.position.y,
+    z: boss.pos.z - s * head.position.x + c * head.position.z };
+  const rotation: BossEyeQuaternion = [cy * q[0] + sy * q[2], cy * q[1] + sy * q[3], cy * q[2] - sy * q[0], cy * q[3] - sy * q[1]];
+  const ray = solveBossEyeAim(position, rotation, target);
+  return Math.hypot(target.x - ray.origin.x, target.y - ray.origin.y, target.z - ray.origin.z);
 }

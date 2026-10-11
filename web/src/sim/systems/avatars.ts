@@ -5,6 +5,7 @@
  * Player and AI avatars are identical; both are driven only by these commands.
  * Owner: Units agent.
  */
+import { damageMelee, emitMeleeImpact } from './meleeImpact';
 import { BOSS_RADIUS } from '../boss';
 import { AVATAR, BUILDINGS, GCC, HIPPIE, MAP_HALF } from '../constants';
 import type { CommandOf } from '../commands';
@@ -17,7 +18,7 @@ import type { Avatar, AvatarAction, AvatarInput, FactionId, Flag, Pile } from '.
 import type { World } from '../world';
 import { isFlagProtected } from './abilities';
 import { observeBossFlagThrow } from './boss/eyeThreats';
-import { damageEntity, knockback } from './combat';
+import { knockback } from './combat';
 import { bossPlayerHull } from './boss/playerCollision';
 import { hasEffect, pruneEffects, speedMultiplier } from './effects';
 import { canPlantAt, plantFlag, pullFlag, takeFromStock, defendedPullRate } from './flags';
@@ -446,18 +447,18 @@ function resolveSwing(world: World, av: Avatar): void {
   const boss = world.boss;
   if (boss && boss.hp > 0 && ay < (boss.crouched ? 12 : 20) &&
       inCone(ax, az, fx, fz, cosHalf, boss.pos.x, boss.pos.z, reach + BOSS_RADIUS)) {
-    damageEntity(world, boss.id, AVATAR.swingDamage, av.id);
+    damageMelee(world, boss.id, AVATAR.swingDamage, av.id);
   }
   for (const o of world.avatars.values()) {
     if (o.faction === av.faction || o.koUntil > 0 || Math.abs(o.pos.y - ay) > UNIT_VERTICAL_REACH) continue;
     if (!inCone(ax, az, fx, fz, cosHalf, o.pos.x, o.pos.z, reach + AVATAR.radius)) continue;
-    if (damageEntity(world, o.id, AVATAR.swingDamage, av.id)) knockback(world, o.id, av.pos, AVATAR.swingKnockback);
+    if (damageMelee(world, o.id, AVATAR.swingDamage, av.id)) knockback(world, o.id, av.pos, AVATAR.swingKnockback);
   }
   if (ay < UNIT_VERTICAL_REACH) {
     for (const h of world.hippies.values()) {
       if (h.faction === av.faction || h.faction === NEUTRAL || h.status === 'ko') continue;
       if (!inCone(ax, az, fx, fz, cosHalf, h.pos.x, h.pos.z, reach + HIPPIE.radius)) continue;
-      if (damageEntity(world, h.id, AVATAR.swingDamage, av.id)) knockback(world, h.id, av.pos, AVATAR.swingKnockback);
+      if (damageMelee(world, h.id, AVATAR.swingDamage, av.id)) knockback(world, h.id, av.pos, AVATAR.swingKnockback);
     }
   }
 
@@ -498,7 +499,7 @@ function resolveSwing(world: World, av: Avatar): void {
       bestD = reachPt.dist;
     }
   }
-  if (target >= 0) damageEntity(world, target, AVATAR.swingPieceDamage, av.id);
+  if (target >= 0) damageMelee(world, target, AVATAR.swingPieceDamage, av.id);
 
   if (ay >= UNIT_VERTICAL_REACH) return;
   let pile: Pile | null = null;
@@ -514,6 +515,7 @@ function resolveSwing(world: World, av: Avatar): void {
   const amount = Math.min(AVATAR.swingLumber, pile.lumber);
   pile.lumber -= amount;
   world.factions[av.faction].lumber += amount;
+  emitMeleeImpact(world, pile.id, av.id);
   world.emit({ t: 'harvest', pileId: pile.id, by: av.id, amount, pos: { x: pile.pos.x, z: pile.pos.z } });
 }
 

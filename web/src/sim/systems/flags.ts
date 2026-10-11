@@ -28,6 +28,13 @@ const nearScratch: number[] = [];
 
 type Carrier = Avatar | Hippie;
 
+/** Shared Ward eligibility for ordinary pulls and the giant's Flag attacks. */
+export function wardProtectsFlag(ward: Building, flag: Flag): boolean {
+  return flag.state === 'planted' && flag.owner !== NEUTRAL && ward.kind === 'ward' &&
+    ward.faction === flag.owner && ward.built >= 1 && !ward.disabled &&
+    (ward.pos.x - flag.pos.x) ** 2 + (ward.pos.z - flag.pos.z) ** 2 <= WARD_FLAG_RADIUS ** 2;
+}
+
 /** Pure query shared by pulling and AI planning; reading protection never emits lightning. */
 export function flagPullDefender(world: World, fl: Flag, puller: FactionId): Building | Crystal | null {
   if (fl.state !== 'planted' || fl.owner === NEUTRAL || fl.owner === puller) return null;
@@ -36,8 +43,7 @@ export function flagPullDefender(world: World, fl: Flag, puller: FactionId): Bui
       (c.pentacle.includes(fl.node) || (fl.altNode >= 0 && c.pentacle.includes(fl.altNode)))) return c;
   }
   for (const w of world.buildings.values()) {
-    if (w.kind === 'ward' && w.faction === fl.owner && w.built >= 1 && !w.disabled &&
-      (w.pos.x - fl.pos.x) ** 2 + (w.pos.z - fl.pos.z) ** 2 <= WARD_FLAG_RADIUS ** 2) return w;
+    if (wardProtectsFlag(w, fl)) return w;
   }
   return null;
 }

@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { bossFixture } from '../../tests/bossFixture';
 import { BossAudio, BossAudioTracker } from './boss';
+import { BOSS_EYE_TIMING } from '../sim/boss';
 import type { AudioEngine } from './engine';
 function harness() {
-  const sink = { play: vi.fn(), cancel: vi.fn() }, tracker = new BossAudioTracker(sink), b = bossFixture();
+  const sink = { play: vi.fn(), cancel: vi.fn(), stopBeam: vi.fn(), updateBeam: vi.fn() }, tracker = new BossAudioTracker(sink), b = bossFixture();
   b.spawnedAt = 100; b.actionAt = 100; b.action = 'idle'; b.stride = 0;
   return { sink, tracker, b };
 }
@@ -38,7 +39,9 @@ describe('boss shared-view audio lifecycle', () => {
     b.eye.firedAt = 100.1; tracker.update(b, 100.1);
     expect(sink.play.mock.calls.map(c => c[0])).toEqual(['beam']);
     sink.play.mockClear(); tracker.reset(); b.eye.impact = { x: 40, y: 0, z: 1 };
-    tracker.update(b, 100.2); tracker.update(b, 100.3); expect(sink.play).not.toHaveBeenCalled();
+    tracker.update(b, 100.2); tracker.update(b, 100.3);
+    expect(sink.play.mock.calls.map(c => c[0])).toEqual(['beam']); // Continue active audio, no historical explosion.
+    sink.play.mockClear();
     b.eye.firedAt = 101; tracker.update(b, 110); expect(sink.play).not.toHaveBeenCalled();
   });
   it('cancels every active voice on death and emits a distinct death bellow once', () => {
@@ -70,13 +73,35 @@ describe('boss shared-view audio lifecycle', () => {
     b.action = 'crouchWalk'; tracker.update(b, 100.1); b.stride = 90; tracker.update(b, 110);
     expect(sink.play).not.toHaveBeenCalled();
   });
+  it('uses one sustained beam during live updates and coalesces sweeping impacts', () => {
+    const { sink, tracker, b } = harness(); tracker.update(b, 100);
+    b.eye.firedAt = 100.1; b.eye.impact = { x: 0, y: 0, z: 0 }; tracker.update(b, 100.1);
+    for (let i = 1; i < BOSS_EYE_TIMING.beam * 60; i++) {
+      b.eye.impact = { x: i * 2, y: 0, z: 0 }; tracker.update(b, 100.1 + i / 60);
+    }
+    expect(sink.play.mock.calls.filter(c => c[0] === 'beam')).toHaveLength(1);
+    const impacts = sink.play.mock.calls.filter(c => c[0] === 'impact').length;
+    expect(impacts).toBeGreaterThanOrEqual(Math.floor(BOSS_EYE_TIMING.beam / .6));
+    expect(impacts).toBeLessThanOrEqual(Math.ceil(BOSS_EYE_TIMING.beam / .6));
+    expect(sink.updateBeam).toHaveBeenCalled();
+    b.eye.firedAt = null; tracker.update(b, 100.1 + BOSS_EYE_TIMING.beam);
+    expect(sink.stopBeam).toHaveBeenCalled();
+  });
+  it('late join resumes the remaining beam only, then death stops it immediately', () => {
+    const { sink, tracker, b } = harness(); b.eye.firedAt = 100;
+    b.eye.impact = { x: 9, y: 0, z: 9 }; const age = BOSS_EYE_TIMING.beam / 2;
+    tracker.update(b, 100 + age);
+    expect(sink.play).toHaveBeenCalledExactlyOnceWith('beam', b.pos, age);
+    b.hp = 0; tracker.update(b, 100 + age + .01); expect(sink.stopBeam).toHaveBeenCalled();
+    expect(sink.play.mock.calls.some(c => c[0] === 'impact')).toBe(false);
+  });
   it('routes every recipe through the capped arena-wide boss bus under the existing volume controls', () => {
     const voice = vi.fn(() => null);
     const audio = new BossAudio({ voice, ctx: { currentTime: 0 } } as unknown as AudioEngine);
     for (const cue of ['emerge', 'death', 'step', 'stomp', 'charge', 'beam', 'impact', 'crush'] as const) audio.play(cue, { x: 1, z: 2 });
     expect(voice).toHaveBeenCalledTimes(8);
     for (const [spec] of voice.mock.calls as unknown as [{ bus: string; at: unknown; gain: number; directionalOnly: boolean }][]) {
-      expect(spec.bus).toBe('boss'); expect(spec.at).toEqual({ x: 1, z: 2 }); expect(spec.gain).toBeLessThanOrEqual(1); expect(spec.directionalOnly).toBe(true);
+      expect(spec.bus).toBe('boss'); expect(spec.at).toEqual({ x: 1, z: 2 }); expect(spec.gain).toBeLessThanOrEqual(1.3); expect(spec.directionalOnly).toBe(true);
     }
   });
 });

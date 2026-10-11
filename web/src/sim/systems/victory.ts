@@ -121,6 +121,7 @@ export function updateBossOutcome(world: World): void {
   const winners = lost ? [] : survivors;
   world.bossOutcome = { kind: lost ? 'defeat' : 'victory', winners, at: world.time };
   world.phase = 'ended';
+  if (boss) boss.lightning = [];
   // The encounter has several possible winners; the durable outcome is the authority.
   world.winner = null;
   world.emit({ t: 'bossEnded', kind: world.bossOutcome.kind, winners: [...winners] });

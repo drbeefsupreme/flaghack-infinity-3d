@@ -140,7 +140,7 @@ export class GameAudio {
     if (!w || session.screen === 'title' || session.screen === 'lobby' || session.screen === 'paused') parts.boss.tracker.reset();
     if (w) {
       this.syncWorld(w, parts);
-      if (!title && session.screen !== 'paused') parts.boss.tracker.update(w.boss, w.time);
+      if (!title && session.screen !== 'paused') parts.boss.tracker.update(w.boss, w.time, w.phase === 'playing');
       this.measureTimer -= dt;
       if (this.measureTimer <= 0) {
         this.measureTimer = MEASURE_INTERVAL;

@@ -12,7 +12,8 @@ function encounter() {
   world.time = 100; world.effigyRevealedAt = 100; world.suddenDeath = true;
   const boss = spawnBoss(world)!;
   boss.action = 'idle'; boss.pos = { x: 0, z: 0 }; boss.yaw = 0;
-  world.collision = new CollisionWorld();
+  const template = world.map.obstacles.find(o => o.kind === 'car')!;
+  world.collision = new CollisionWorld(); world.map.obstacles = [];
   world.buildings.clear(); world.pieces.clear(); world.flags.clear(); world.hippies.clear(); world.crystals.clear();
   for (const f of world.factions) { f.hearthIds = []; f.gccId = null; }
   for (const avatar of world.avatars.values()) avatar.pos = { x: 100, y: 0, z: 50 + avatar.faction * 20 };
@@ -23,7 +24,6 @@ function encounter() {
   const ray = bossEyeRay(world, boss);
   const distance = Math.hypot(boss.eye.target!.x - ray.origin.x, boss.eye.target!.y - ray.origin.y, boss.eye.target!.z - ray.origin.z) - 5;
   const first = { x: ray.origin.x + ray.direction.x * distance, z: ray.origin.z + ray.direction.z * distance };
-  const template = world.map.obstacles.find(o => o.kind === 'car')!;
   world.map.obstacles = [
     { ...template, id: 10000, ...first, shape: 'box' as const, hx: .5, hz: .5, height: 8, yaw: 0 },
     { ...template, id: 10001, x: first.x + 3, z: first.z, shape: 'box' as const, hx: .5, hz: .5, height: 8, yaw: 0 },
@@ -34,7 +34,7 @@ function encounter() {
 }
 
 describe('actual eye first-hit scenery integration', () => {
-  it('explodes only the directly occluding prop, preserves adjacent and farther scenery and never removes a nearby altar', () => {
+  it('explodes the direct prop and nearby scenery in the impact sphere, but never removes a nearby altar', () => {
     const { world, boss, ray, first } = encounter();
     const expected = { ...world.collision.raycast(ray.origin.x, ray.origin.y, ray.origin.z,
       ray.direction.x, ray.direction.y, ray.direction.z, 240, boss.id)! };
@@ -45,19 +45,19 @@ describe('actual eye first-hit scenery integration', () => {
     const cast = vi.spyOn(world.collision, 'raycast');
     world.time = 130; updateBossEye(world, boss, SIM_DT);
     expect(boss.eye.impact).toEqual({ x: expected.x, y: expected.y, z: expected.z });
-    expect([...world.destroyedScenery]).toEqual([10000]);
+    expect([...world.destroyedScenery]).toEqual([10000, 10001, 10002]);
     expect(world.buildings.get(altar.id)).toBe(altar); expect(altar.hp).toBe(1);
     const navVersion = world.nav.version;
     for (const time of [130, 130.1, 130.49]) { world.time = time; updateBossEye(world, boss, SIM_DT); }
-    expect(cast).toHaveBeenCalledTimes(1);
-    expect([...world.destroyedScenery]).toEqual([10000]);
+    expect(cast).toHaveBeenCalledTimes(30);
+    expect([...world.destroyedScenery]).toEqual([10000, 10001, 10002]);
     expect(world.nav.version).toBe(navVersion);
-    for (const obstacle of world.map.obstacles.slice(1)) {
-      expect(world.collision.raycast(obstacle.x, 60, obstacle.z, 0, -1, 0, 70)?.tag).toBe(-1 - obstacle.id);
+    for (const obstacle of world.map.obstacles) {
+      expect(world.collision.raycast(obstacle.x, 60, obstacle.z, 0, -1, 0, 70)?.tag).toBe(0);
     }
   });
 
-  it.each(['terrain', 'entity'] as const)('does not delete nearby scenery when the direct hit is %s', (kind) => {
+  it.each(['terrain', 'entity'] as const)('also deletes scenery within the blast when the direct hit is %s', (kind) => {
     const { world, boss, ray, first } = encounter();
     // Keep nearby props but move the occluder out of the ray.
     world.map.obstacles[0].x += 3;
@@ -68,6 +68,6 @@ describe('actual eye first-hit scenery integration', () => {
       ray.direction.x, ray.direction.y, ray.direction.z, 240, boss.id)!;
     expect(expected.tag).toBe(kind === 'terrain' ? 0 : 999999);
     world.time = 130; updateBossEye(world, boss, SIM_DT);
-    expect(world.destroyedScenery.size).toBe(0);
+    expect(world.destroyedScenery.size).toBeGreaterThan(0);
   });
 });

@@ -19,10 +19,12 @@ import type { RenderContext, RenderModule } from '../context';
 import { ATLAS_RECTS, type AtlasKey } from './atlas';
 import { Billboards } from './billboards';
 import { Bolts } from './bolts';
+import { BossLightningFx } from './bossLightningFx';
 import { Bursts } from './bursts';
 import { ColumnStyle, Columns } from './columns';
 import { Domes } from './domes';
 import { Fireworks } from './fireworks';
+import { ImpactFireworks } from '../env/burn/boss/impactFx';
 import type { SharedUniforms } from './glsl';
 import { GroundFx, RingStyle } from './groundFx';
 import * as P from './palette';
@@ -80,10 +82,13 @@ export class VfxRenderer implements RenderModule {
   private readonly walls: ShockWalls;
   private readonly arcs: SwingArcs;
   private readonly bolts: Bolts;
+  private readonly bossLightning = new BossLightningFx(ORDER.bolts);
+  private readonly lightningGroundY = (x: number, z: number): number => this.groundY(x, z);
   private readonly domes: Domes;
   private readonly columns: Columns;
   private readonly boards: Billboards;
   private readonly fireworks: Fireworks;
+  private readonly meleeImpacts: ImpactFireworks;
   private readonly fx: Bursts;
   private readonly factionColors: THREE.Color[] = [];
   private readonly neutral = new THREE.Color(NEUTRAL_COLOR);
@@ -115,6 +120,8 @@ export class VfxRenderer implements RenderModule {
     this.domes = new Domes(12, this.shared, ORDER.domes);
     this.columns = new Columns(64, this.shared, ORDER.columns);
     this.boards = new Billboards(64, this.shared, ctx.renderer, ORDER.boards);
+    this.meleeImpacts = new ImpactFireworks(ctx, true);
+    ctx.scene.add(this.meleeImpacts.group);
     this.fireworks = new Fireworks(this.light, this.rng, ctx.camera, density);
     this.fx = new Bursts(this.light, this.grime, this.ground, this.walls, this.rng, density);
     for (let i = 0; i < BANNERS; i++) {
@@ -128,6 +135,7 @@ export class VfxRenderer implements RenderModule {
       this.grime.mesh,
       this.arcs.mesh,
       this.bolts.mesh,
+      this.bossLightning.group,
       this.light.mesh,
       this.boards.mesh,
     );
@@ -208,6 +216,7 @@ export class VfxRenderer implements RenderModule {
 
   onEvent(e: GameEvent): void {
     this.syncClock();
+    if (e.t === 'meleeImpact') { this.meleeImpacts.onEvent(e); return; }
     const w = this.ctx.world;
     const fx = this.fx;
     switch (e.t) {
@@ -646,7 +655,9 @@ export class VfxRenderer implements RenderModule {
     this.drawBanners(now);
 
     this.bolts.update(now);
+    this.bossLightning.update(w, now, this.lightningGroundY);
     this.fireworks.update(now);
+    this.meleeImpacts.update(now);
 
     this.light.flush();
     this.grime.flush();
@@ -660,12 +671,14 @@ export class VfxRenderer implements RenderModule {
   }
 
   dispose(): void {
+    this.meleeImpacts.dispose();
     this.light.dispose();
     this.grime.dispose();
     this.ground.dispose();
     this.walls.dispose();
     this.arcs.dispose();
     this.bolts.dispose();
+    this.bossLightning.dispose();
     this.domes.dispose();
     this.columns.dispose();
     this.boards.dispose();

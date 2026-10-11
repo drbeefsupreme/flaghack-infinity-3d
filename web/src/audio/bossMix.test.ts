@@ -35,16 +35,20 @@ describe('arena-wide boss mix in the actual audio engine', () => {
     expect(node(e.buses.sfx).connections).toContain(node(e.worldDuck));
     expect(node(e.buses.ambience).connections).toContain(node(e.worldDuck));
     expect(node(e.musicDuck).connections).toContain(node(e.worldDuck));
-    for (const bus of ['boss', 'ui'] as const) expect(node(e.buses[bus]).connections).toContain(node(e.master));
+    expect(node(e.buses.ui).connections).toContain(node(e.master));
+    expect(node(e.buses.boss).connections).toContain(node(e.bossMaster));
+    expect(node(e.bossMaster).connections[0].connections[0]).toBe(node(e.bossCompressor));
+    expect(node(e.bossCompressor).connections).toContain(node(e.limiter));
+    expect(e.bossCompressor.ratio.value).toBe(2); expect(e.bossCompressor.threshold.value).toBe(-8);
     for (const bus of ['sfx', 'ambience', 'music'] as const) expect(node(e.wet[bus]).connections).toContain(node(e.worldWetDuck));
     expect(node(e.master).connections[0].connections[0].connections[0]).toBe(node(e.limiter));
   });
   it('keeps boss dry and wet gain under SFX/master mute and restores exact chosen levels', () => {
     const e = new AudioEngine(), settings = new Session().settings;
     settings.sfxVolume = 0; settings.masterVolume = .23; e.setVolumes(settings, false, 1);
-    expect(e.buses.boss.gain.value).toBe(0); expect(e.wet.boss.gain.value).toBe(0); expect(e.master.gain.value).toBe(.23);
+    expect(e.buses.boss.gain.value).toBe(0); expect(e.wet.boss.gain.value).toBe(0); expect(e.master.gain.value).toBe(.23); expect(e.bossMaster.gain.value).toBe(.23);
     settings.sfxVolume = .41; settings.masterVolume = 0; e.setVolumes(settings, false, 1);
-    expect(e.buses.boss.gain.value).toBe(.41); expect(e.wet.boss.gain.value).toBe(.41); expect(e.master.gain.value).toBe(0);
+    expect(e.buses.boss.gain.value).toBe(.41); expect(e.wet.boss.gain.value).toBe(.41); expect(e.master.gain.value).toBe(0); expect(e.bossMaster.gain.value).toBe(0);
   });
   it('does not duck music for muted boss SFX, including muting during a bellow', () => {
     const e = new AudioEngine(), settings = new Session().settings;
@@ -85,12 +89,12 @@ describe('arena-wide boss mix in the actual audio engine', () => {
   it('schedules unchanged bus volumes only once, while applying every real setting change', () => {
     const e = new AudioEngine(), settings = new Session().settings, ctx = TestAudioContext.last;
     const count = () => ctx.nodes.reduce((n, node) => n + node.gain.events.length + node.frequency.events.length, 0);
-    e.setVolumes(settings, false, 1); const initial = count(); expect(initial).toBe(12);
+    e.setVolumes(settings, false, 1); const initial = count(); expect(initial).toBe(14);
     for (let frame = 0; frame < 600; frame++) { ctx.currentTime = frame / 60; e.setVolumes(settings, false, 1); e.prune(); }
     expect(count()).toBe(initial);
     settings.sfxVolume = .33; e.setVolumes(settings, false, 1); expect(count()).toBe(initial * 2); expect(e.buses.boss.gain.value).toBe(.33);
     settings.quality = 'low'; e.setVolumes(settings, false, 1); expect(e.quality).toBe('low'); expect(count()).toBe(initial * 2);
-    e.setVolumes(settings, true, 1); expect(e.muffle.frequency.value).toBe(700);
+    e.setVolumes(settings, true, 1); expect(e.muffle.frequency.value).toBe(700); expect(e.bossMuffle.frequency.value).toBe(700);
   });
   it('does not token-duck consecutive boss contacts and does not empty the mix after a footfall', () => {
     const e = new AudioEngine(), b = new BossAudio(e);
@@ -111,6 +115,24 @@ describe('arena-wide boss mix in the actual audio engine', () => {
     }
     expect(ctx.nodes.filter(n => n.kind === 'convolver')).toHaveLength(1);
     expect(e.reverb.buffer).toBe(impulse);
+  });
+  it('keeps sustained beam updates allocation-bounded and cancels its route on command', () => {
+    const e = new AudioEngine(), audio = new BossAudio(e), ctx = TestAudioContext.last;
+    audio.play('beam', { x: 10, z: 0 }); const count = ctx.nodes.length;
+    for (let i = 0; i < 120; i++) audio.updateBeam({ x: 10, z: i / 10 }, .1);
+    expect(ctx.nodes.length).toBe(count);
+    const voice = vi.spyOn(e, 'voice'); audio.stopBeam(); audio.updateBeam({ x: 0, z: 10 }, .1);
+    expect(voice).toHaveBeenCalledTimes(1); audio.cancel();
+    expect(e.worldDuck.gain.value).toBe(1);
+  });
+  it('bounds continuous beam rubble to at most three crush groups per second', () => {
+    const e = new AudioEngine(), audio = new BossAudio(e), ctx = TestAudioContext.last;
+    const play = vi.spyOn(audio, 'play'); audio.play('beam', { x: 0, z: 0 });
+    for (let frame = 0; frame < 60; frame++) {
+      ctx.currentTime = frame / 60;
+      audio.sceneryCrushed([{ pos: { x: frame, z: 0 }, count: 100 }]);
+    }
+    expect(play.mock.calls.filter(c => c[0] === 'crush')).toHaveLength(3);
   });
   it('boss recipes activate the mix and reset releases it without altering user gains', () => {
     const e = new AudioEngine(), b = new BossAudio(e), settings = new Session().settings;

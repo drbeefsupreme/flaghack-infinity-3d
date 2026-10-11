@@ -8,6 +8,7 @@
  * act.ts (doing it), move.ts (getting there), targets.ts (what matters).
  * Owner: Units agent.
  */
+import { damageMelee } from './meleeImpact';
 import { BOSS_RADIUS } from '../boss';
 import { AVATAR, BUILDINGS, HIPPIE, HIPPIE_AI, MAP_HALF } from '../constants';
 import type { CommandOf } from '../commands';
@@ -15,7 +16,7 @@ import type { V2 } from '../math';
 import { FACTION_IDS, NEUTRAL } from '../types';
 import type { EntityId, FactionId, Hippie, HippieOrder } from '../types';
 import type { World } from '../world';
-import { damageEntity, knockback } from './combat';
+import { knockback } from './combat';
 import { isDrugActive } from './drugs';
 import { isHoarding, popCap } from './economy';
 import { hasEffect, pruneEffects, speedMultiplier } from './effects';
@@ -413,7 +414,7 @@ function shove(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId)
   if (target < 0) return;
   b.nextShoveAt = world.time + HIPPIE.shoveInterval / Math.max(0.25, speedMultiplier(world, h));
   h.facing = Math.atan2(tx - h.pos.x, tz - h.pos.z);
-  if (damageEntity(world, target, HIPPIE.shoveDamage, h.id)) knockback(world, target, h.pos, HIPPIE.shoveKnockback);
+  if (damageMelee(world, target, HIPPIE.shoveDamage, h.id)) knockback(world, target, h.pos, HIPPIE.shoveKnockback);
 }
 
 /** Recruitment, Dialectics or capture changed the hippie's faction: it starts over with the new camp. */
@@ -488,7 +489,7 @@ function fightBoss(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: numbe
   h.facing = Math.atan2(boss.pos.x - h.pos.x, boss.pos.z - h.pos.z);
   const reach = BOSS_RADIUS + HIPPIE.shoveReach;
   if (moveTo(world, sys, h, b, boss.pos.x, boss.pos.z, reach) && world.time >= b.nextShoveAt) {
-    damageEntity(world, boss.id, HIPPIE.shoveDamage, h.id);
+    damageMelee(world, boss.id, HIPPIE.shoveDamage, h.id);
     b.nextShoveAt = world.time + HIPPIE.shoveInterval;
   }
   locomote(world, sys, h, b, dt);

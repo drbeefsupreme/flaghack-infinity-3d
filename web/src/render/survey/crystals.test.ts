@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
+import { rayCrystal } from '../../sim/crystalGeometry';
 import { CRYSTAL_HEIGHT } from '../../sim/constants';
 import { spawnCrystal } from '../../sim/factory';
 import { createMatch } from '../../sim/setup';
@@ -57,6 +58,36 @@ describe('crystal scale rendering', () => {
     s.layer.update(3, s.decals, s.beams);
     expect(s.prism.geometry.getAttribute('iA').getZ(0)).toBe(CRYSTAL_HEIGHT);
     expect(s.shard.geometry.getAttribute('iScale').getX(0)).toBe(1);
+    s.layer.dispose(); s.texture.dispose();
+  });
+});
+
+
+describe('authoritative prism ray geometry', () => {
+  it.each([1, 10])('matches displayed scale-%s prism triangles across growth, rotation and grazing rays', scale => {
+    const s = setup(); s.c.scale = scale; s.c.pos = { x: 3, z: -8 };
+    for (const growth of [0, .3, 1]) for (const time of [0, 137.55]) {
+      s.c.growth = growth; s.world.time = time; s.layer.update(time + 999, s.decals, s.beams);
+      expect(s.prism.material.uniforms.uCrystalTime.value).toBe(time);
+      const a = s.prism.geometry.getAttribute('iA'), b = s.prism.geometry.getAttribute('iB');
+      const height = a.getZ(0) * (.12 + .88 * b.getY(0)), radius = a.getW(0) * (.55 + .45 * b.getY(0));
+      const rotation = b.getX(0) + time * .12, cs = Math.cos(rotation), sn = Math.sin(rotation);
+      const pos = s.prism.geometry.getAttribute('position'), vertices: number[] = [];
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i) * radius, z = pos.getZ(i) * radius;
+        vertices.push(a.getX(0) + x * cs - z * sn, pos.getY(i) * height, a.getY(0) + x * sn + z * cs);
+      }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), mesh = new THREE.Mesh(geo, material); mesh.updateMatrixWorld(true);
+      for (const y of [.05, .79, .95, 1.001]) for (const x of [0, .5, .99, 1.01]) {
+        const origin = new THREE.Vector3(s.c.pos.x + x * radius, y * height, s.c.pos.z - radius * 3), direction = new THREE.Vector3(0, 0, 1);
+        const shown = new THREE.Raycaster(origin, direction, 0, 1000).intersectObject(mesh)[0]?.distance ?? null;
+        const authoritative = rayCrystal(s.c, time, origin, direction, 1000);
+        if (shown === null) expect(authoritative).toBeNull();
+        else expect(authoritative).toBeCloseTo(shown, 4);
+      }
+      geo.dispose(); material.dispose();
+    }
     s.layer.dispose(); s.texture.dispose();
   });
 });

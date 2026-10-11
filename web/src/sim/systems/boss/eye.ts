@@ -1,4 +1,4 @@
-/** Fixed-clock eye charge, one ray impact and one radial blast. Mirrors only render the facts. */
+/** Fixed-clock charge and a five-second gaze sweep. Mirrors only render the facts. */
 import { BOSS_EYE_BLAST_RADIUS, BOSS_EYE_DAMAGE, BOSS_EYE_MAX_RANGE, BOSS_EYE_TIMING, clearBossEyeCharge } from '../../boss';
 import type { BossState } from '../../boss';
 import { solveBossEyeAim } from '../../bossEyeRig';
@@ -10,15 +10,18 @@ import type { Flag } from '../../types';
 import type { World } from '../../world';
 import { consumeBuilding } from '../boss';
 import { damageEntity } from '../combat';
+import { rayCrystal } from '../../crystalGeometry';
+import { shatterCrystal } from '../crystals';
 import { pieceBottom } from '../econ/pieceGeometry';
 import { dropLoose } from '../flags';
-import { destroySceneryHit } from '../scenery';
+import { destroySceneryBlast } from '../scenery';
+import { segmentPointDistanceSquared, sweptBodyDistanceSquared } from './blastGeometry';
 import { updateSurvey } from '../survey';
 import { brainOf, releaseTask } from '../units/brain';
 import { breakChannel } from '../units/channel';
 import { pieceClosest } from '../units/reach';
 import { sampleBossHeadPose } from './hitRegions';
-import { BOSS_EYE_HIPPIE_HEIGHT, chooseBossEyeTarget } from './eyeTargeting';
+import { BOSS_EYE_HIPPIE_HEIGHT, chooseBossEyeTarget, planBossEyeSweep } from './eyeTargeting';
 export { BOSS_EYE_HIPPIE_HEIGHT } from './eyeTargeting';
 
 export const cancelBossEye = clearBossEyeCharge;
@@ -33,12 +36,67 @@ export function bossEyeRay(_world: World, boss: BossState): BossEyeRay {
   return solveBossEyeAim(position, rotation, target);
 }
 
-/** True while the eye owns the boss's action/movement slot. No render callback can enter here. */
+/** Fixed 60 Hz attack samples, independent of render frames or the caller's step size. */
+export const BOSS_EYE_SAMPLE_HZ = 60;
+export function bossEyeSweepTarget(boss: BossState, progress: number): V3 {
+  const route = boss.eye.route.length ? boss.eye.route : [boss.eye.target!];
+  let length = 0;
+  for (let i = 1; i < route.length; i++) length += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y, route[i].z - route[i - 1].z);
+  let remaining = clamp(progress, 0, 1) * length;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1], b = route[i], distance = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    if (remaining <= distance && distance > 0) {
+      const t = remaining / distance;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+    }
+    remaining -= distance;
+  }
+  return { ...route[route.length - 1] };
+}
+
+function fireSample(world: World, boss: BossState, index: number): void {
+  const eye = boss.eye;
+  eye.target = bossEyeSweepTarget(boss, index / (BOSS_EYE_SAMPLE_HZ * BOSS_EYE_TIMING.beam));
+  const yaw = Math.atan2(eye.target.x - boss.pos.x, eye.target.z - boss.pos.z);
+  if (index > 0) boss.yaw += clamp(angleDiff(boss.yaw, yaw), -1.2 / BOSS_EYE_SAMPLE_HZ, 1.2 / BOSS_EYE_SAMPLE_HZ);
+  const ray = bossEyeRay(world, boss), previous = eye.impact, previousTag = eye.impactTag;
+  let hit = world.collision.raycast(ray.origin.x, ray.origin.y, ray.origin.z,
+    ray.direction.x, ray.direction.y, ray.direction.z, BOSS_EYE_MAX_RANGE, boss.id);
+  let crystalHit: import('../../types').Crystal | null = null;
+  const sampledAt = eye.firedAt! + index / BOSS_EYE_SAMPLE_HZ;
+  for (const crystal of world.crystals.values()) {
+    const distance = rayCrystal(crystal, sampledAt, ray.origin, ray.direction, hit?.dist ?? BOSS_EYE_MAX_RANGE);
+    if (distance === null) continue;
+    crystalHit = crystal;
+    hit = { x: ray.origin.x + ray.direction.x * distance, y: ray.origin.y + ray.direction.y * distance,
+      z: ray.origin.z + ray.direction.z * distance, dist: distance, tag: crystal.id, shape: -1, nx: 0, ny: 0, nz: 0 };
+  }
+  eye.origin = ray.origin; eye.direction = ray.direction;
+  eye.impact = hit ? { x: hit.x, y: hit.y, z: hit.z } : null;
+  eye.impactTag = hit?.tag ?? null; eye.sample = index;
+  if (!eye.impact) return;
+  // A removed foreground prop can expose a distant surface. Do not burn a corridor
+  // between those disconnected impacts; only continuous contact sweeps a sphere.
+  const from = previous && previousTag === eye.impactTag &&
+    Math.hypot(previous.x - eye.impact.x, previous.y - eye.impact.y, previous.z - eye.impact.z) <= 6 ? previous : null;
+  if (crystalHit) shatterCrystal(world, crystalHit, 'beam');
+  blastBossEye(world, boss, eye.impact, from);
+}
+
+/** True while the eye owns the boss's action/movement slot. No render callback advances it. */
 export function updateBossEye(world: World, boss: BossState, dt: number): boolean {
   if (boss.hp <= 0 || world.phase !== 'playing' || world.effigyRevealedAt === null) { cancelBossEye(boss); return false; }
   const eye = boss.eye;
   if (eye.firedAt !== null) {
-    if (world.time < eye.firedAt + BOSS_EYE_TIMING.beam - 1e-9) return true;
+    const end = eye.firedAt + BOSS_EYE_TIMING.beam;
+    // A normal long simulation step catches every contact. A clock reset/jump well
+    // past the complete firing window never replays an obsolete attack on new actors.
+    if (world.time <= end + BOSS_EYE_TIMING.beam) {
+      const sample = Math.min(BOSS_EYE_SAMPLE_HZ * BOSS_EYE_TIMING.beam,
+        Math.floor((world.time - eye.firedAt + 1e-9) * BOSS_EYE_SAMPLE_HZ));
+      for (let i = eye.sample + 1; i <= sample; i++) fireSample(world, boss, i);
+    }
+    if (world.time < end - 1e-9) return true;
     cancelBossEye(boss);
     boss.nextAttackAt = Math.max(boss.nextAttackAt, world.time + .25);
     return false;
@@ -48,37 +106,36 @@ export function updateBossEye(world: World, boss: BossState, dt: number): boolea
         boss.action === 'emerge' || boss.action === 'crouch' || boss.action === 'rise' || boss.action === 'death' || boss.action === 'dead') return false;
     const target = chooseBossEyeTarget(world, boss);
     if (!target) return false;
-    // Even a skipped tick or an interrupted stance must still show a full charge.
     eye.chargeAt = world.time; eye.nextFireAt = world.time + BOSS_EYE_TIMING.charge; eye.target = target;
-    eye.origin = null; eye.direction = null; eye.impact = null;
+    eye.route = planBossEyeSweep(world, boss, target); eye.sample = -1; eye.damaged = []; eye.knockedFlags = [];
+    eye.origin = null; eye.direction = null; eye.impact = null; eye.impactTag = null;
     boss.action = 'idle'; boss.actionAt = world.time; boss.actionSeq++; boss.held = null;
   }
   const target = eye.target!;
   const yaw = Math.atan2(target.x - boss.pos.x, target.z - boss.pos.z);
   boss.yaw += clamp(angleDiff(boss.yaw, yaw), -2.4 * dt, 2.4 * dt);
   if (world.time < eye.nextFireAt - 1e-9) return true;
-  const ray = bossEyeRay(world, boss);
-  const hit = world.collision.raycast(ray.origin.x, ray.origin.y, ray.origin.z,
-    ray.direction.x, ray.direction.y, ray.direction.z, BOSS_EYE_MAX_RANGE, boss.id);
   eye.firedAt = world.time; eye.nextFireAt = world.time + BOSS_EYE_TIMING.period;
-  eye.origin = ray.origin; eye.direction = ray.direction;
-  eye.impact = hit ? { x: hit.x, y: hit.y, z: hit.z } : null;
-  if (hit) destroySceneryHit(world, hit.tag);
-  if (eye.impact) blastBossEye(world, boss, eye.impact);
+  fireSample(world, boss, 0);
   return true;
 }
 
 const radius2 = BOSS_EYE_BLAST_RADIUS ** 2;
-function pointInside(at: Readonly<V3>, p: Readonly<V3>): boolean {
-  return (at.x - p.x) ** 2 + (at.y - p.y) ** 2 + (at.z - p.z) ** 2 <= radius2 + 1e-9;
+function pointInside(at: V3, p: V3, from: V3 | null): boolean {
+  return segmentPointDistanceSquared(from, at, p) <= radius2 + 1e-9;
 }
-function bodyInside(at: Readonly<V3>, x: number, z: number, y0: number, y1: number, radius: number): boolean {
-  const horizontal = Math.max(0, Math.hypot(at.x - x, at.z - z) - radius);
-  const vertical = Math.max(y0 - at.y, 0, at.y - y1);
-  return horizontal ** 2 + vertical ** 2 <= radius2 + 1e-9;
+function bodyInside(at: V3, x: number, z: number, y0: number, y1: number, radius: number, from: V3 | null): boolean {
+  const first = from ?? at, reach = radius + BOSS_EYE_BLAST_RADIUS;
+  if (x < Math.min(first.x, at.x) - reach || x > Math.max(first.x, at.x) + reach ||
+      z < Math.min(first.z, at.z) - reach || z > Math.max(first.z, at.z) + reach ||
+      y1 < Math.min(first.y, at.y) - BOSS_EYE_BLAST_RADIUS || y0 > Math.max(first.y, at.y) + BOSS_EYE_BLAST_RADIUS) return false;
+  return sweptBodyDistanceSquared(from, at, (px, py, pz) => {
+    const horizontal = Math.max(0, Math.hypot(px - x, pz - z) - radius), vertical = Math.max(y0 - py, 0, py - y1);
+    return horizontal ** 2 + vertical ** 2;
+  }) <= radius2 + 1e-9;
 }
 /** Return the affected representation, rather than a stale stored flag position. */
-function flagInside(world: World, at: V3, flag: Flag): V3 | null {
+function flagInside(world: World, at: V3, flag: Flag, from: V3 | null): V3 | null {
   let pos: V3 = flag.pos;
   if (flag.state === 'stock') {
     const building = world.buildings.get(flag.holder);
@@ -90,24 +147,27 @@ function flagInside(world: World, at: V3, flag: Flag): V3 | null {
   } else if (flag.state === 'flying') {
     for (const projectile of world.projectiles.values()) if (projectile.flagId === flag.id) { pos = projectile.pos; break; }
   }
-  if (pointInside(at, pos)) return { ...pos };
+  if (pointInside(at, pos, from)) return { ...pos };
   if (flag.state !== 'planted' || flag.altNode < 0) return null;
   const twin = world.lattice.nodes[flag.altNode];
-  return twin && pointInside(at, { ...twin, y: 0 }) ? { x: twin.x, y: 0, z: twin.z } : null;
+  return twin && pointInside(at, { ...twin, y: 0 }, from) ? { x: twin.x, y: 0, z: twin.z } : null;
 }
 
-/** One 1,000-damage impact sphere. Flags fall intact; nothing takes corridor damage. */
-export function blastBossEye(world: World, boss: BossState, at: V3): void {
+/** One impact sphere (or continuous surface sweep). Each actor takes 1,000 once per beam;
+ * flags fall recoverably and every intersecting static prop may shatter. */
+export function blastBossEye(world: World, boss: BossState, at: V3, from: V3 | null = null): void {
+  const active = boss.eye.firedAt !== null;
+  const damaged = new Set(active ? boss.eye.damaged : []), knocked = new Set(active ? boss.eye.knockedFlags : []);
   // Capture contents before KO scatter or structure removal changes their positions.
   const hitFlags = new Map<number, V3>();
-  for (const flag of world.flags.values()) { const pos = flagInside(world, at, flag); if (pos) hitFlags.set(flag.id, pos); }
-  const buildings = [...world.buildings.values()].filter(b => bodyInside(at, b.pos.x, b.pos.z, 0, BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius));
+  for (const flag of world.flags.values()) { if (knocked.has(flag.id)) continue; const pos = flagInside(world, at, flag, from); if (pos) hitFlags.set(flag.id, pos); }
+  const buildings = [...world.buildings.values()].filter(b => b.hp > 0 && !damaged.has(b.id) && bodyInside(at, b.pos.x, b.pos.z, 0, BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius, from));
   // A destroyed storage structure spills recoverable Flags as well. Detach before
   // consumeBuilding's ordinary eating lifecycle would remove the held contents.
   for (const b of buildings) if (b.kind !== 'hearth' && b.hp <= BOSS_EYE_DAMAGE) {
     for (const flag of world.flags.values()) if (flag.holder === b.id) hitFlags.set(flag.id, { ...b.pos, y: 0 });
   }
-  for (const [id, pos] of hitFlags) dropLoose(world, id, pos);
+  for (const [id, pos] of hitFlags) { dropLoose(world, id, pos); knocked.add(id); }
   for (const projectile of [...world.projectiles.values()]) if (hitFlags.has(projectile.flagId)) world.projectiles.delete(projectile.id);
   for (const avatar of world.avatars.values()) if (avatar.action.kind === 'pull' && hitFlags.has(avatar.action.flagId)) breakChannel(world, avatar);
   for (const hippie of world.hippies.values()) {
@@ -118,14 +178,16 @@ export function blastBossEye(world: World, boss: BossState, at: V3): void {
     }
     if (hippie.order?.kind === 'pull' && hitFlags.has(hippie.order.flagId) || hippie.order?.kind === 'attack' && hitFlags.has(hippie.order.target)) hippie.order = null;
   }
-  for (const a of world.avatars.values()) if (!a.koUntil && bodyInside(at, a.pos.x, a.pos.z, a.pos.y, a.pos.y + AVATAR.height, AVATAR.radius)) {
+  for (const a of world.avatars.values()) if (!a.koUntil && !damaged.has(a.id) && bodyInside(at, a.pos.x, a.pos.z, a.pos.y, a.pos.y + AVATAR.height, AVATAR.radius, from)) {
+    damaged.add(a.id);
     damageEntity(world, a.id, BOSS_EYE_DAMAGE, boss.id);
   }
   for (const h of world.hippies.values()) {
     const y = h.airborne?.y ?? 0;
-    if (h.status !== 'ko' && bodyInside(at, h.pos.x, h.pos.z, y, y + BOSS_EYE_HIPPIE_HEIGHT, HIPPIE.radius)) damageEntity(world, h.id, BOSS_EYE_DAMAGE, boss.id);
+    if (h.status !== 'ko' && !damaged.has(h.id) && bodyInside(at, h.pos.x, h.pos.z, y, y + BOSS_EYE_HIPPIE_HEIGHT, HIPPIE.radius, from)) { damaged.add(h.id); damageEntity(world, h.id, BOSS_EYE_DAMAGE, boss.id); }
   }
   for (const building of buildings) {
+    damaged.add(building.id);
     // Altars can only be eaten: beam damage keeps their ordinary 1 HP floor.
     // Other buildings are permanently removed only when this 1,000-damage hit is lethal.
     building.hp = Math.max(building.kind === 'hearth' ? 1 : 0, building.hp - BOSS_EYE_DAMAGE);
@@ -135,10 +197,16 @@ export function blastBossEye(world: World, boss: BossState, at: V3): void {
   }
   const reach = { x: 0, z: 0, dist: 0 };
   for (const piece of [...world.pieces.values()]) {
-    pieceClosest(world, piece, at.x, at.z, reach);
-    const dy = Math.max(pieceBottom(piece.kind, piece.level) - at.y, 0, at.y - (piece.level + 1) * LEVEL_HEIGHT);
-    if (reach.dist ** 2 + dy ** 2 <= radius2 + 1e-9) damageEntity(world, piece.id, BOSS_EYE_DAMAGE, boss.id);
+    if (damaged.has(piece.id)) continue;
+    const distance = sweptBodyDistanceSquared(from, at, (x, y, z) => {
+      pieceClosest(world, piece, x, z, reach);
+      const dy = Math.max(pieceBottom(piece.kind, piece.level) - y, 0, y - (piece.level + 1) * LEVEL_HEIGHT);
+      return reach.dist ** 2 + dy ** 2;
+    });
+    if (distance <= radius2 + 1e-9) { damaged.add(piece.id); damageEntity(world, piece.id, BOSS_EYE_DAMAGE, boss.id); }
   }
+  destroySceneryBlast(world, at, BOSS_EYE_BLAST_RADIUS, from);
+  if (active) { boss.eye.damaged = [...damaged]; boss.eye.knockedFlags = [...knocked]; }
   // Re-ground after destroyed decks/buildings retire their collision shapes.
   for (const id of hitFlags.keys()) {
     const flag = world.flags.get(id);

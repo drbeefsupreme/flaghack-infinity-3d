@@ -24,7 +24,7 @@ function encounter() {
   world.time = 100; world.effigyRevealedAt = 100; world.suddenDeath = true;
   const boss = spawnBoss(world)!;
   boss.action = 'idle'; boss.pos = { x: 0, z: 0 }; boss.yaw = 0;
-  world.collision = new CollisionWorld();
+  world.collision = new CollisionWorld(); world.map.obstacles = [];
   world.buildings.clear(); world.pieces.clear(); world.flags.clear(); world.hippies.clear(); world.crystals.clear(); world.piles.clear();
   for (const f of world.factions) { f.hearthIds = []; f.gccId = null; }
   for (const a of world.avatars.values()) { a.pos = { x: 100, y: 0, z: 50 + a.faction * 20 }; a.carried = []; }
@@ -45,7 +45,7 @@ function atDistance(origin: V3, direction: V3, distance: number): V3 {
 }
 
 describe('authoritative boss eye clock', () => {
-  it('waits 27 seconds, charges for three, fires at 30, freezes for .5 and repeats 30 seconds after firing', () => {
+  it('waits 27 seconds, charges for three, fires at 30, sweeps for five seconds and repeats 30 seconds after firing', () => {
     const e = encounter(), { boss, world } = e;
     const raycast = vi.spyOn(world.collision, 'raycast');
     expect(boss.eye.nextFireAt).toBe(130);
@@ -53,16 +53,16 @@ describe('authoritative boss eye clock', () => {
     expect(setTime(e, 127)).toBe(true); expect(boss.eye.chargeAt).toBe(127);
     expect(setTime(e, 129.999)).toBe(true); expect(boss.eye.firedAt).toBeNull(); expect(raycast).not.toHaveBeenCalled();
     expect(setTime(e, 130)).toBe(true); expect(boss.eye.firedAt).toBe(130); expect(boss.eye.nextFireAt).toBe(160);
-    const shot = structuredClone(boss.eye); e.target.pos.x = 70;
-    for (const time of [130, 130.01, 130.25, 130.499]) {
-      expect(setTime(e, time)).toBe(true); expect(boss.eye).toEqual(shot);
+    e.target.pos.x = 70;
+    for (const time of [130, 130.01, 130.25, 130.499, 134.999]) {
+      expect(setTime(e, time)).toBe(true); expect(boss.eye.firedAt).toBe(130);
     }
-    expect(raycast).toHaveBeenCalledTimes(1);
-    expect(setTime(e, 130.5)).toBe(false); expect(boss.eye.chargeAt).toBeNull(); expect(boss.eye.origin).toBeNull();
+    expect(raycast).toHaveBeenCalledTimes(300);
+    expect(setTime(e, 135)).toBe(false); expect(boss.eye.chargeAt).toBeNull(); expect(boss.eye.origin).toBeNull();
     e.target.hp = AVATAR.maxHp; e.target.koUntil = 0;
     expect(setTime(e, 156.999)).toBe(false); expect(setTime(e, 157)).toBe(true);
     expect(boss.eye.chargeAt).toBe(157); expect(setTime(e, 160)).toBe(true);
-    expect(boss.eye.firedAt).toBe(160); expect(raycast).toHaveBeenCalledTimes(2);
+    expect(boss.eye.firedAt).toBe(160); expect(raycast).toHaveBeenCalledTimes(302);
   });
   it('never skips the charge or replays missed attacks after a large clock jump', () => {
     const e = encounter(), raycast = vi.spyOn(e.world.collision, 'raycast');
@@ -70,11 +70,11 @@ describe('authoritative boss eye clock', () => {
     expect(e.boss.eye.nextFireAt).toBe(183); expect(e.boss.eye.firedAt).toBeNull();
     setTime(e, 182.999); expect(raycast).not.toHaveBeenCalled();
     setTime(e, 200); expect(e.boss.eye.firedAt).toBe(200); expect(e.boss.eye.nextFireAt).toBe(230);
-    setTime(e, 200.2); expect(raycast).toHaveBeenCalledTimes(1);
+    setTime(e, 200.2); expect(raycast).toHaveBeenCalledTimes(13);
     e.target.hp = AVATAR.maxHp; e.target.koUntil = 0;
-    setTime(e, 400); expect(raycast).toHaveBeenCalledTimes(1);
+    setTime(e, 400); expect(raycast).toHaveBeenCalledTimes(13);
     setTime(e, 400.05); expect(e.boss.eye.chargeAt).toBe(400.05); expect(e.boss.eye.firedAt).toBeNull();
-    setTime(e, 403.05); expect(raycast).toHaveBeenCalledTimes(2); expect(e.boss.eye.nextFireAt).toBe(433.05);
+    setTime(e, 403.05); expect(raycast).toHaveBeenCalledTimes(14); expect(e.boss.eye.nextFireAt).toBe(433.05);
   });
   it('waits for a valid target, then locks its point throughout the complete charge', () => {
     const e = encounter(); e.boss.target = null; e.flagThreat = false;
@@ -128,7 +128,7 @@ describe('boss eye ray and first impact', () => {
     expect(expected.tag).toBe(-30); setTime(e, 130);
     expect(e.boss.eye.impact).toEqual({ x: expected.x, y: expected.y, z: expected.z }); expect(e.target.hp).toBe(AVATAR.maxHp);
   });
-  it('uses one ground-impact sphere without damaging bodies along the beam or on later frames', () => {
+  it('damages new arrivals in the live impact but never bodies along the beam corridor', () => {
     const e = encounter(); setTime(e, 127);
     const ray = bossEyeRay(e.world, e.boss), crossing = atDistance(ray.origin, ray.direction, 8);
     const bystander = e.world.avatarOf(1); bystander.pos = { x: crossing.x, y: crossing.y - AVATAR.height / 2, z: crossing.z };
@@ -136,21 +136,21 @@ describe('boss eye ray and first impact', () => {
     expect(e.target.hp).toBe(0); expect(bystander.hp).toBe(AVATAR.maxHp);
     const newcomer = spawnHippie(e.world, -1, e.boss.eye.impact!);
     for (const time of [130, 130.1, 130.49]) setTime(e, time);
-    expect(newcomer.hp).toBe(HIPPIE.maxHp);
+    expect(newcomer.hp).toBe(0);
     const events = e.world.drainEvents();
     expect(events.filter(event => event.t === 'ko' && event.id === e.target.id)).toHaveLength(1);
     expect(events.filter(event => event.t === 'hit' && event.target === e.target.id)).toMatchObject([{ amount: 1000 }]);
   });
   it('caps a skyward miss at 240 meters and never explodes at the fallback endpoint', () => {
     const e = encounter(); setTime(e, 127); e.target.pos = { x: 0, y: 50, z: 40 };
-    e.boss.eye.target = { x: 0, y: 50, z: 40 };
+    e.boss.eye.target = { x: 0, y: 50, z: 40 }; e.boss.eye.route = [{ ...e.boss.eye.target }];
     const ray = bossEyeRay(e.world, e.boss), survivor = e.world.avatarOf(1);
     survivor.pos = atDistance(ray.origin, ray.direction, 240);
     const raycast = vi.spyOn(e.world.collision, 'raycast'); setTime(e, 130);
     expect(raycast.mock.calls[0][6]).toBe(240); expect(raycast.mock.calls[0][7]).toBe(e.boss.id);
     expect(e.boss.eye.impact).toBeNull(); expect(e.boss.eye.firedAt).toBe(130); expect(survivor.hp).toBe(AVATAR.maxHp);
   });
-  it('damages a surviving target by exactly 1000 once throughout the frozen beam', () => {
+  it('damages a surviving target by exactly 1000 once throughout the sweeping beam', () => {
     const e = encounter(); e.target.hp = 2500; setTime(e, 127); setTime(e, 130);
     expect(e.target.hp).toBe(1500);
     for (const time of [130, 130.1, 130.25, 130.499, 130.5]) setTime(e, time);

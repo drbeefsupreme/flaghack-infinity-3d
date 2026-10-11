@@ -20,7 +20,7 @@ const setup = () => createMatch({ seed: 'boss-eye-net', difficulty: 'normal', hu
   match: normalizeMatch({ maxSignifiers: 0 }) });
 
 describe('durable boss eye replication', () => {
-  it('replicates charge, frozen shot, cooldown and cancellation to two peers and late joins without events', () => {
+  it('replicates charge, live sweep, cooldown and cancellation to two peers and late joins without events', () => {
     const host = setup(); host.time = 245; host.boss = bossFixture();
     const encoder = new SnapshotEncoder(host);
     const peers = [NetMirror.create(host.options, wire(encoder.full())), NetMirror.create(host.options, wire(encoder.full()))];
@@ -43,6 +43,8 @@ describe('durable boss eye replication', () => {
     host.boss.eye.origin = { x: 1.234567, y: 18.987654, z: 3.345678 };
     host.boss.eye.direction = { x: .234567, y: -.456789, z: -.857891 };
     host.boss.eye.impact = { ...host.boss.eye.target };
+    host.boss.eye.route = [{ ...host.boss.eye.target }, { x: -10, y: 4, z: 55 }];
+    host.boss.eye.sample = 137; host.boss.eye.impactTag = -22; host.boss.eye.damaged = [10, 19]; host.boss.eye.knockedFlags = [44, 88];
     const late = flush();
     expect(late.world.boss!.eye).toEqual(host.boss.eye);
     // A missed skyward shot also replicates null impact rather than inventing an explosion.
@@ -56,7 +58,7 @@ describe('durable boss eye replication', () => {
 
   it('delivers authoritative damage once and never executes it on replay, rendering clocks or a mid-beam late join', () => {
     const host = setup(); host.effigyRevealedAt = 100; host.time = 127; host.suddenDeath = true;
-    host.collision = new CollisionWorld();
+    host.collision = new CollisionWorld(); host.map.obstacles = [];
     const boss = spawnBoss(host)!; boss.action = 'idle'; boss.pos = { x: 0, z: 0 }; boss.yaw = 0;
     const target = host.avatarOf(0); target.pos = { x: 0, y: 0, z: 40 }; target.carried = [];
     const flag = spawnFlag(host, { state: 'loose', owner: 0, pos: { ...target.pos } });

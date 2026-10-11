@@ -22,7 +22,7 @@ function damageEvents(client: Client, targetId: number) {
 }
 
 describe('boss eye over real host sockets', () => {
-  it('synchronizes two players and mid-charge/beam late joins with exactly one host blast', async () => {
+  it('synchronizes two players and mid-charge/beam late joins with once-per-target damage throughout a five-second host beam', async () => {
     const original = Simulation.prototype.step;
     vi.spyOn(Simulation.prototype, 'step').mockImplementation(function(this: Simulation) {
       stage?.(this.world); original.call(this);
@@ -40,14 +40,14 @@ describe('boss eye over real host sockets', () => {
       authoritative = world;
       const reveal = bossRevealTime(world.options);
       chargedAt = reveal + 27;
-      world.time = chargedAt + (phase === 'charge' ? 0 : phase === 'beam' ? 3 : 3.6) - SIM_DT;
+      world.time = chargedAt + (phase === 'charge' ? 0 : phase === 'beam' ? (survivorPlaced ? 3.1 : 3) : 8.1) - SIM_DT;
       world.tide.nextAt = Infinity;
       if (!staged) {
         staged = true; world.effigyRevealedAt = reveal; world.suddenDeath = true;
         const boss = spawnBoss(world)!;
         boss.action = 'idle'; boss.actionAt = world.time; boss.pos = { x: 0, z: 0 }; boss.yaw = 0;
         // A clear test lane isolates the weapon from the random map's decorations.
-        world.collision = new CollisionWorld();
+        world.collision = new CollisionWorld(); world.map.obstacles = [];
         const target = world.avatarOf(0); targetId = target.id;
         target.pos = { x: 0, y: 0, z: 40 }; target.vel = { x: 0, y: 0, z: 0 };
         for (const id of [...target.carried]) dropLoose(world, id, { x: 100, y: 0, z: 100 });
@@ -56,11 +56,13 @@ describe('boss eye over real host sockets', () => {
         recordBossFlagThreat(world, target.id);
         boss.target = { kind: 'avatar', id: target.id }; boss.retaliateId = target.id; boss.retaliateUntil = world.time + 100;
       }
+      if (phase === 'beam' && world.boss!.eye.firedAt === null) world.boss!.eye.route = [{ x: 0, y: 0, z: 40 }];
       if (phase === 'beam' && world.boss!.eye.firedAt !== null && !survivorPlaced) {
         survivorPlaced = true;
-        // Arriving after the shot must not be damaged by its remaining visual frames.
+        // A newcomer is hit once during the sustained beam; remaining frames cannot hit it twice.
         const survivor = world.avatarOf(1);
-        survivor.pos = { ...world.boss!.eye.impact! }; survivor.vel = { x: 0, y: 0, z: 0 };
+        survivor.pos = { ...world.boss!.eye.impact! }; survivor.vel = { x: 0, y: 0, z: 0 }; survivor.hp = 2500;
+        world.time = chargedAt + 3.1 - SIM_DT;
       }
     };
     await until(() => {
@@ -91,7 +93,7 @@ describe('boss eye over real host sockets', () => {
     expect(shot.origin!.y).toBeGreaterThan(10); expect(shot.impact).toEqual({ x: 0, y: 0, z: 40 });
     for (const c of all) {
       expect(c.mirror!.world.boss!.eye).toEqual(shot);
-      expect(c.mirror!.world.avatarOf(0).hp).toBe(0); expect(c.mirror!.world.avatarOf(1).hp).toBe(AVATAR.maxHp);
+      expect(c.mirror!.world.avatarOf(0).hp).toBe(0); expect(c.mirror!.world.avatarOf(1).hp).toBe(1500);
       expect(c.mirror!.world.flags.get(flagId)).toMatchObject({ state: 'loose', holder: -1, owner: 0 });
       expect(c.mirror!.world.avatarOf(0).carried).not.toContain(flagId);
     }
@@ -102,11 +104,13 @@ describe('boss eye over real host sockets', () => {
       expect(damageEvents(c, targetId).filter(e => e.t === 'ko')).toHaveLength(1);
     }
     expect(damageEvents(beamLate, targetId)).toHaveLength(0);
+    const newcomerId = authoritative!.avatarOf(1).id;
+    for (const c of beforeFire) expect(damageEvents(c, newcomerId).filter(e => e.t === 'hit')).toMatchObject([{ amount: 1000 }]);
     phase = 'cooldown';
     await until(() => { catchUp(all); return all.every(c => c.mirror!.world.boss?.eye.chargeAt === null); }, 'beam expiry on every socket');
     for (const c of all) {
       expect(c.mirror!.world.boss!.eye.origin).toBeNull(); expect(c.mirror!.world.boss!.eye.impact).toBeNull();
-      expect(c.mirror!.world.avatarOf(1).hp).toBe(AVATAR.maxHp);
+      expect(c.mirror!.world.avatarOf(1).hp).toBe(1500);
     }
     expect(authoritative!.boss!.eye.nextFireAt).toBe(chargedAt + 33);
     for (const c of beforeFire) expect(damageEvents(c, targetId).filter(e => e.t === 'ko')).toHaveLength(1);

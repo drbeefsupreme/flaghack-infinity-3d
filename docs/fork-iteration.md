@@ -168,35 +168,52 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   spaced 8–14 seconds apart; reveal, death and menu screens do not flash.
 - Distinct procedural bellows accompany emergence and death. Low footstep impacts follow
   the actual standing and crouching foot-contact phases; the eye has a three-second
-  charging sound, a half-second firing sound, and an impact explosion. Destroyed scenery
+  charging sound, a sustained five-second firing sound, and coalesced impact explosions. Destroyed scenery
   produces a coalesced crushing sound. Footfall and deliberate stomp cues follow the exact
   authoritative damage-contact events. These use the existing spatial SFX,
   volume and mute controls, and do not replay old cues on late join or resume.
   Boss cues retain horizontal direction but carry across the arena on a dedicated bus;
   their envelopes briefly lower music and other world effects without changing user volume.
-- The original hat eye glows dimly. Every 30 seconds the giant pauses, charges for three
-  seconds, and tilts its head toward a locked target point. Its first shot is due 30 seconds
-  after reveal. The complete white beam appears instantly for half a second along the
-  actual pupil's gaze, stopping at the first terrain/structure hit (240 m maximum reach).
-  Beam targeting favors groups of at least three units, non-altar structures and recent
-  Flag throwers. It skips targets closer than 9.26 m and defers without a useful target,
-  instead of firing at isolated Signifiers around its feet.
-  A single 5 m spherical burst at that impact deals 1,000 damage to units, buildings and
-  build pieces. Surviving targets retain their remaining HP; lethal hits remove non-altar
-  structures. Altars retain at least 1 HP. Flags in the burst fall loose and
-  remain recoverable, including carried/thrown Flags and both nodes of a simulacrum.
-  Stock Flags in the burst fall out of their surviving altar. Damage is at the impact only,
-  never along the beam.
-  Only a scenery prop struck directly by the beam explodes: tents, domes, art, portas,
-  trees, rocks, stages, shades and cars. Nearby scenery and resource piles stay intact;
-  terrain receives the normal impact burst. Crystals follow their ordinary sustaining-Flag
-  rules when a knocked-down Flag breaks the pentacle. Charge/fire and the explosion are
-  host-authoritative, cancel on boss death, and reconstruct for late joins.
+- The original hat eye glows dimly. Every 30 seconds the giant pauses and charges for three
+  seconds, tilting its head toward the first target. Its first shot is due 30 seconds after
+  reveal. The complete white beam then stays visible for five seconds while the head sweeps
+  through up to five useful target points. It follows the actual pupil's gaze and stops at
+  the first terrain, structure or Crystal surface (240 m maximum reach).
+  Actively shocking Crystals receive first priority, followed by rainbow arches, rainbow
+  campers and LED totems, then other strongly lit installations. Groups of at least three
+  units, non-altar structures and recent Flag throwers remain useful secondary targets.
+  Ordinary unit targets must be at least 9.26 m away; isolated Signifiers around the feet
+  are left to melee. Unreachable targets defer the beam instead of starting a futile charge.
+  A 5 m spherical blast follows the moving impact. Fixed 60 Hz contacts and swept surface
+  coverage deal 1,000 damage to each unit, building or build piece at most once per firing
+  sequence, including targets that enter after firing begins. Surviving targets retain
+  their remaining HP; lethal hits remove non-altar structures. Altars retain at least 1 HP.
+  Flags hit by the blast fall loose and remain recoverable, including stock, carried,
+  thrown and simulacrum Flags. Damage occurs around the impact, never along the beam.
+  Every static scenery prop touched by the impact blast can explode: tents, domes, art,
+  portas, trees, rocks, stages, shades and cars. Terrain and resource piles remain intact.
+  Direct hits use the Crystal's displayed rotating prism and normal shatter lifecycle,
+  without introducing Crystal HP. An intact sustaining pentacle can manifest a replacement.
+  Nearby sustaining Flags may also fall if they intersect the 5 m blast. The host replicates
+  the route, live gaze/impact, sample index and once-per-beam hit ledger for late joins.
+  Charge/fire cancel on death or the end of the match.
+- Each fully grown ordinary Crystal shocks the living giant for 25 HP/s while its focus
+  is within 50 m of the giant's ground center. The manifested giant Crystal deals 35 HP/s
+  with unlimited range. Contributions stack independently and crossing-range exposure is
+  integrated rather than billed once per frame. Each live Ward deals 25 HP/s while the
+  giant is actually grabbing a planted Flag it protects. Existing player pull slowdown is
+  unchanged. Persistent lightning starts at the Ward/Crystal tip, including
+  the 75 m giant tip, and ends on the posed boss; mirrors never apply the damage themselves.
+- Rival NPC vexillomancers use their carried Flags against the giant, solving the actual
+  ballistic throw with obstruction checks and cooldown/ammo limits. They choose reachable
+  head/hat shots when possible and body shots otherwise, with melee as a fallback.
+  Successful player and Signifier melee contacts create a small faction-colored firework
+  on existing valid targets, including the giant, units, structures and lumber piles.
 - Every standing or crouched walking footfall is a 2.5 m-radius stomp at the measured sole
   landing point, dealing 140 damage once per contact and crushing scenery up to 5 m across.
   The deliberate stomp covers a larger 7.36 m radius and can crush any scenery size. Contact
   uses exact circular or rotated-box footprints and the durable removal/blocking cleanup
-  of direct beam impacts. Only eating can remove an altar.
+  shared with beam blasts. Only eating can remove an altar.
 - Every intact Flag cycle, including nested loops and implied-Flag loops, blocks the whole
   giant footprint. About six thin rings in the current owner's color remain visible while
   each intact segment is within 5 m of the giant's center, including while crouching,

@@ -6,16 +6,23 @@ import { createHash } from 'node:crypto';
 import { stripTypeScriptTypes } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, posix } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 const revision = process.argv[2] || 'working';
 const prefix = process.argv[3] || '/tmp/boss-audio-' + revision.slice(0, 8);
-const source = name => revision === 'working' ? readFileSync(resolve(root, 'web/src/audio/' + name + '.ts'), 'utf8') : execFileSync('git', ['show', revision + ':web/src/audio/' + name + '.ts'], { cwd: root, encoding: 'utf8' });
+const source = name => { const path = posix.normalize('web/src/audio/' + name + '.ts'); return revision === 'working' ? readFileSync(resolve(root, path), 'utf8') : execFileSync('git', ['show', revision + ':' + path], { cwd: root, encoding: 'utf8' }); };
 const url = s => 'data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(s)).toString('base64');
 const recipeSource = source('bossSynth'), synthSource = source('synth');
-const sourceHash = createHash('sha256').update(recipeSource + synthSource).digest('hex');
+let sourceHash = createHash('sha256').update(recipeSource + synthSource).digest('hex');
 const synthURL = url(synthSource);
-const { synthBoss, BOSS_CUE_DURATION } = await import(url(recipeSource.replace("'./synth'", JSON.stringify(synthURL))));
+let resolvedRecipe = recipeSource.replace("'./synth'", JSON.stringify(synthURL));
+if (recipeSource.includes("'../sim/boss'")) {
+  const timing = source('../sim/boss').match(/export const BOSS_EYE_TIMING = [^;]+;/)?.[0];
+  if (!timing) throw Error('Cannot resolve shared boss eye timing');
+  sourceHash = createHash('sha256').update(recipeSource + synthSource + timing).digest('hex');
+  resolvedRecipe = resolvedRecipe.replace("'../sim/boss'", JSON.stringify(url(timing)));
+}
+const { synthBoss, BOSS_CUE_DURATION } = await import(url(resolvedRecipe));
 class Param {
   constructor(value) { this.value = value; this.events = []; this.inputs = []; }
   setValueAtTime(v, t) { this.events.push(['set', v, t]); return this; }
@@ -54,8 +61,9 @@ for (const cue of Object.keys(BOSS_CUE_DURATION)) {
     allSourcesStopped: nodes.filter(n => n.kind === 'osc' || n.kind === 'noise').every(n => Number.isFinite(n.stopTime)),
     scheduleShimMedianMs: timings[10], scheduleShimP95Ms: timings[18], graph: nodes });
 }
-let reverb;
-if (revision === 'working') {
+let reverb, mixSource;
+try { mixSource = source('bossMix'); } catch { /* Historical recipes predate explicit mix metadata. */ }
+if (mixSource) {
   const engineSource = source('engine');
   const impulseMethod = engineSource.match(/  private makeImpulse\(seconds: number\): AudioBuffer \{[\s\S]*?\n    return buf;\n  \}/)?.[0];
   if (!impulseMethod) throw Error('Cannot capture production makeImpulse');
@@ -66,11 +74,12 @@ if (revision === 'working') {
   const impulse = factory.makeImpulse(2.8);
   const impulsePath = prefix + '-impulse.f32';
   writeFileSync(impulsePath, Buffer.concat(impulse.data.map(d => Buffer.from(d.buffer))));
-  const { BOSS_VOICE_MIX } = await import(url(source('bossMix')));
+  const { BOSS_VOICE_MIX } = await import(url(mixSource));
   if (!BOSS_VOICE_MIX) throw Error('Production BOSS_VOICE_MIX export required for preview');
-  reverb = { impulsePath, channels: 2, seconds: 2.8, sampleRate: 44100, returnGain: .55, voiceMix: BOSS_VOICE_MIX,
-    voiceMixSourceHash: createHash('sha256').update(source('bossMix')).digest('hex'),
+  const dynamics = Object.fromEntries(['compressor','limiter', ...(engineSource.includes('this.bossCompressor =') ? ['bossCompressor'] : [])].map(stage => [stage, Object.fromEntries(['threshold','knee','ratio','attack','release'].map(key => { const match = engineSource.match(new RegExp('this\\.' + stage + '\\.' + key + '\\.value = ([^;]+);')); if (!match) throw Error('Cannot capture limiter ' + key); return [key, Number(match[1])]; }))]));
+  reverb = { dynamics, impulsePath, channels: 2, seconds: 2.8, sampleRate: 44100, returnGain: .55, voiceMix: BOSS_VOICE_MIX,
+    voiceMixSourceHash: createHash('sha256').update(mixSource).digest('hex'),
     engineSourceHash: createHash('sha256').update(engineSource).digest('hex'), normalizationSource: 'https://www.w3.org/TR/webaudio/#dom-convolvernode-normalize' };
 }
 writeFileSync(prefix + '.graphs.json', JSON.stringify({ revision, sourceHash, reports, reverb }));
-execFileSync('python', [resolve(import.meta.dirname, 'boss-audio-offline.py'), prefix + '.graphs.json', prefix + '.json', ...(revision === 'working' ? [prefix + '-offline-diagnostic-preview.wav'] : [])], { stdio: 'inherit' });
+execFileSync('python', [resolve(import.meta.dirname, 'boss-audio-offline.py'), prefix + '.graphs.json', prefix + '.json', ...(reverb ? [prefix + '-offline-diagnostic-preview.wav'] : [])], { stdio: 'inherit' });

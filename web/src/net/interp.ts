@@ -15,6 +15,7 @@
  * Owner: NetCore agent.
  */
 import { angleDiff } from '../sim/math';
+import type { BossEyeState } from '../sim/boss';
 import type { EntityId } from '../sim/types';
 import type { World } from '../sim/world';
 import type { DeltaSnapshot, EntityDelta } from './codec';
@@ -103,6 +104,39 @@ class Track {
   airborne = false;
 }
 
+/** Keep authoritative eye samples separate from the vectors written for visual playback. */
+type EyeSample = Pick<BossEyeState, 'firedAt' | 'target' | 'origin' | 'direction' | 'impact' | 'impactTag'>;
+const EYE_VECTORS = ['target', 'origin', 'direction', 'impact'] as const;
+function eyeSample(eye: BossEyeState): EyeSample | null {
+  if (eye.firedAt === null) return null;
+  return { firedAt: eye.firedAt, impactTag: eye.impactTag, target: eye.target && { ...eye.target }, origin: eye.origin && { ...eye.origin },
+    direction: eye.direction && { ...eye.direction }, impact: eye.impact && { ...eye.impact } };
+}
+function continuousEyeContact(from: EyeSample, to: EyeSample): boolean {
+  if (from.firedAt !== to.firedAt || !!from.impact !== !!to.impact || from.impactTag !== to.impactTag) return false;
+  // Never draw a contact explosion between two discontinuous occluding surfaces.
+  return !from.impact || !to.impact || Math.hypot(from.impact.x - to.impact.x,
+    from.impact.y - to.impact.y, from.impact.z - to.impact.z) <= TELEPORT;
+}
+function writeEyeSample(eye: BossEyeState, from: EyeSample, to: EyeSample | null, alpha: number): void {
+  for (const key of EYE_VECTORS) {
+    const a = from[key], b = to?.[key];
+    if (!a) { eye[key] = null; continue; }
+    // Existing vectors are reused every rendered frame; allocation is only needed
+    // after a null authoritative field becomes populated by a network sample.
+    const out = eye[key] ?? (eye[key] = { x: 0, y: 0, z: 0 });
+    out.x = a.x + (b ? b.x - a.x : 0) * alpha;
+    out.y = a.y + (b ? b.y - a.y : 0) * alpha;
+    out.z = a.z + (b ? b.z - a.z : 0) * alpha;
+  }
+  if (to && eye.direction) {
+    const direction = eye.direction, origin = eye.origin, impact = eye.impact;
+    if (origin && impact) { direction.x = impact.x - origin.x; direction.y = impact.y - origin.y; direction.z = impact.z - origin.z; }
+    const length = Math.hypot(direction.x, direction.y, direction.z) || 1;
+    direction.x /= length; direction.y /= length; direction.z /= length;
+  }
+}
+
 type MotionKind = 'avatars' | 'hippies' | 'projectiles' | 'flags' | 'buildings';
 
 /** Field indexes of the pose in each kind's rows (-1: the kind has no such field). */
@@ -167,6 +201,8 @@ export class Motion {
     buildings: new Map(),
   };
   private boss: Track | null = null;
+  private eyeFrom: EyeSample | null = null;
+  private eyeTo: EyeSample | null = null;
   private stamp = 0;
   /** Times of the last applied frame and of the next queued one (NaN: none queued). */
   private tA = 0;
@@ -254,8 +290,8 @@ export class Motion {
       t.fa = b.yaw;
       t.fp = b.stride;
       t.seen = s;
-      this.boss = t;
-    } else this.boss = null;
+      this.boss = t; this.eyeFrom = eyeSample(b.eye); this.eyeTo = null;
+    } else { this.boss = null; this.eyeFrom = null; this.eyeTo = null; }
     for (const kind of MOTION_KINDS) {
       for (const t of this.tracks[kind].values()) if (t.seen !== s) this.tracks[kind].delete(t.id);
     }
@@ -276,6 +312,7 @@ export class Motion {
       }
     }
     const boss = this.boss;
+    this.eyeTo = next ? this.eyeFrom : null;
     if (boss) {
       boss.tx = boss.fx;
       boss.tz = boss.fz;
@@ -291,6 +328,7 @@ export class Motion {
           boss.tz = b.pos.z;
           boss.ta = b.yaw;
           boss.tp = b.stride;
+          this.eyeTo = b.hp > 0 && b.deathAt === null ? eyeSample(b.eye) : null;
           boss.snap = Math.hypot(boss.tx - boss.fx, boss.tz - boss.fz) > TELEPORT;
         } else boss.aim = false;
       }
@@ -380,14 +418,16 @@ export class Motion {
   private write(world: World, alpha: number, ext: number, blending: boolean): void {
     const b = world.boss, t = this.boss;
     if (b && t && b.id === t.id) {
-      // A shot's muzzle/ray is frozen in world space. Do not anticipate the first
-      // post-shot walking frame while its predecessor still displays that beam.
-      // The expiry snapshot releases this lock; charge turning keeps interpolating.
+      // The body stays planted throughout the live sweep. Turn/aim only between
+      // samples of this same shot, never toward a post-beam walking/death frame.
       const firing = b.eye?.firedAt != null;
+      const eyeBlend = firing && blending && t.aim && !t.snap && this.eyeFrom && this.eyeTo &&
+        continuousEyeContact(this.eyeFrom, this.eyeTo);
       b.pos.x = firing ? t.fx : posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
       b.pos.z = firing ? t.fz : posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
-      b.yaw = firing ? t.fa : posedAngle(t, t.fa, t.ta, alpha, blending);
+      b.yaw = firing && !eyeBlend ? t.fa : posedAngle(t, t.fa, t.ta, alpha, blending);
       b.stride = firing ? t.fp : posed(t, t.fp, t.tp, 0, alpha, 0, blending);
+      if (firing && this.eyeFrom) writeEyeSample(b.eye, this.eyeFrom, eyeBlend ? this.eyeTo : null, eyeBlend ? alpha : 0);
     }
     for (const t of this.tracks.avatars.values()) {
       const av = world.avatars.get(t.id);

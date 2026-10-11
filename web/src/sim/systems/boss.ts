@@ -20,6 +20,7 @@ import { crushScenery } from './scenery';
 import { eliminateByBoss } from './victory';
 import { cancelBossEye, updateBossEye } from './boss/eye';
 import { moveBossWithPlayerCollision } from './boss/playerCollision';
+import { syncBossLightning, updateBossLightning } from './boss/lightning';
 
 const WALK_SPEED = 4.3, CROUCH_SPEED = 2.0, GRAB_REACH = 8 * SIZE, SWIPE_REACH = 9 * SIZE;
 const SWIPE_DAMAGE = 100, STOMP_DAMAGE = 140, STOMP_RADIUS = 4.6 * SIZE;
@@ -36,7 +37,7 @@ export function spawnBoss(world: World): BossState | null {
     hp, maxHp: hp, spawnedAt: at, action: 'emerge', crouched: false, actionAt: at,
     actionSeq: 0, hitSeq: -1, target: null, focusFaction: null, objectiveAltarId: null, routeStartStride: 0,
     nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
-    nextAttackAt: at + BOSS_TIMING.emerge, deathAt: null, barrier: null, stride: 0, held: null, eye: createBossEyeState(at) };
+    nextAttackAt: at + BOSS_TIMING.emerge, deathAt: null, barrier: null, stride: 0, held: null, eye: createBossEyeState(at), lightning: [] };
   world.emit({ t: 'notify', faction: 'all', text: 'The giant has awakened. Rival camps stand together. Protect your altars and bring it down!', severity: 'epic' });
   return world.boss;
 }
@@ -141,7 +142,13 @@ function target(world: World, b: BossState): BossTarget | null {
 
 export function updateBoss(world: World, dt: number): void {
   const b = spawnBoss(world);
-  if (!b || world.phase !== 'playing') return;
+  if (!b) return;
+  if (world.phase !== 'playing') { b.lightning = []; return; }
+  updateBossLightning(world, b, dt);
+  try { advanceBoss(world, b, dt); } finally { syncBossLightning(world, b); }
+}
+
+function advanceBoss(world: World, b: BossState, dt: number): void {
   if (b.hp <= 0) {
     cancelBossEye(b);
     if (b.deathAt === null) { b.deathAt = world.time; action(world, b, 'death'); }

@@ -19,7 +19,7 @@ function setup() {
   const world = createMatch({ seed: 'eye-strategy', difficulty: 'normal', humans: [0, 1], mode: 'standard' });
   world.time = 127; world.effigyRevealedAt = 100;
   const boss = spawnBoss(world)!; boss.action = 'idle'; boss.pos = { x: 0, z: 0 }; boss.yaw = 0;
-  world.collision = new CollisionWorld();
+  world.collision = new CollisionWorld(); world.map.obstacles = [];
   world.hippies.clear(); world.buildings.clear(); world.pieces.clear(); world.flags.clear(); world.projectiles.clear();
   for (const f of world.factions) { f.hearthIds = []; f.gccId = null; }
   for (const a of world.avatars.values()) { a.pos = { x: 100, y: 0, z: a.faction * 20 }; a.carried = []; }
@@ -105,7 +105,7 @@ describe('independent strategic eye targeting', () => {
     if (state === 'eliminated') world.factions[avatar.faction].alive = false;
     expect(chooseBossEyeTarget(world, boss)).toBeNull(); expect(recentBossFlagThreats(world).size).toBe(0);
   });
-  it('defers without consuming cooldown, rechecks after .5s, then holds a full charge and frozen shot', () => {
+  it('defers without consuming cooldown, rechecks after .5s, then holds a full charge and five-second shot', () => {
     const { world, boss } = setup();
     expect(updateBossEye(world, boss, SIM_DT)).toBe(false); expect(boss.eye.nextFireAt).toBe(130);
     group(world, 0, 40); world.time = 127.49; expect(updateBossEye(world, boss, SIM_DT)).toBe(false);
@@ -116,9 +116,9 @@ describe('independent strategic eye targeting', () => {
     world.time = 130.5; updateBossEye(world, boss, SIM_DT);
     expect(boss.eye.target).toEqual(point); expect(boss.eye.nextFireAt).toBe(160.5);
     const shot = structuredClone(boss.eye);
-    world.time = 130.99; updateBossEye(world, boss, SIM_DT); expect(boss.eye).toEqual(shot);
-    world.time = 131; updateBossEye(world, boss, SIM_DT); expect(boss.eye.chargeAt).toBeNull();
-    expect(BOSS_EYE_TIMING).toEqual({ period: 30, charge: 3, beam: .5 });
+    world.time = 130.99; updateBossEye(world, boss, SIM_DT); expect(boss.eye.firedAt).toBe(shot.firedAt); expect(boss.eye.target).toEqual(shot.target); expect(boss.eye.sample).toBe(29);
+    world.time = 135.5; updateBossEye(world, boss, SIM_DT); expect(boss.eye.chargeAt).toBeNull();
+    expect(BOSS_EYE_TIMING).toEqual({ period: 30, charge: 3, beam: 5 });
   });
   it('wakes deferred selection for new aggression and keeps its locked point if the attacker dies', () => {
     const { world, boss, avatar } = setup(); avatar.pos = { x: 0, y: 0, z: 30 };

@@ -6,7 +6,7 @@ import { BOSS_GAMEPLAY_SCALE } from './bossDimensions';
 export const BOSS_MAX_HP = 50000;
 export const BOSS_RADIUS = 2.35 * BOSS_GAMEPLAY_SCALE;
 export const BOSS_DEATH_DURATION = 12;
-export const BOSS_EYE_TIMING = { period: 30, charge: 3, beam: 0.5 } as const;
+export const BOSS_EYE_TIMING = { period: 30, charge: 3, beam: 5 } as const;
 export const BOSS_EYE_BLAST_RADIUS = 5;
 export const BOSS_EYE_DAMAGE = 1000;
 export const BOSS_EYE_MAX_RANGE = 240;
@@ -14,26 +14,37 @@ export interface BossEyeState {
   nextFireAt: number;
   chargeAt: number | null;
   firedAt: number | null;
-  /** Ground/world target chosen at charge start; firing never sweeps damage. */
+  /** Current world aim along the locked, host-sampled sweep route. */
   target: V3 | null;
   origin: V3 | null;
   direction: V3 | null;
   impact: V3 | null;
+  impactTag: number | null;
+  /** Ordered points selected at charge start; sampled on the host's fixed attack clock. */
+  route: V3[];
+  sample: number;
+  /** Per-beam hit ledgers survive snapshots; a re-entering target is never damaged twice. */
+  damaged: EntityId[];
+  knockedFlags: EntityId[];
 }
 export function createBossEyeState(spawnedAt: number): BossEyeState {
   return { nextFireAt: spawnedAt + BOSS_EYE_TIMING.period, chargeAt: null, firedAt: null,
-    target: null, origin: null, direction: null, impact: null };
+    target: null, origin: null, direction: null, impact: null, impactTag: null, route: [], sample: -1, damaged: [], knockedFlags: [] };
 }
 export function clearBossEyeCharge(boss: BossState): void {
   boss.eye.chargeAt = null; boss.eye.firedAt = null; boss.eye.target = null;
-  boss.eye.origin = null; boss.eye.direction = null; boss.eye.impact = null;
+  boss.eye.origin = null; boss.eye.direction = null; boss.eye.impact = null; boss.eye.impactTag = null;
+  boss.eye.route = []; boss.eye.sample = -1; boss.eye.damaged = []; boss.eye.knockedFlags = [];
 }
 export const BOSS_ACTIONS = ['emerge', 'idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'death', 'dead'] as const;
 export type BossAction = typeof BOSS_ACTIONS[number];
 export type BossTargetKind = 'avatar' | 'hippie' | 'building' | 'piece' | 'flag';
 export interface BossTarget { kind: BossTargetKind; id: EntityId; }
 export interface BossBarrier { edge: number; faction: FactionId; x: number; z: number; at: number; }
+export interface BossLightning { kind: 'crystal' | 'ward'; id: EntityId; faction: FactionId; from: V3; to: V3; }
 export interface BossState {
+  /** Active defensive emitters, derived on the host and rendered by live/late peers. */
+  lightning: BossLightning[];
   id: EntityId;
   pos: V2;
   yaw: number;

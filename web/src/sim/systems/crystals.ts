@@ -50,14 +50,14 @@ export function updateCrystals(world: World, dt: number): void {
 }
 
 /** Remove a Crystal (pentacle broken, focus flipped away). Emits crystalShatter. */
-export function shatterCrystal(world: World, c: Crystal): void {
+export function shatterCrystal(world: World, c: Crystal, cause: 'pentacle' | 'beam' = 'pentacle'): void {
   if (!world.crystals.delete(c.id)) return;
   world.emit({ t: 'crystalShatter', crystalId: c.id, node: c.node, faction: c.faction, pos: { ...c.pos } });
   if (c.growth >= 1 && world.factions[c.faction].alive) {
     world.emit({
       t: 'notify',
       faction: c.faction,
-      text: 'Your Crystal shatters. The pentacle is broken.',
+      text: cause === 'beam' ? 'The boss beam shatters your Crystal.' : 'Your Crystal shatters. The pentacle is broken.',
       severity: 'warn',
       pos: { ...c.pos },
     });

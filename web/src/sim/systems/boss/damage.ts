@@ -22,6 +22,7 @@ export function damageBoss(world: World, amount: number, by: EntityId | -1): boo
   }
   if (boss.hp === 0) {
     clearBossEyeCharge(boss);
+    boss.lightning = [];
     boss.action = 'death';
     boss.actionAt = boss.deathAt = world.time;
     boss.actionSeq++;

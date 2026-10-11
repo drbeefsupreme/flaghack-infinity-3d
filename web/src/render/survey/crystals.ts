@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { CRYSTAL_HEIGHT } from '../../sim/constants';
+import { CRYSTAL_RADIUS, CRYSTAL_SHOULDER, CRYSTAL_CAP_SCALE } from '../../sim/crystalGeometry';
 import type { GameEvent } from '../../sim/events';
 import type { Crystal } from '../../sim/types';
 import type { World } from '../../sim/world';
@@ -22,11 +23,12 @@ const CAPACITY = 32;
 const SHARDS = 5;
 const SHATTER_TIME = 1.2;
 const PRISM_H = CRYSTAL_HEIGHT;
-const PRISM_R = 1.05;
+const PRISM_R = CRYSTAL_RADIUS;
 const PINK = new THREE.Color(1.0, 0.38, 0.86);
 const BLUE = new THREE.Color(0.3, 0.62, 1.0);
 
 const PRISM_VERT = /* glsl */ `
+uniform float uCrystalTime;
 ${GLSL_COMMON}
 ${GLSL_VERT}
 attribute vec2 aFace;
@@ -44,7 +46,7 @@ void main() {
   float shatter = iB.z;
   float h = iA.z * (0.12 + 0.88 * grow) * (1.0 + shatter * 0.12);
   float rad = iA.w * (0.55 + 0.45 * grow) * (1.0 + shatter * 0.4);
-  float rot = iB.x + uTime * 0.12;
+  float rot = iB.x + uCrystalTime * 0.12;
   float cs = cos(rot);
   float sn = sin(rot);
   vec3 p = position;
@@ -177,8 +179,8 @@ void main() {
 function prismGeometry(): THREE.BufferGeometry {
   const pos: number[] = [];
   const face: number[] = [];
-  const shoulder = 0.8;
-  const top = 0.86;
+  const shoulder = CRYSTAL_SHOULDER;
+  const top = CRYSTAL_CAP_SCALE;
   const ring = (i: number, r: number): [number, number] => {
     const a = (i / 5) * Math.PI * 2;
     return [Math.cos(a) * r, Math.sin(a) * r];
@@ -277,6 +279,7 @@ export class CrystalLayer {
     this.pB = this.prisms.add('iB', 4);
     this.pColor = this.prisms.add('iColor', 4);
     this.prismMat = surveyMaterial(shared, { vertexShader: PRISM_VERT, fragmentShader: PRISM_FRAG, side: THREE.DoubleSide, hdrCap: 2.5 });
+    this.prismMat.uniforms.uCrystalTime = { value: world.time };
     this.prismMesh = new THREE.Mesh(this.prisms.geo, this.prismMat);
     this.prismMesh.frustumCulled = false;
     this.prismMesh.renderOrder = 8;
@@ -309,6 +312,7 @@ export class CrystalLayer {
   }
 
   update(now: number, decals: DecalLayer, beams: BeamLayer): void {
+    this.prismMat.uniforms.uCrystalTime.value = this.world.time;
     this.now = now;
     this.stamp++;
     this.world.crystals.forEach(this.syncCrystal);

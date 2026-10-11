@@ -80,6 +80,8 @@ export interface VoiceSpec {
 export interface VoiceHandle {
   input: GainNode;
   t: number;
+  /** Optional cheap pan update for a sustained arena-wide source. */
+  setPosition?: (at: V2) => void;
 }
 
 const REF_DISTANCE = 10;
@@ -94,6 +96,10 @@ export class AudioEngine {
   readonly compressor: DynamicsCompressorNode;
   /** Final fast limiter: keeps pile-ups (a Tide over a capture over an Omega) off the 0 dBFS rail. */
   readonly limiter: DynamicsCompressorNode;
+  /** Foreground boss route avoids the stronger world/music glue compression. */
+  readonly bossMaster: GainNode;
+  readonly bossMuffle: BiquadFilterNode;
+  readonly bossCompressor: DynamicsCompressorNode;
   readonly buses: Record<Bus, GainNode>;
   /** Reverb send inputs per bus; their gains follow the bus volume so tails respect settings. */
   readonly wet: Record<Bus, GainNode>;
@@ -148,6 +154,16 @@ export class AudioEngine {
     this.limiter.attack.value = 0.001;
     this.limiter.release.value = 0.12;
     this.master.connect(this.muffle).connect(this.compressor).connect(this.limiter).connect(ctx.destination);
+    this.bossMaster = ctx.createGain();
+    this.bossMuffle = ctx.createBiquadFilter();
+    this.bossMuffle.type = 'lowpass'; this.bossMuffle.frequency.value = 20000; this.bossMuffle.Q.value = .5;
+    this.bossCompressor = ctx.createDynamicsCompressor();
+    this.bossCompressor.threshold.value = -8;
+    this.bossCompressor.knee.value = 6;
+    this.bossCompressor.ratio.value = 2;
+    this.bossCompressor.attack.value = .003;
+    this.bossCompressor.release.value = .15;
+    this.bossMaster.connect(this.bossMuffle).connect(this.bossCompressor).connect(this.limiter);
 
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.makeImpulse(2.8);
@@ -177,7 +193,7 @@ export class AudioEngine {
     };
     this.buses.music.connect(this.musicDuck);
     this.buses.sfx.connect(this.worldDuck);
-    this.buses.boss.connect(this.master);
+    this.buses.boss.connect(this.bossMaster);
     this.buses.ui.connect(this.master);
     this.buses.ambience.connect(this.worldDuck);
     for (const b of ['music', 'sfx', 'ambience'] as const) this.wet[b].connect(this.worldWetDuck);
@@ -213,6 +229,7 @@ export class AudioEngine {
     this.volumeState = [s.masterVolume, s.musicVolume, s.sfxVolume, worldScale, muffled];
     const t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(s.masterVolume, t, 0.05);
+    this.bossMaster.gain.setTargetAtTime(s.masterVolume, t, 0.05);
     const music = s.musicVolume;
     const sfx = s.sfxVolume * worldScale;
     this.bossAudible = s.masterVolume > 0 && sfx > 0;
@@ -228,6 +245,7 @@ export class AudioEngine {
     this.buses.ambience.gain.setTargetAtTime(s.sfxVolume * 0.85, t, 0.05);
     this.wet.ambience.gain.setTargetAtTime(s.sfxVolume * 0.85, t, 0.05);
     this.muffle.frequency.setTargetAtTime(muffled ? 700 : 20000, t, 0.15);
+    this.bossMuffle.frequency.setTargetAtTime(muffled ? 700 : 20000, t, 0.15);
   }
 
   /** Listener from a camera: position + world matrix columns (right = col 0, forward = -col 2). */
@@ -320,6 +338,7 @@ export class AudioEngine {
     const chain: AudioNode[] = [];
     const bus = spec.bus ?? 'sfx';
     let tail: AudioNode = out;
+    let setPosition: ((at: V2) => void) | undefined;
     if (spec.at) {
       const x = spec.at.x;
       const z = spec.at.z;
@@ -346,6 +365,14 @@ export class AudioEngine {
       } else {
         const p = ctx.createStereoPanner();
         p.pan.value = this.panOf(x, z);
+        if (spec.directionalOnly) {
+          let lastPan = p.pan.value;
+          setPosition = at => {
+            const pan = this.panOf(at.x, at.z);
+            if (Math.abs(pan - lastPan) < .01) return;
+            lastPan = pan; p.pan.setTargetAtTime(pan, ctx.currentTime, .04);
+          };
+        }
         out.gain.value = dist;
         tail.connect(p);
         chain.push(p);
@@ -364,7 +391,7 @@ export class AudioEngine {
     }
     this.voices.push({ out, chain, end: t + spec.dur + 0.1, priority });
     this.stats.started++;
-    return { input, t };
+    return { input, t, setPosition };
   }
 
   /** Steal the oldest voice with priority ≤ `priority`; false if none qualifies. */

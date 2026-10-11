@@ -1,10 +1,10 @@
-/** Fireworks are emitted only by authoritative thrown-flag contact events. */
+/** Shared bounded fireworks for authoritative projectile and melee contacts. */
 import * as THREE from 'three';
 import type { GameEvent } from '../../../../sim/events';
 import type { EnvContext } from '../../envTypes';
 import { Rng } from '../../../../sim/rng';
 
-type Impact = Extract<GameEvent, { t: 'bossImpact' }>;
+import type { RenderContext } from '../../../context';
 type Burst = { points: THREE.Points; born: number; uAge: { value: number }; uColor: { value: THREE.Color }; uPower: { value: number } };
 const VERTEX = `attribute vec3 aVelocity;attribute vec2 aSeed;uniform float uAge;uniform float uPower;uniform float uPointScale;
 varying float vFade;varying float vHue;varying float vTrail;
@@ -19,7 +19,7 @@ void main(){float r=length(gl_PointCoord-.5);float a=(1.0-smoothstep(.06,.5,r))*
   vec3 color=mix(rainbow,uColor,.42);color=mix(color,vec3(1.0,.95,.74),pow(1.0-r*2.0,4.0)*.7);
   gl_FragColor=vec4(color*a*3.1,a);\n#include <colorspace_fragment>}`;
 
-export class BossImpactFx {
+export class ImpactFireworks {
   readonly group = new THREE.Group();
   private readonly pool: Burst[] = [];
   private readonly seen = new Set<number>();
@@ -28,45 +28,56 @@ export class BossImpactFx {
   private readonly uPointScale = { value: 600 };
   private readonly size = new THREE.Vector2();
 
-  constructor(private readonly env: EnvContext) {
-    this.group.name = 'boss-flag-impact-fireworks';
+  constructor(private readonly ctx: RenderContext, private readonly melee = false, private readonly origin = { x: 0, z: 0 }) {
+    this.group.name = melee ? 'melee-impact-fireworks' : 'boss-flag-impact-fireworks';
     const rng = new Rng('boss-flag-impact-rays'), positions: number[] = [], velocity: number[] = [], seeds: number[] = [];
-    for (let i = 0; i < 44; i++) {
+    for (let i = 0; i < (melee ? 20 : 44); i++) {
       const y = rng.range(-.8, 1), a = rng.range(0, Math.PI * 2), r = Math.sqrt(1 - y * y), speed = rng.range(2.8, 7), hue = rng.next();
       for (let trail = 0; trail < 4; trail++) { positions.push(0, 0, 0); velocity.push(Math.cos(a) * r * speed, y * speed, Math.sin(a) * r * speed); seeds.push(hue, trail / 3); }
     }
     this.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     this.geometry.setAttribute('aVelocity', new THREE.Float32BufferAttribute(velocity, 3));
     this.geometry.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 2));
-    for (let i = 0; i < 16; i++) {
+    // Shader particles move beyond their zero-valued CPU positions. Bound that motion.
+    this.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), melee ? 7 : 14);
+    for (let i = 0; i < (melee ? 24 : 16); i++) {
       const uAge = { value: 2 }, uColor = { value: new THREE.Color() }, uPower = { value: 1 };
       const material = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
         uniforms: { uAge, uColor, uPower, uPointScale: this.uPointScale }, vertexShader: VERTEX, fragmentShader: FRAGMENT });
       const points = new THREE.Points(this.geometry, material); points.name = 'boss-impact-firework-' + i;
-      points.frustumCulled = false; points.visible = false; points.renderOrder = 8; this.group.add(points);
+      points.frustumCulled = melee; points.visible = false; points.renderOrder = 8; this.group.add(points);
       this.pool.push({ points, born: -Infinity, uAge, uColor, uPower });
     }
   }
 
   onEvent(event: GameEvent): void {
-    if (event.t !== 'bossImpact') return;
-    const e: Impact = event;
-    if (this.seen.has(e.flagId) || this.env.ctx.world.boss?.id !== e.bossId) return;
-    this.seen.add(e.flagId);
+    if (this.melee ? event.t !== 'meleeImpact' : event.t !== 'bossImpact') return;
+    if (event.t !== 'meleeImpact' && event.t !== 'bossImpact') return;
+    const e = event, key = e.t === 'meleeImpact' ? e.impactId : e.flagId;
+    if (this.seen.has(key) || e.t === 'bossImpact' && this.ctx.world.boss?.id !== e.bossId) return;
+    this.seen.add(key);
     if (this.seen.size > 1024) this.seen.delete(this.seen.values().next().value!);
-    const b = this.pool[this.cursor++ % this.pool.length], origin = this.env.ctx.world.map.effigy;
-    b.points.position.set(e.pos.x - origin.x, e.pos.y, e.pos.z - origin.z);
-    b.born = this.env.ctx.world.time; b.uAge.value = 0; b.uPower.value = e.headshot ? 1.35 : 1;
-    b.uColor.value.set(this.env.ctx.world.factions[e.faction].color); b.points.visible = true;
+    const camera = this.ctx.camera.position;
+    if (this.melee && (camera.x - e.pos.x) ** 2 + (camera.y - e.pos.y) ** 2 + (camera.z - e.pos.z) ** 2 > 160 * 160) return;
+    const b = this.pool[this.cursor++ % this.pool.length], origin = this.origin;
+    const groundY = this.melee ? this.ctx.shared?.groundOffset?.(e.pos.x, e.pos.z) ?? 0 : 0;
+    b.points.position.set(e.pos.x - origin.x, e.pos.y + groundY, e.pos.z - origin.z);
+    b.born = this.melee ? this.ctx.time : this.ctx.world.time; b.uAge.value = 0; b.uPower.value = e.t === 'meleeImpact' ? .38 : e.headshot ? 1.35 : 1;
+    b.uColor.value.set(this.ctx.world.factions[e.faction]?.color ?? 0xffcc66); b.points.visible = true;
   }
 
   update(now: number): void {
-    this.env.ctx.renderer.getDrawingBufferSize(this.size);
-    this.uPointScale.value = this.size.y / (2 * Math.tan(THREE.MathUtils.degToRad(this.env.ctx.camera.fov) / 2));
+    this.ctx.renderer.getDrawingBufferSize(this.size);
+    this.uPointScale.value = this.size.y / (2 * Math.tan(THREE.MathUtils.degToRad(this.ctx.camera.fov) / 2));
     for (const b of this.pool) { b.uAge.value = Math.max(0, now - b.born); b.points.visible = now >= b.born && now - b.born < 1.4; }
   }
   dispose(): void {
     this.geometry.dispose(); for (const b of this.pool) (b.points.material as THREE.Material).dispose();
     this.group.removeFromParent();
   }
+}
+
+/** Existing effigy-local projectile consumer retains its public API. */
+export class BossImpactFx extends ImpactFireworks {
+  constructor(env: EnvContext) { super(env.ctx, false, env.ctx.world.map.effigy); }
 }

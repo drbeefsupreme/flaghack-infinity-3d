@@ -17,7 +17,7 @@ async function model() {
   return prepareBossModel((await new GLTFLoader().parseAsync(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), '')).scene);
 }
 function boss(): BossState {
-  return { id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action: 'idle', actionAt: 110,
+  return { lightning: [], id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action: 'idle', actionAt: 110,
     actionSeq: 3, hitSeq: -1, target: null, focusFaction: null,
     objectiveAltarId: null, routeStartStride: 0, nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
     nextAttackAt: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched: false, eye: createBossEyeState(100) };
@@ -30,7 +30,7 @@ function materialValues(m: THREE.Group) {
   return values;
 }
 
-describe('original hat eye and instantaneous beam presentation', () => {
+describe('original hat eye and five-second sweeping beam presentation', () => {
   it('scales the eye halo and beam width with the 32 m rig while keeping the blast and attack clock fixed', async () => {
     const m = await model(), fx = new BossEyeBeamFx(m);
     expect(BOSS_HEIGHT).toBe(32); expect(m.userData.height).toBe(32);
@@ -43,7 +43,7 @@ describe('original hat eye and instantaneous beam presentation', () => {
     expect(halo.material.uniforms.uBossScale.value).toBe(1.6);
     expect(halo.material.fragmentShader).toContain('(0.045+uPower*.65)');
     expect((beamHalo as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>).material.uniforms.uAlpha.value).toBe(.18);
-    expect(BOSS_EYE_TIMING).toEqual({ period: 30, charge: 3, beam: .5 });
+    expect(BOSS_EYE_TIMING).toEqual({ period: 30, charge: 3, beam: 5 });
     expect(BOSS_EYE_BLAST_RADIUS).toBe(5); expect(BOSS_EYE_MAX_RANGE).toBe(240);
     for (const name of ['boss-eye-impact-explosion', 'boss-eye-impact-rays'])
       expect(fx.group.getObjectByName(name)!.scale.toArray()).toEqual([5, 5, 5]);
@@ -107,32 +107,73 @@ describe('original hat eye and instantaneous beam presentation', () => {
     fx.dispose(); disposeBossModel(m);
   });
 
-  it('shows full host-frozen length immediately for exactly half a second with a 5m impact explosion', async () => {
-    const m = await model(), fx = new BossEyeBeamFx(m), p = parent(m, fx), b = boss();
+  it('sweeps a full white beam from the actual pupil to each live first impact for exactly five seconds', async () => {
+    const m = await model(), combat = new BossCombatPose(m), fx = new BossEyeBeamFx(m, () => combat.stabilizeRearFlap()), p = parent(m, fx), b = boss();
     b.eye.chargeAt = 127; b.eye.firedAt = 130; b.eye.origin = { x: 12, y: 16, z: -7 };
     b.eye.impact = { x: 12, y: 0, z: 23 }; b.eye.direction = { x: 0, y: -16 / 34, z: 30 / 34 };
-    const before = JSON.stringify(b), beam = fx.group.getObjectByName('boss-eye-beam')!, impact = fx.group.getObjectByName('boss-eye-impact-explosion')!;
+    const beam = fx.group.getObjectByName('boss-eye-beam')!, impact = fx.group.getObjectByName('boss-eye-impact-explosion') as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+    const rays = fx.group.getObjectByName('boss-eye-impact-rays')!;
+    const identities = fx.group.children.map(o => o.id);
     fx.update(b, 129.999); expect(beam.visible).toBe(false);
-    for (const now of [130, 130.00001, 130.2, 130.499999]) {
-      m.position.x += 1; m.rotation.y += .4; p.updateMatrixWorld(true); fx.update(b, now); p.updateMatrixWorld(true);
-      expect(beam.visible).toBe(true); expect(impact.visible).toBe(true); expect(beam.scale.z).toBeCloseTo(34, 10);
-      const start = beam.localToWorld(new THREE.Vector3(0, 0, 0)), end = beam.localToWorld(new THREE.Vector3(0, 0, 1));
-      expect(start.distanceTo(new THREE.Vector3(12, 16, -7))).toBeLessThan(1e-8);
-      expect(end.distanceTo(new THREE.Vector3(12, 0, 23))).toBeLessThan(1e-8);
+    let previous: THREE.Vector3 | null = null;
+    for (const [i, now] of [130, 130.00001, 132.2, 134.999999].entries()) {
+      m.position.set(b.pos.x - p.position.x, 0, b.pos.z - p.position.z); m.rotation.y = b.yaw + i * .08;
+      b.eye.target = { x: -12 + i * 12, y: 0, z: 28 + i * 2 };
+      b.eye.impact = { ...b.eye.target };
+      const before = JSON.stringify(b);
+      combat.sample(b, b.spawnedAt); p.updateMatrixWorld(true); fx.aim(b, now); fx.update(b, now); p.updateMatrixWorld(true);
+      const gaze = readBossEyeGaze(m.getObjectByName('head') as THREE.Bone);
+      const start = beam.localToWorld(new THREE.Vector3()), end = beam.localToWorld(new THREE.Vector3(0, 0, 1));
+      expect(beam.visible).toBe(true); expect(impact.visible).toBe(true); expect(rays.visible).toBe(true);
+      expect(start.distanceTo(gaze.origin)).toBeLessThan(1e-8);
+      expect(new THREE.Ray(gaze.origin, gaze.direction).distanceToPoint(end)).toBeLessThan(.00001);
+      expect(end.distanceTo(new THREE.Vector3(b.eye.impact.x, b.eye.impact.y, b.eye.impact.z))).toBeLessThan(1e-8);
+      expect(beam.scale.z).toBeCloseTo(start.distanceTo(end), 10);
       expect(impact.getWorldPosition(new THREE.Vector3()).distanceTo(end)).toBeLessThan(1e-8);
       expect(impact.getWorldScale(new THREE.Vector3()).toArray()).toEqual([5, 5, 5]);
+      expect(impact.material.uniforms.uShotAge.value).toBeCloseTo(now - 130, 8);
+      expect(impact.material.fragmentShader).toContain('float pulse=');
+      expect(impact.material.fragmentShader).not.toContain('float fade=');
+      expect(fx.power.value).toBe(1); expect(JSON.stringify(b)).toBe(before);
+      expect(fx.group.children.map(o => o.id)).toEqual(identities);
+      if (previous) expect(previous.distanceTo(end)).toBeGreaterThan(10);
+      previous = end;
+      const flap = m.getObjectByName('rearflap_01')!, position = flap.getWorldPosition(new THREE.Vector3());
+      combat.stabilizeRearFlap(); expect(flap.getWorldPosition(new THREE.Vector3()).distanceTo(position)).toBeLessThan(1e-6);
     }
-    fx.update(b, 130.5); expect(beam.visible).toBe(false); expect(impact.visible).toBe(false);
-    expect(JSON.stringify(b)).toBe(before);
-    b.eye.impact = null; fx.update(b, 130.2);
-    expect(beam.visible).toBe(true); expect(beam.scale.z).toBeCloseTo(240, 8); expect(impact.visible).toBe(false);
-    expect(fx.group.getObjectByName('boss-eye-impact-rays')!.visible).toBe(false);
-    fx.update(b, 130.2); expect(beam.visible).toBe(true);
-    b.hp = 0; b.deathAt = 130.2; fx.update(b, 130.2); expect(fx.group.visible).toBe(false); expect(fx.power.value).toBe(0);
+    fx.update(b, 135); expect(beam.visible).toBe(false); expect(impact.visible).toBe(false); expect(fx.power.value).toBe(0);
+    // The first hit vanishes immediately when the host ray misses; no old blast is retained.
+    b.eye.impact = null; combat.sample(b, b.spawnedAt); p.updateMatrixWorld(true); fx.aim(b, 133); fx.update(b, 133); p.updateMatrixWorld(true);
+    expect(beam.visible).toBe(true); expect(beam.scale.z).toBeCloseTo(240, 8); expect(impact.visible).toBe(false); expect(rays.visible).toBe(false);
+    const gaze = readBossEyeGaze(m.getObjectByName('head') as THREE.Bone), end = beam.localToWorld(new THREE.Vector3(0, 0, 1));
+    expect(end.distanceTo(gaze.origin.clone().addScaledVector(gaze.direction, 240))).toBeLessThan(.00001);
+    b.hp = 0; b.deathAt = 133; fx.update(b, 133);
+    expect(fx.group.visible).toBe(false); expect(beam.visible).toBe(false); expect(fx.power.value).toBe(0);
+    fx.dispose(); expect(fx.group.parent).toBeNull(); disposeBossModel(m);
+  });
+
+  it('cleans up old beam and impact meshes on reset and reuses the same objects on a new sequence', async () => {
+    const m = await model(), combat = new BossCombatPose(m), fx = new BossEyeBeamFx(m), p = parent(m, fx), b = boss();
+    b.eye.chargeAt = 127; b.eye.firedAt = 130; b.eye.target = { x: 0, y: 0, z: 30 };
+    b.eye.origin = { x: 0, y: 27, z: 0 }; b.eye.direction = { x: 0, y: -1, z: 1 }; b.eye.impact = { ...b.eye.target };
+    const objects = fx.group.children.slice();
+    combat.sample(b, b.spawnedAt); p.updateMatrixWorld(true); fx.aim(b, 132.6); fx.update(b, 132.6);
+    expect(fx.group.getObjectByName('boss-eye-beam')!.visible).toBe(true);
+    fx.update(null, 132.6);
+    for (const name of ['boss-eye-beam', 'boss-eye-impact-explosion', 'boss-eye-impact-rays']) expect(fx.group.getObjectByName(name)!.visible).toBe(false);
+    expect(fx.power.value).toBe(0);
+    b.eye = createBossEyeState(140); fx.update(b, 141);
+    expect(fx.group.getObjectByName('boss-eye-beam')!.visible).toBe(false); expect(fx.power.value).toBe(0);
+    b.eye.chargeAt = 157; b.eye.firedAt = 160; b.eye.target = { x: 30, y: 0, z: 18 };
+    b.eye.origin = { x: 0, y: 27, z: 0 }; b.eye.direction = { x: 1, y: -1, z: 1 }; b.eye.impact = { ...b.eye.target };
+    combat.sample(b, b.spawnedAt); p.updateMatrixWorld(true); fx.aim(b, 163); fx.update(b, 163); p.updateMatrixWorld(true);
+    expect(fx.group.getObjectByName('boss-eye-beam')!.visible).toBe(true);
+    expect(fx.group.getObjectByName('boss-eye-impact-explosion')!.getWorldPosition(new THREE.Vector3()).toArray()).toEqual([30, 0, 18]);
+    expect(fx.group.children).toEqual(objects);
     fx.dispose(); disposeBossModel(m);
   });
 
-  it('clears a final beam when the ended match clock freezes inside its half-second window', async () => {
+  it('clears a final beam when the ended match clock freezes inside its five-second window', async () => {
     const b = boss(); b.eye.chargeAt = 127; b.eye.firedAt = 130; b.eye.target = { x: 28, y: 0, z: 40 };
     b.eye.origin = { x: 12, y: 17, z: -7 }; b.eye.direction = { x: 0, y: -1, z: 0 }; b.eye.impact = { x: 12, y: 0, z: -7 };
     const e = { root: new THREE.Group(), day: createDayState(), fireLight: new THREE.PointLight(), noise: new THREE.DataTexture(new Uint8Array([127,127,127,255]),1,1),
@@ -162,16 +203,16 @@ describe('original hat eye and instantaneous beam presentation', () => {
     expect(gaze.origin.distanceTo(new THREE.Vector3(authoritative.origin.x, authoritative.origin.y, authoritative.origin.z))).toBeLessThan(.00001);
     expect(gaze.direction.distanceTo(new THREE.Vector3(authoritative.direction.x, authoritative.direction.y, authoritative.direction.z))).toBeLessThan(.000001);
     b.eye.origin = authoritative.origin; b.eye.direction = authoritative.direction; b.eye.impact = b.eye.target; b.eye.firedAt = 130;
-    const first = head.quaternion.toArray(); e.ctx.world.time = 130.4; r.update(120.4);
+    const first = head.quaternion.toArray(); e.ctx.world.time = 133.4; r.update(123.4);
     expect(head.quaternion.toArray()).toEqual(first);
     expect(e.root.getObjectByName('boss-eye-beam')!.visible).toBe(true);
     for (const crouched of [false, true]) for (const yaw of [-1.4, 0, .7, 2.4]) {
-      b.crouched = crouched; b.yaw = yaw; r.update(120.4);
+      b.crouched = crouched; b.yaw = yaw; r.update(123.4);
       const actual = readBossEyeGaze(head), ray = bossEyeRay(e.ctx.world, b);
       expect(actual.origin.distanceTo(new THREE.Vector3(ray.origin.x, ray.origin.y, ray.origin.z))).toBeLessThan(.00001);
       expect(actual.direction.distanceTo(new THREE.Vector3(ray.direction.x, ray.direction.y, ray.direction.z))).toBeLessThan(.000001);
     }
-    e.ctx.world.phase = 'ended'; r.update(120.4);
+    e.ctx.world.phase = 'ended'; r.update(123.4);
     expect(e.root.getObjectByName('boss-eye-fx')!.visible).toBe(false);
     expect(e.root.getObjectByName('boss-eye-beam')!.visible).toBe(false);
     expect(e.root.getObjectByName('boss-eye-impact-explosion')!.visible).toBe(false);

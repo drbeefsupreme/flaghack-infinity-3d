@@ -3,6 +3,7 @@
  * public `status` / `statusTarget` truthful (the D.E.G.E.N. mesh shows them) and clears the
  * task (or the order) when it ends so the next tick decides afresh.
  */
+import { damageMelee, emitMeleeImpact } from '../meleeImpact';
 import { BUILDINGS, DRUMMERS_PER_CIRCLE, GCC, HIPPIE, HIPPIE_AI, RECRUIT_RADIUS, RECRUIT_ATTRACT_RADIUS } from '../../constants';
 import { TAU } from '../../math';
 import type { V2 } from '../../math';
@@ -10,7 +11,6 @@ import { NEUTRAL } from '../../types';
 import type { Building, FactionId, Hippie } from '../../types';
 import type { World } from '../../world';
 import { isFlagProtected } from '../abilities';
-import { damageEntity } from '../combat';
 import { aboveAttentionCap, nearestHearth } from '../economy';
 import { isRecruiter } from '../recruitment';
 import { speedMultiplier } from '../effects';
@@ -354,6 +354,7 @@ function actChop(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: number)
   const amount = Math.min(HIPPIE.gatherAmount, pile.lumber);
   pile.lumber -= amount;
   h.carryingLumber = amount;
+  emitMeleeImpact(world, pile.id, h.id);
   world.emit({ t: 'harvest', pileId: pile.id, by: h.id, amount, pos: { x: pile.pos.x, z: pile.pos.z } });
   releaseTask(world, h, b);
 }
@@ -475,7 +476,7 @@ function actTear(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionI
   h.facing = Math.atan2(reachPt.x - h.pos.x, reachPt.z - h.pos.z);
   if (world.time < b.nextTearAt) return;
   b.nextTearAt = world.time + HIPPIE_AI.tearInterval;
-  damageEntity(world, id, HIPPIE.wallDps * HIPPIE_AI.tearInterval * speedMultiplier(world, h), h.id);
+  damageMelee(world, id, HIPPIE.wallDps * HIPPIE_AI.tearInterval * speedMultiplier(world, h), h.id);
 }
 
 function actHelp(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId): void {

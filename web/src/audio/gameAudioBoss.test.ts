@@ -15,7 +15,7 @@ beforeEach(() => { vi.stubGlobal('AudioContext', TestAudioContext); vi.stubGloba
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function harness(initialBoss: BossState | null = null) {
   const session = new Session(); session.screen = 'playing';
-  const world = { boss: initialBoss, time: 99.9, factions: [{ avatarId: 1 }], suddenDeath: false };
+  const world = { boss: initialBoss, phase: 'playing', time: 99.9, factions: [{ avatarId: 1 }], suddenDeath: false };
   const app = { session, world, net: null, renderer: { ctx: null, camera: { position: { x: -150, y: 260, z: -150 }, matrixWorld: { elements: [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1] } } } };
   const voice = vi.spyOn(AudioEngine.prototype, 'voice'), audio = new GameAudio(app as unknown as AppApi);
   audio.unlock(); return { audio, world, session, voice };
@@ -63,6 +63,14 @@ describe('boss audio through the production GameAudio frame hook', () => {
     expect(voice.mock.calls.map(([s]) => s.key)).toEqual(['boss-step', 'boss-step', 'boss-stomp', 'boss-crush']);
     expect(voice.mock.calls[0][0].at).toEqual({ x: 1, z: 2 });
     expect(voice.mock.calls[2][0].dur).toBeGreaterThan(voice.mock.calls[0][0].dur);
+  });
+  it('does not restart a beam against a frozen defeat-screen clock', () => {
+    const b = bossFixture(); b.eye.firedAt = 99.8;
+    const { audio, world, session, voice } = harness(b); audio.update(.016);
+    expect(voice.mock.calls.map(([s]) => s.key)).toEqual(['boss-beam']);
+    world.phase = 'ended'; session.screen = 'ended'; audio.update(.016);
+    TestAudioContext.last.currentTime = 10; audio.update(.016); audio.update(.016);
+    expect(voice.mock.calls).toHaveLength(1);
   });
   it('keeps user gestures available to retry a rejected resume or browser interruption', async () => {
     harness(); const ctx = TestAudioContext.last; ctx.state = 'suspended';

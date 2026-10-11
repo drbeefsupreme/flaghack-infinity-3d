@@ -2,7 +2,7 @@ import { BOSS_MAX_HP, createBossEyeState } from '../src/sim/boss';
 import type { BossState } from '../src/sim/boss';
 
 export function bossFixture(): BossState {
-  return { id: 98765, pos: { x: 1, z: 2 }, yaw: 0.4, hp: 5123.4, maxHp: BOSS_MAX_HP,
+  return { lightning: [], id: 98765, pos: { x: 1, z: 2 }, yaw: 0.4, hp: 5123.4, maxHp: BOSS_MAX_HP,
     spawnedAt: 230, action: 'grab', crouched: true, actionAt: 242.123, actionSeq: 8, hitSeq: 7,
     target: { kind: 'building', id: 100 }, focusFaction: 2, objectiveAltarId: 100,
     routeStartStride: 5.25, nextSceneryStompStride: 21.55, opportunisticAfter: 250,

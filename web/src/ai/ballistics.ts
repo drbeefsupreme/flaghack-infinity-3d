@@ -12,7 +12,7 @@ import { throwOrigin, throwVelocity } from '../sim/systems/avatars';
 export interface ThrowAim {
   yaw: number;
   pitch: number;
-  /** Seconds in the air until the Flag comes down at the target height. */
+  /** Seconds to the target; survey throws use its descending height crossing. */
   flight: number;
 }
 
@@ -107,6 +107,54 @@ export function solveThrow(feet: Readonly<V3>, tx: number, ty: number, tz: numbe
   out.yaw = yaw;
   out.pitch = pitch;
   out.flight = flight.t;
+  return true;
+}
+
+/**
+ * Intercept an elevated point, on either the rising or falling part of the arc. Survey
+ * throws use the descending-only solver above; combat targets can be above the hand and
+ * closer than the apex. Evaluate height at horizontal range with the exact SIM_DT gravity
+ * steps, including the fractional final segment used by swept projectile collisions.
+ */
+export function solveThrowAtPoint(feet: Readonly<V3>, target: Readonly<V3>, high: boolean, out: ThrowAim): boolean {
+  let yaw = Math.atan2(target.x - feet.x, target.z - feet.z);
+  for (let pass = 0; pass < YAW_PASSES; pass++) {
+    throwOrigin(feet, yaw, origin);
+    const dx = target.x - origin.x, dz = target.z - origin.z;
+    const along = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+    if (along <= 0.1) return false;
+    yaw += Math.atan2(dx * Math.cos(yaw) - dz * Math.sin(yaw), along);
+  }
+  throwOrigin(feet, yaw, origin);
+  const distance = Math.hypot(target.x - origin.x, target.z - origin.z), launchY = origin.y;
+  const height = (pitch: number): number => {
+    const angle = pitch + AVATAR.throwPitchBias;
+    const flight = distance / (AVATAR.throwSpeed * Math.cos(angle));
+    if (flight > PROJECTILE.lifetime) return -Infinity;
+    const steps = flight / SIM_DT, full = Math.floor(steps), fraction = steps - full;
+    return launchY + AVATAR.throwSpeed * Math.sin(angle) * flight -
+      AVATAR.gravity * SIM_DT * SIM_DT * (full * (full + 1) / 2 + (full + 1) * fraction);
+  };
+  let lo: number = -AVATAR.pitchLimit, hi: number = AVATAR.pitchLimit;
+  for (let i = 0; i < 40; i++) {
+    const a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
+    if (height(a) < height(b)) lo = a;
+    else hi = b;
+  }
+  const peak = (lo + hi) / 2;
+  if (height(peak) < target.y) return false;
+  lo = high ? peak : -AVATAR.pitchLimit;
+  hi = high ? AVATAR.pitchLimit : peak;
+  if (height(high ? hi : lo) > target.y) return false;
+  for (let i = 0; i < BISECT_STEPS; i++) {
+    const mid = (lo + hi) / 2;
+    if ((height(mid) < target.y) === !high) lo = mid;
+    else hi = mid;
+  }
+  const pitch = (lo + hi) / 2;
+  if (Math.abs(height(pitch) - target.y) > 0.001) return false;
+  out.yaw = yaw; out.pitch = pitch;
+  out.flight = distance / (AVATAR.throwSpeed * Math.cos(pitch + AVATAR.throwPitchBias));
   return true;
 }
 

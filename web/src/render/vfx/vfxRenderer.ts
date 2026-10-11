@@ -31,6 +31,7 @@ import * as P from './palette';
 import { ParticlePool } from './particles';
 import { Prng, hashString } from './prng';
 import { ShockWalls } from './shockWalls';
+import { SceneryEruptions } from './sceneryEruptions';
 import { SwingArcs } from './swingArcs';
 
 const TAU = Math.PI * 2;
@@ -89,6 +90,7 @@ export class VfxRenderer implements RenderModule {
   private readonly boards: Billboards;
   private readonly fireworks: Fireworks;
   private readonly meleeImpacts: ImpactFireworks;
+  private readonly sceneryEruptions: SceneryEruptions;
   private readonly fx: Bursts;
   private readonly factionColors: THREE.Color[] = [];
   private readonly neutral = new THREE.Color(NEUTRAL_COLOR);
@@ -120,6 +122,7 @@ export class VfxRenderer implements RenderModule {
     this.domes = new Domes(12, this.shared, ORDER.domes);
     this.columns = new Columns(64, this.shared, ORDER.columns);
     this.boards = new Billboards(64, this.shared, ctx.renderer, ORDER.boards);
+    this.sceneryEruptions = new SceneryEruptions(this.shared, ORDER.grime, density);
     this.meleeImpacts = new ImpactFireworks(ctx, true);
     ctx.scene.add(this.meleeImpacts.group);
     this.fireworks = new Fireworks(this.light, this.rng, ctx.camera, density);
@@ -133,6 +136,7 @@ export class VfxRenderer implements RenderModule {
       this.columns.mesh,
       this.walls.mesh,
       this.grime.mesh,
+      this.sceneryEruptions.mesh,
       this.arcs.mesh,
       this.bolts.mesh,
       this.bossLightning.group,
@@ -216,6 +220,7 @@ export class VfxRenderer implements RenderModule {
 
   onEvent(e: GameEvent): void {
     this.syncClock();
+    if (e.t === 'sceneryDestroyed') { this.sceneryEruptions.onEvent(e, this.ctx.time); return; }
     if (e.t === 'meleeImpact') { this.meleeImpacts.onEvent(e); return; }
     const w = this.ctx.world;
     const fx = this.fx;
@@ -660,6 +665,7 @@ export class VfxRenderer implements RenderModule {
     this.bossLightning.update(w, now, this.lightningGroundY);
     this.fireworks.update(now);
     this.meleeImpacts.update(now);
+    this.sceneryEruptions.update(now);
 
     this.light.flush();
     this.grime.flush();
@@ -674,6 +680,7 @@ export class VfxRenderer implements RenderModule {
 
   dispose(): void {
     this.meleeImpacts.dispose();
+    this.sceneryEruptions.dispose();
     this.light.dispose();
     this.grime.dispose();
     this.ground.dispose();

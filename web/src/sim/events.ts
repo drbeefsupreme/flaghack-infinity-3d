@@ -22,6 +22,8 @@ export type Severity = 'info' | 'good' | 'warn' | 'danger' | 'epic';
 export type GameEvent =
   /** Host-only removal fact; one sound cue per successful scenery impact batch. */
   | { t: 'sceneryCrushed'; pos: V2; count: number }
+  /** Cosmetic per-prop removal fact. Absolute ground position and full local dimensions. */
+  | { t: 'sceneryDestroyed'; sceneryId: number; pos: V3; size: V3; yaw: number }
   // Flags
   | { t: 'flagPlanted'; flagId: EntityId; node: number; faction: Owner; by: EntityId | -1; pos: V3 }
   | { t: 'flagPulled'; flagId: EntityId; node: number; faction: Owner; prevOwner: Owner; by: EntityId | -1; pos: V3 }

@@ -38,6 +38,21 @@ function setup(days = 1) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('top-center encounter HUD integration', () => {
+  it('keeps the HUD night phase through a long fight and follows the shared death sunrise', () => {
+    const { hud, world, timer } = setup(0);
+    world.suddenDeath = true; world.effigyRevealedAt = 90; world.boss = bossFixture();
+    for (const time of [90, 7200]) { world.time = time; hud.update(world, 0); expect(timer.find('tod-l')!.textContent).toBe('Night'); }
+    world.boss.hp = 0; world.boss.deathAt = 7200; world.boss.action = 'death';
+    hud.update(world, 0); expect(timer.find('tod-l')!.textContent).toBe('Night');
+    world.time = 7208; hud.update(world, 0); expect(timer.find('tod-l')!.textContent).toBe('First light');
+    world.time = 7212; world.boss.action = 'dead'; hud.update(world, 0);
+    expect(timer.find('tod-l')!.textContent).toBe('Dawn');
+    expect(timer.classList.contains('is-off')).toBe(false);
+    world.boss = null; world.effigyRevealedAt = null; world.suddenDeath = false; world.time = 0;
+    world.options.match!.days = 1; hud.update(world, 0); expect(timer.find('tod-l')!.textContent).toBe('Golden hour');
+    hud.dispose();
+  });
+
   it('mounts the awakening in the central HUD and derives late-join/pause/cleanup from replicated state', () => {
     const { hud, world, session, regions } = setup();
     const announcement = regions.center.find('boss-awakening')!;

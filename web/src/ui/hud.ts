@@ -1,4 +1,5 @@
-import { burnTime, endTime, dayClock, matchSettings, UNLIMITED_DAYS } from "../sim/matchSettings";
+import { burnTime, endTime, matchSettings, UNLIMITED_DAYS } from "../sim/matchSettings";
+import { worldDayClock } from '../sim/dayCycle';
 /**
  * Core HUD: the ornate "N FLAGS" resource frame (top-left), the clock plaque with time of
  * day, Phason Tide, Burn and (after The Burn) Dawn countdowns (top-centre), the C.M.I. frame
@@ -241,7 +242,7 @@ export class HudPart implements UiPart {
 
     // Clock, time of day, tide, Burn.
     const t = world.time;
-    const cycle = dayClock(world.options,t);
+    const cycle = worldDayClock(world);
     const burnAt = burnTime(world.options), endAt = endTime(world.options);
     const settings = matchSettings(world.options);
     const dayLimit = settings.days === UNLIMITED_DAYS ? Infinity : settings.days;

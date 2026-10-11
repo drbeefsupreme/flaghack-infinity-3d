@@ -174,6 +174,11 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   against walls and defended loops, and disappear at death. Staff attacks still reach
   from the hull edge; projectile scoring continues to use the separate animated rig.
 - During the fight its health replaces the top-center clock in the same ornate plaque.
+  The day phase settles continuously into full night during the five-second emergence
+  and stays there while the giant lives. At zero HP the sun starts rising smoothly,
+  reaching Dawn over the existing 12-second death sequence. Sky, lighting, HUD and the
+  audio fallback derive this from the same replicated timestamps; attacks, tides and
+  the Burn keep advancing normally. Ordinary and tutorial day cycles are unchanged.
   Gentle, single lightning pulses illuminate its original materials for 0.9 seconds,
   spaced 8–14 seconds apart; reveal, death and menu screens do not flash.
 - The emergence uses CGEffex’s selected T-rex roar; occasional ecfike/123agumon vocals
@@ -183,7 +188,10 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   Death retains its distinct procedural bellow. Low footstep impacts follow
   the actual standing and crouching foot-contact phases; the eye has a three-second
   charging sound, a sustained five-second firing sound, and coalesced impact explosions. Destroyed scenery
-  produces a coalesced crushing sound. Footfall and deliberate stomp cues follow the exact
+  produces a coalesced crushing sound and a brief dark dust/debris eruption per removed prop.
+  The eruption follows its grounded footprint and height, with capped size and a dedicated
+  2,048-particle pool; duplicates and late-join reconstruction do not replay it.
+  Footfall and deliberate stomp cues follow the exact
   authoritative damage-contact events. These use the existing spatial SFX,
   volume and mute controls, and do not replay old cues on late join or resume.
   Other boss cues retain horizontal direction but carry across the arena on a dedicated bus;

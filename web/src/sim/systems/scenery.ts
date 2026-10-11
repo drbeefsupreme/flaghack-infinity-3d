@@ -35,13 +35,27 @@ export function syncScenery(world: World): void {
   if (changed) rebuildSceneryBlocking(world);
 }
 
+/** One authoritative removal, shared by ray hits, foot contact and swept beam blasts.
+ * Mirror reconstruction calls syncScenery only, so historical removals never spawn VFX. */
+function removeScenery(world: World, obstacle: Obstacle): boolean {
+  if (obstacle.kind === 'effigy' || world.destroyedScenery.has(obstacle.id)) return false;
+  world.destroyedScenery.add(obstacle.id);
+  world.emit({
+    t: 'sceneryDestroyed', sceneryId: obstacle.id,
+    pos: { x: obstacle.x, y: groundHeight(obstacle.x, obstacle.z, world.map.half), z: obstacle.z },
+    size: { x: 2 * (obstacle.shape === 'circle' ? obstacle.radius : obstacle.hx),
+      y: obstacle.height, z: 2 * (obstacle.shape === 'circle' ? obstacle.radius : obstacle.hz) },
+    yaw: obstacle.yaw,
+  });
+  return true;
+}
+
 /** Direct ray hits only. Ground, entities, missing IDs and the reveal effigy are never scenery. */
 export function destroySceneryHit(world: World, tag: number): boolean {
   if (!Number.isInteger(tag) || tag >= 0) return false;
   const id = -1 - tag;
   const obstacle = world.map.obstacles.find((o) => o.id === id);
-  if (!obstacle || obstacle.kind === 'effigy' || world.destroyedScenery.has(id)) return false;
-  world.destroyedScenery.add(id);
+  if (!obstacle || !removeScenery(world, obstacle)) return false;
   syncScenery(world);
   world.emit({ t: 'sceneryCrushed', pos: { x: obstacle.x, z: obstacle.z }, count: 1 });
   return true;
@@ -92,8 +106,7 @@ export function crushScenery(
     const span = obstacle.shape === 'circle' ? obstacle.radius * 2 : Math.max(obstacle.hx, obstacle.hz) * 2;
     if (span > maxFootprintSpan) continue;
     if (sweptFootprintDistance(obstacle, from, to) > radius + 1e-9 || !canReach(obstacle)) continue;
-    world.destroyedScenery.add(obstacle.id);
-    count++;
+    if (removeScenery(world, obstacle)) count++;
   }
   if (count > 0) {
     syncScenery(world);
@@ -120,7 +133,7 @@ export function destroySceneryBlast(world: World, at: V3, radius: number, from: 
       return dxz * dxz + dy * dy;
     });
     if (distance > radius2 + 1e-9) continue;
-    world.destroyedScenery.add(obstacle.id); count++;
+    if (removeScenery(world, obstacle)) count++;
   }
   if (count > 0) {
     syncScenery(world);

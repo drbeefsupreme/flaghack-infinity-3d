@@ -10,7 +10,7 @@ const yaml = require('js-yaml');
 const root = join(__dirname, '../..');
 const helper = join(root, '.github/scripts/publish-iteration-desktop.py');
 const workflow = yaml.load(readFileSync(join(root, '.github/workflows/desktop-publish.yml'), 'utf8'));
-const marker = 'Publish iteration desktop 0.1.1-iteration.1 [release:20261011]';
+const marker = 'Publish verified iteration desktop [release:20261011-retry1]';
 const python = process.platform === 'win32' ? 'python' : 'python3';
 
 test('publisher trigger is limited to the approved repository, iteration, and exact marker', () => {
@@ -164,6 +164,27 @@ function runPython(source) {
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
 }
+
+test('artifact ZIP downloads negotiate JSON while release asset downloads request binary content', () => runPython(String.raw`
+calls = []
+def run(arguments, **kwargs):
+    calls.append((arguments, kwargs))
+    t.assertTrue(kwargs['check'])
+    t.assertNotIn('shell', kwargs)
+    t.assertNotIn('text', kwargs)
+    kwargs['stdout'].write(b'\x00downloaded\xff')
+p.subprocess.run = run
+with tempfile.TemporaryDirectory() as temporary:
+    directory = Path(temporary)
+    cases = [('actions/artifacts/' + str(p.ARTIFACT_ID) + '/zip', 'application/vnd.github+json'),
+             ('releases/assets/123', 'application/octet-stream')]
+    for index, (path, media_type) in enumerate(cases):
+        destination = directory / str(index)
+        p.download_api(path, destination)
+        t.assertEqual(calls[-1][0], ['gh', 'api', '-H', 'Accept: ' + media_type, 'repos/' + p.REPOSITORY + '/' + path])
+        t.assertEqual(destination.read_bytes(), b'\x00downloaded\xff')
+    t.assertEqual(len(calls), 2)
+`));
 
 test('publisher pins the authorized artifact and every distributed file', () => runPython(String.raw`
 t.assertEqual(p.REPOSITORY, 'elmorei/flaghack-infinity-3d')

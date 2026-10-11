@@ -155,7 +155,7 @@ Manual dispatch still requires default-branch registration as described above.
 `desktop-publish.yml` publishes only the original Windows artifact from successful
 run `38165458912`, source commit `8909d36160d1c381a669b5761c70fc7a03dbbce3`.
 Its iteration push route requires the exact marker
-`Publish iteration desktop 0.1.1-iteration.1 [release:20261011]`; ordinary pushes
+`Publish verified iteration desktop [release:20261011-retry1]`; ordinary pushes
 skip it. Manual retries are also restricted to iteration and that same artifact.
 The job uses a temporary job token with release-write and artifact-read access,
 without storing credentials. It checks the ZIP and all asset hashes, uses a draft

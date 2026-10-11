@@ -15,7 +15,7 @@ jobs:
       github.ref == 'refs/heads/iteration' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'push' && github.event.head_commit.message ==
-        'Publish iteration desktop 0.1.1-iteration.1 [release:20261011]'))
+        'Publish verified iteration desktop [release:20261011-retry1]'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:

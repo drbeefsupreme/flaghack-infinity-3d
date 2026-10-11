@@ -62,8 +62,10 @@ def api(path, optional=False):
 
 
 def download_api(path, destination):
+    # Actions returns a ZIP redirect via its JSON API; release assets use octet-stream.
+    accept = 'application/octet-stream' if path.startswith('releases/assets/') else 'application/vnd.github+json'
     with destination.open('wb') as output:
-        subprocess.run(['gh', 'api', '-H', 'Accept: application/octet-stream',
+        subprocess.run(['gh', 'api', '-H', f'Accept: {accept}',
                         f'repos/{REPOSITORY}/{path}'], stdout=output, check=True)
 
 

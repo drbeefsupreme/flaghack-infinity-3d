@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestAudioContext, TestNode, TestParam } from '../../tests/audioContext';
 import { AudioEngine } from './engine';
 import { BossAudio } from './boss';
+import { BOSS_VOICE_MIX } from './bossMix';
+import type { BossCue } from './bossSynth';
 import { Session } from '../game/session';
 function param(p: AudioParam): TestParam { return p as unknown as TestParam; }
 function node(n: AudioNode): TestNode { return n as unknown as TestNode; }
@@ -80,10 +82,40 @@ describe('arena-wide boss mix in the actual audio engine', () => {
     expect(play).toHaveBeenCalledTimes(2);
     audio.cancel(); audio.sceneryCrushed([{ pos: { x: 0, z: 0 }, count: 0 }]); expect(play).toHaveBeenCalledTimes(2);
   });
+  it('schedules unchanged bus volumes only once, while applying every real setting change', () => {
+    const e = new AudioEngine(), settings = new Session().settings, ctx = TestAudioContext.last;
+    const count = () => ctx.nodes.reduce((n, node) => n + node.gain.events.length + node.frequency.events.length, 0);
+    e.setVolumes(settings, false, 1); const initial = count(); expect(initial).toBe(12);
+    for (let frame = 0; frame < 600; frame++) { ctx.currentTime = frame / 60; e.setVolumes(settings, false, 1); e.prune(); }
+    expect(count()).toBe(initial);
+    settings.sfxVolume = .33; e.setVolumes(settings, false, 1); expect(count()).toBe(initial * 2); expect(e.buses.boss.gain.value).toBe(.33);
+    settings.quality = 'low'; e.setVolumes(settings, false, 1); expect(e.quality).toBe('low'); expect(count()).toBe(initial * 2);
+    e.setVolumes(settings, true, 1); expect(e.muffle.frequency.value).toBe(700);
+  });
+  it('does not token-duck consecutive boss contacts and does not empty the mix after a footfall', () => {
+    const e = new AudioEngine(), b = new BossAudio(e);
+    for (let i = 0; i < 8; i++) {
+      const v = e.voice({ key: 'boss-step', bus: 'boss', gain: 1, priority: 3, dur: 1 });
+      expect(v?.input.gain.value).toBe(1);
+    }
+    b.play('step', { x: 0, z: 0 }); expect(e.worldDuck.gain.value).toBeCloseTo(.88);
+    TestAudioContext.last.currentTime = .19; e.prune(); expect(e.worldDuck.gain.value).toBe(1);
+  });
+  it('boosts reverberation through one shared cached impulse without per-cue convolution allocation', () => {
+    const e = new AudioEngine(), b = new BossAudio(e), ctx = TestAudioContext.last;
+    const impulse = e.reverb.buffer, voice = vi.spyOn(e, 'voice');
+    for (const cue of Object.keys(BOSS_VOICE_MIX) as BossCue[]) {
+      b.play(cue, { x: 0, z: 0 });
+      expect(voice).toHaveBeenLastCalledWith(expect.objectContaining({ wet: BOSS_VOICE_MIX[cue].wet, gain: BOSS_VOICE_MIX[cue].gain }));
+      expect(BOSS_VOICE_MIX[cue].wet).toBeGreaterThan(.2);
+    }
+    expect(ctx.nodes.filter(n => n.kind === 'convolver')).toHaveLength(1);
+    expect(e.reverb.buffer).toBe(impulse);
+  });
   it('boss recipes activate the mix and reset releases it without altering user gains', () => {
     const e = new AudioEngine(), b = new BossAudio(e), settings = new Session().settings;
     e.setVolumes(settings, false, 1); b.play('emerge', { x: 300, z: 300 });
-    expect(e.worldDuck.gain.value).toBeCloseTo(.07);
+    expect(e.worldDuck.gain.value).toBeCloseTo(.75);
     b.cancel(); expect(e.worldDuck.gain.value).toBe(1); expect(e.buses.boss.gain.value).toBe(settings.sfxVolume);
   });
 });

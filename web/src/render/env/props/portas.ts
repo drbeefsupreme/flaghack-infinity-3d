@@ -6,6 +6,7 @@
  * glowing at night, past the other.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import { PartsBuilder } from '../geom';
 import { flat, frameOf, GeoWriter, mergeTemplates, within } from './batch';
@@ -128,6 +129,7 @@ export function buildPortas(units: Obstacle[], out: PropBatches): void {
   const wash = washStation();
   const tower = lightTower();
   for (const o of units) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'porta');
     const color = rng.chance(0.1) ? rng.pick(ODD_COLORS) : o.color;
     // Units are modelled at the standard 1.24 m footprint; scale to the obstacle's.
@@ -145,7 +147,9 @@ export function buildPortas(units: Obstacle[], out: PropBatches): void {
       if (u.x * ax + u.z * az < lo.x * ax + lo.z * az) lo = u;
       if (u.x * ax + u.z * az > hi.x * ax + hi.z * az) hi = u;
     }
+    ownProp(out, hi.id);
     out.solid.add(wash, within(frameOf(hi.x, hi.z, hi.yaw), { x: hi.hx + 0.6, z: 0.15 }));
+    ownProp(out, lo.id);
     out.solid.add(tower, within(frameOf(lo.x, lo.z, lo.yaw), { x: -(lo.hx + 0.75), z: -0.1, ry: 0.35 }));
   }
   for (const g of [...templates, wash, tower]) g.dispose();

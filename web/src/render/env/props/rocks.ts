@@ -4,6 +4,7 @@
  * up, and a few pebbles scattered around.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import { hash01, Rng } from '../../../sim/rng';
@@ -52,6 +53,7 @@ export function buildRocks(rocks: Obstacle[], out: PropBatches): void {
   if (rocks.length === 0) return;
   const templates = [0, 1, 2, 3].map(rockTemplate);
   for (const o of rocks) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'rock');
     const frame = frameOf(o.x, o.z, o.yaw);
     const sy = o.height / TOP;

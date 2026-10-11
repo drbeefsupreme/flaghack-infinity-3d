@@ -2,6 +2,7 @@
  * Entity constructors. Always create entities through these so defaults stay consistent.
  * They register the entity in the World and return it; they do not emit events.
  */
+import { insideEffigyCrater } from './effigyCrater';
 import { AVATAR, BUILDINGS, FACTION_DEFS, HIPPIE, PIECE, PING_DURATION } from './constants';
 import type { V2, V3 } from './math';
 import type {
@@ -219,6 +220,7 @@ export function spawnCrystal(world: World, node: number, faction: FactionId, pen
   const c: Crystal = {
     id: world.newId(),
     type: 'crystal',
+    scale: insideEffigyCrater(world, n) ? 10 : 1,
     node,
     faction,
     pos: { x: n.x, z: n.z },

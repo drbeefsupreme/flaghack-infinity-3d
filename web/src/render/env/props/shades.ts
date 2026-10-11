@@ -6,6 +6,7 @@
  * underneath with a low table and cushions or a ring of camp chairs.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import { PartsBuilder } from '../geom';
 import { frameOf, GeoWriter, paintFaces, shapeSway, toWorld, within } from './batch';
@@ -54,6 +55,7 @@ function buildTarp(o: Obstacle, px: number, pz: number, edge: number, centre: nu
 
 export function buildShades(shades: Obstacle[], kit: ClutterKit, out: PropBatches): void {
   for (const o of shades) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'shade');
     const frame = frameOf(o.x, o.z, o.yaw);
     const px = o.hx - 0.15;

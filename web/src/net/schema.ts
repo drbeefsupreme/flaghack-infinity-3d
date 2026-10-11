@@ -942,6 +942,7 @@ const PILE_FIELDS: readonly Field<Pile>[] = [
 ];
 
 const CRYSTAL_FIELDS: readonly Field<Crystal>[] = [
+  num('scale', MILLI, (c) => c.scale, (c, v) => { c.scale = v; }),
   idField('node', (c) => c.node, (c, v) => {
     c.node = v;
   }),
@@ -1144,7 +1145,7 @@ function blankPile(id: EntityId): Pile {
 }
 
 function blankCrystal(id: EntityId): Crystal {
-  return { id, type: 'crystal', node: -1, faction: 0, pos: { x: 0, z: 0 }, bornAt: 0, growth: 0, pentacle: [] };
+  return { id, type: 'crystal', scale: 1, node: -1, faction: 0, pos: { x: 0, z: 0 }, bornAt: 0, growth: 0, pentacle: [] };
 }
 
 function blankProjectile(id: EntityId): Projectile {

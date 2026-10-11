@@ -107,6 +107,7 @@ void main() {
 `;
 
 const SHARD_VERT = /* glsl */ `
+attribute float iScale;
 ${GLSL_COMMON}
 ${GLSL_VERT}
 attribute vec4 iA;
@@ -124,7 +125,7 @@ void main() {
   float shatter = iB.w;
   float ang = phase + uTime * speed;
   float rad = iA.z * (1.0 + shatter * 6.0);
-  float y = iA.w + sin(uTime * 1.3 + phase * 3.0) * 0.35 + shatter * 3.0 - shatter * shatter * 7.0;
+  float y = iA.w + (sin(uTime * 1.3 + phase * 3.0) * 0.35 + shatter * 3.0 - shatter * shatter * 7.0) * iScale;
   vec3 c = vec3(iA.x + cos(ang) * rad, y, iA.y + sin(ang) * rad);
   float s = scale * (1.0 - shatter * 0.6);
   // Spin about a tilted axis: yaw then pitch.
@@ -209,6 +210,7 @@ function instanced(base: THREE.BufferGeometry): THREE.InstancedBufferGeometry {
 }
 
 interface CrystalView {
+  scale: number;
   id: number;
   x: number;
   z: number;
@@ -239,6 +241,7 @@ export class CrystalLayer {
   private readonly sA: Float32Array;
   private readonly sB: Float32Array;
   private readonly sColor: Float32Array;
+  private readonly sScale: Float32Array;
   private readonly views = new Map<number, CrystalView>();
   private readonly pool: CrystalView[] = [];
   private readonly live: CrystalView[] = [];
@@ -249,7 +252,7 @@ export class CrystalLayer {
   private readonly syncCrystal = (c: Crystal): void => {
     let v = this.views.get(c.id);
     if (!v) {
-      v = this.pool.pop() ?? { id: 0, x: 0, z: 0, faction: 0, seed: 0, growth: 0, shatterAt: -1, flashAt: -1e4, stamp: 0 };
+      v = this.pool.pop() ?? { scale: 1, id: 0, x: 0, z: 0, faction: 0, seed: 0, growth: 0, shatterAt: -1, flashAt: -1e4, stamp: 0 };
       v.id = c.id;
       v.seed = ((c.id * 0.618034) % 1 + 1) % 1;
       v.shatterAt = -1;
@@ -261,6 +264,7 @@ export class CrystalLayer {
     v.z = c.pos.z;
     v.faction = c.faction;
     v.growth = c.growth;
+    v.scale = c.scale;
     v.stamp = this.stamp;
   };
 
@@ -283,6 +287,7 @@ export class CrystalLayer {
     this.sA = this.shards.add('iA', 4);
     this.sB = this.shards.add('iB', 4);
     this.sColor = this.shards.add('iColor', 4);
+    this.sScale = this.shards.add('iScale', 1);
     this.shardMat = surveyMaterial(shared, { vertexShader: SHARD_VERT, fragmentShader: SHARD_FRAG });
     this.shardMesh = new THREE.Mesh(this.shards.geo, this.shardMat);
     this.shardMesh.frustumCulled = false;
@@ -328,8 +333,8 @@ export class CrystalLayer {
       let o = np * 4;
       this.pA[o] = v.x;
       this.pA[o + 1] = v.z;
-      this.pA[o + 2] = PRISM_H;
-      this.pA[o + 3] = PRISM_R;
+      this.pA[o + 2] = PRISM_H * v.scale;
+      this.pA[o + 3] = PRISM_R * v.scale;
       this.pB[o] = v.seed * 6.283;
       this.pB[o + 1] = eased;
       this.pB[o + 2] = shatter;
@@ -343,11 +348,12 @@ export class CrystalLayer {
         o = ns * 4;
         this.sA[o] = v.x;
         this.sA[o + 1] = v.z;
-        this.sA[o + 2] = 2.0 + 0.35 * k;
-        this.sA[o + 3] = 1.6 + (PRISM_H - 2.4) * eased * ((k + 0.5) / SHARDS);
+        this.sA[o + 2] = (2.0 + 0.35 * k) * v.scale;
+        this.sA[o + 3] = (1.6 + (PRISM_H - 2.4) * eased * ((k + 0.5) / SHARDS)) * v.scale;
         this.sB[o] = v.seed * 20 + (k * Math.PI * 2) / SHARDS;
         this.sB[o + 1] = (k % 2 === 0 ? 0.55 : -0.42) * (1 + v.seed * 0.3);
-        this.sB[o + 2] = 0.38 * eased;
+        this.sB[o + 2] = 0.38 * eased * v.scale;
+        this.sScale[ns] = v.scale;
         this.sB[o + 3] = shatter;
         this.glow.copy(k % 2 === 0 ? PINK : BLUE).lerp(this.tint, 0.25);
         this.sColor[o] = this.glow.r;
@@ -359,8 +365,8 @@ export class CrystalLayer {
       const fade = 1 - shatter;
       const flash = Math.max(0, 1 - (now - v.flashAt) / 1.4);
       this.glow.copy(BLUE).lerp(PINK, 0.5).lerp(this.tint, 0.3);
-      beams.push(BEAM.pillar, v.x, 0, v.z, v.x, 46 * (0.3 + 0.7 * eased), v.z, 2.4 + flash * 3, this.glow, (0.3 + flash * 1.2) * eased * fade, 6, v.seed * 10);
-      decals.push(DECAL.halo, v.x, v.z, 3.6 + flash * 4, 0, this.glow, (0.75 + flash) * fade * (0.4 + 0.6 * eased), 0.75, 0.6, 0.7, v.seed);
+      beams.push(BEAM.pillar, v.x, 0, v.z, v.x, 46 * (0.3 + 0.7 * eased) * v.scale, v.z, (2.4 + flash * 3) * v.scale, this.glow, (0.3 + flash * 1.2) * eased * fade, 6, v.seed * 10);
+      decals.push(DECAL.halo, v.x, v.z, (3.6 + flash * 4) * v.scale, 0, this.glow, (0.75 + flash) * fade * (0.4 + 0.6 * eased), 0.75, 0.6, 0.7, v.seed);
     }
     this.prisms.commit(np);
     this.shards.commit(ns);

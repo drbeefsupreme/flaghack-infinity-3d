@@ -307,6 +307,8 @@ export interface Pile {
 }
 
 export interface Crystal {
+  /** Uniform linear size, fixed at manifestation and replicated to every peer. */
+  scale: number;
   id: EntityId;
   type: 'crystal';
   node: number;

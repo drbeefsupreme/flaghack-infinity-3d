@@ -260,6 +260,7 @@ function smooth01(x: number): number {
 export class StageShow {
   private env: EnvContext;
   private rigs: Rig[] = [];
+  private readonly removed = new Set<number>();
   private beamCount: number;
   private beams: THREE.Mesh;
   private pools: THREE.Mesh;
@@ -392,10 +393,12 @@ export class StageShow {
     return g;
   }
 
+  removeScenery(id: number): void { this.removed.add(id); }
+
   update(): void {
     const night = this.env.day.night;
     const strength = smooth01((night - 0.15) / 0.6);
-    const on = strength > 0.01 && this.beamCount > 0;
+    const on = strength > 0.01 && this.rigs.some(r => !this.removed.has(r.stage.obstacleId));
     this.beams.visible = on;
     this.pools.visible = on;
     // Tracked while dark too, so a re-lock at any hour is absorbed before the lights come on.
@@ -408,6 +411,11 @@ export class StageShow {
     const beatNow = festival + this.beatOffset;
     for (let s = 0; s < this.rigs.length; s++) {
       const r = this.rigs[s];
+      if (this.removed.has(r.stage.obstacleId)) {
+        this.info[s * 4 + 1] = this.info[s * 4 + 2] = this.info[s * 4 + 3] = 0;
+        for (let k = 0; k < r.stage.fixtures.length; k++) this.dir[(r.first + k) * 4 + 3] = 0;
+        continue;
+      }
       // Stages run their sets offset from each other.
       const beat = beatNow + s * 6;
       const phrase = Math.floor(beat / PHRASE);

@@ -105,6 +105,7 @@ export class AudioEngine {
   private bossDucks: { amount: number; until: number }[] = [];
   private bossDuckAmount = 0;
   private bossAudible = true;
+  private volumeState: readonly [number, number, number, number, boolean] | null = null;
   readonly reverb: ConvolverNode;
   readonly white: AudioBuffer;
   readonly pink: AudioBuffer;
@@ -206,8 +207,11 @@ export class AudioEngine {
 
   /** `worldScale` trims world SFX (e.g. the attract match behind the title screen). */
   setVolumes(s: Settings, muffled: boolean, worldScale: number): void {
-    const t = this.ctx.currentTime;
     this.quality = s.quality;
+    const old = this.volumeState;
+    if (old && old[0] === s.masterVolume && old[1] === s.musicVolume && old[2] === s.sfxVolume && old[3] === worldScale && old[4] === muffled) return;
+    this.volumeState = [s.masterVolume, s.musicVolume, s.sfxVolume, worldScale, muffled];
+    const t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(s.masterVolume, t, 0.05);
     const music = s.musicVolume;
     const sfx = s.sfxVolume * worldScale;
@@ -301,7 +305,9 @@ export class AudioEngine {
       return null;
     }
     b.tokens = Math.max(0, b.tokens - 1);
-    gain *= 0.55 + 0.45 * Math.min(1, b.tokens / rule.burst);
+    // Boss contacts already have authoritative once-only events and coalesced rubble.
+    // Keep their balance predictable instead of quietly reducing consecutive impacts.
+    if (spec.bus !== 'boss') gain *= 0.55 + 0.45 * Math.min(1, b.tokens / rule.burst);
 
     if (this.voices.length >= this.maxVoices && !this.steal(priority)) {
       this.stats.capDropped++;

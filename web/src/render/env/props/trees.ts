@@ -12,6 +12,7 @@
  * indexed templates, no shadows; the count scales with quality.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import { hash01, Rng } from '../../../sim/rng';
@@ -112,6 +113,7 @@ function trunkTemplate(top: number, topR: number): THREE.BufferGeometry {
 }
 
 export interface CanopyInstance {
+  obstacleId?: number;
   matrix: THREE.Matrix4;
   color: THREE.Color;
 }
@@ -129,6 +131,7 @@ export function buildTrees(trees: Obstacle[], out: PropBatches): TreeCanopies {
   const oakTrunk = trunkTemplate(0.32, 0.8);
   const result: TreeCanopies = { pine: pineCanopy(), oak: oakCanopy(), pines: [], oaks: [] };
   for (const o of trees) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'tree');
     const oak = o.variant === 1;
     const frame = frameOf(o.x, o.z, o.yaw);
@@ -136,7 +139,7 @@ export function buildTrees(trees: Obstacle[], out: PropBatches): TreeCanopies {
     const s = o.height / (oak ? OAK_REF : PINE_REF);
     const matrix = within(frame, { sx: s * rng.range(0.9, 1.1), sy: s, sz: s * rng.range(0.9, 1.1) });
     const color = new THREE.Color(o.color).multiplyScalar(rng.range(0.9, 1.12));
-    (oak ? result.oaks : result.pines).push({ matrix, color });
+    (oak ? result.oaks : result.pines).push({ matrix, color, obstacleId: o.id });
   }
   pineTrunk.dispose();
   oakTrunk.dispose();

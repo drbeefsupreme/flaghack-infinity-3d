@@ -50,7 +50,7 @@ export function defendedPullRate(world: World, fl: Flag, puller: FactionId, star
     if (defender.type === 'crystal') {
       const node = world.lattice.nodes[defender.pentacle.includes(fl.node) ? fl.node : fl.altNode];
       world.emit({ t: 'crystalLightning', crystalId: defender.id, flagId: fl.id, faction: defender.faction,
-        from: { x: defender.pos.x, y: CRYSTAL_HEIGHT, z: defender.pos.z },
+        from: { x: defender.pos.x, y: CRYSTAL_HEIGHT * defender.scale, z: defender.pos.z },
         to: { x: node.x, y: fl.pos.y + 2, z: node.z } });
     } else {
       world.emit({ t: 'wardLightning', buildingId: defender.id, flagId: fl.id, faction: defender.faction,

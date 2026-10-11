@@ -1,5 +1,6 @@
 /** One deterministic explosion, reconstructed from seconds since the authoritative reveal. */
 import * as THREE from 'three';
+import { CRATER_SEGMENTS, CRATER_OUTER_RADIUS, craterRimVariation } from '../../../../sim/effigyCrater';
 import { Rng } from '../../../../sim/rng';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
@@ -85,11 +86,11 @@ vec3 debrisPosition(vec3 p) {
 }`;
 
 export function createCrater(rng: Rng): THREE.BufferGeometry {
-  const radial = 80;
-  const rings = [0, 2, 4.5, 6.2, 7.5, 8.8, 10.7];
+  const radial = CRATER_SEGMENTS;
+  const rings = [0, 2, 4.5, 6.2, 7.5, 8.8, CRATER_OUTER_RADIUS];
   const heights = [0.035, 0.05, 0.08, 0.17, 0.66, 0.29, 0.018];
   const p: number[] = [], c: number[] = [], indices: number[] = [];
-  const irregular = Array.from({ length: radial }, () => rng.range(0.93, 1.07));
+  const irregular = craterRimVariation(rng);
   for (let j = 0; j < rings.length; j++) for (let i = 0; i <= radial; i++) {
     const angle = (i % radial) / radial * Math.PI * 2;
     const r = rings[j] * irregular[i % radial];

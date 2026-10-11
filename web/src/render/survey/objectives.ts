@@ -14,7 +14,7 @@
  */
 import * as THREE from 'three';
 import type { ObjectiveMarker, Session } from '../../game/session';
-import { BUILDING_HEIGHT, BUILDINGS, FLAG_YELLOW, LEVEL_HEIGHT } from '../../sim/constants';
+import { BUILDING_HEIGHT, BUILDINGS, CRYSTAL_HEIGHT, FLAG_YELLOW, LEVEL_HEIGHT } from '../../sim/constants';
 import type { EntityId } from '../../sim/types';
 import type { World } from '../../sim/world';
 import type { SharedRender } from '../context';
@@ -778,8 +778,8 @@ export class ObjectiveFeature {
       v.x = crystal.pos.x;
       v.z = crystal.pos.z;
       v.y = 0;
-      v.top = 7.5 * Math.max(0.15, crystal.growth);
-      v.footprint = 1.8;
+      v.top = CRYSTAL_HEIGHT * crystal.scale * (0.12 + 0.88 * (1 - (1 - crystal.growth) ** 3));
+      v.footprint = 1.8 * crystal.scale;
       return true;
     }
     const other = w.zones.get(id) ?? w.pings.get(id) ?? w.beacons.get(id);

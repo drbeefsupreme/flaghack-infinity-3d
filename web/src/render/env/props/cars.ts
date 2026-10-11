@@ -7,6 +7,7 @@
  * string of prayer flags between two masts.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import { GlowMode, PartsBuilder } from '../geom';
 import { frameOf, GeoWriter, mergeTemplates, toWorld, within } from './batch';
@@ -207,6 +208,7 @@ export function buildCars(cars: Obstacle[], kit: ClutterKit, out: PropBatches): 
     .box(1.7, 0.03, 3.9, 0xffffff, { y: 0.2 }, { glow: 2.2, glowMode: GlowMode.rainbow })
     .build();
   for (const o of cars) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'car');
     const variant = Math.max(0, Math.min(2, o.variant));
     const nom = NOMINAL[variant];

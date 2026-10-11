@@ -76,7 +76,7 @@ describe('boss shared-view audio lifecycle', () => {
     for (const cue of ['emerge', 'death', 'step', 'stomp', 'charge', 'beam', 'impact', 'crush'] as const) audio.play(cue, { x: 1, z: 2 });
     expect(voice).toHaveBeenCalledTimes(8);
     for (const [spec] of voice.mock.calls as unknown as [{ bus: string; at: unknown; gain: number; directionalOnly: boolean }][]) {
-      expect(spec.bus).toBe('boss'); expect(spec.at).toEqual({ x: 1, z: 2 }); expect(spec.gain).toBeLessThan(1); expect(spec.directionalOnly).toBe(true);
+      expect(spec.bus).toBe('boss'); expect(spec.at).toEqual({ x: 1, z: 2 }); expect(spec.gain).toBeLessThanOrEqual(1); expect(spec.directionalOnly).toBe(true);
     }
   });
 });

@@ -1,0 +1,37 @@
+name: Publish approved iteration desktop
+
+# One authorized artifact only. Ordinary pushes never publish releases.
+on:
+  push:
+    branches: [iteration]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'elmorei/flaghack-infinity-3d' &&
+      github.ref == 'refs/heads/iteration' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.event.head_commit.message ==
+        'Publish iteration desktop 0.1.1-iteration.1 [release:20261011]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: publish-desktop-iteration-0.1.1-iteration.1
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out the approved publication helper
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify and publish the previously built iteration artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: elmorei/flaghack-infinity-3d
+        run: python3 .github/scripts/publish-iteration-desktop.py --publish

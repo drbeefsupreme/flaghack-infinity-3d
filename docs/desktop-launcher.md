@@ -12,12 +12,13 @@ the **whole installed application**, including the launcher, host, and game.
 It does not fetch source branches, patch loose game files, or run a build on the
 player's computer.
 
-The package scripts and build-only GitHub Actions workflow are prepared locally.
-Their presence does not mean they have been pushed or run on GitHub. No release,
-update feed, signing credential, or publishing permission is created by this work.
-The feed URLs below are configured destinations, **not a claim that release assets
-have been published**. Until an approved initial publication supplies the files,
-Check can fail; the installed game remains available through Play.
+The package scripts and build-only GitHub Actions workflow produce artifacts
+without activating an update feed. The separate `desktop-publish.yml` workflow
+is restricted to the approved initial iteration artifact described below.
+Later versions require another authorized publication; pushing game changes does
+not automatically update installed clients. No signing credentials are configured.
+If the selected feed is unavailable, Check can fail while the installed game
+remains available through Play.
 
 A successful cross-build or automated test is not proof of Windows installation,
 real gameplay, or end-to-end updating. Those require the Windows checklist below.
@@ -148,6 +149,19 @@ change `main`, publish a release, or receive repository-write permissions.
 Ordinary later pushes skip the job. Do not reuse the marker for another build;
 remove this bootstrap trigger after the initial build in an authorized follow-up.
 Manual dispatch still requires default-branch registration as described above.
+
+### Approved initial iteration publication
+
+`desktop-publish.yml` publishes only the original Windows artifact from successful
+run `38165458912`, source commit `8909d36160d1c381a669b5761c70fc7a03dbbce3`.
+Its iteration push route requires the exact marker
+`Publish iteration desktop 0.1.1-iteration.1 [release:20261011]`; ordinary pushes
+skip it. Manual retries are also restricted to iteration and that same artifact.
+The job uses a temporary job token with release-write and artifact-read access,
+without storing credentials. It checks the ZIP and all asset hashes, uses a draft
+prerelease, uploads the installer and blockmap before `iteration.yml`, and verifies
+the public downloads after publication. It never marks the release as latest,
+changes the stable feed, or overwrites unexpected tags, releases, or assets.
 
 ## Activating updates later
 

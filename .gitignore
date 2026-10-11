@@ -9,3 +9,6 @@ node_modules/
 web/dist/
 web/dist-server/
 web/.vite/
+
+web/dist-desktop/
+web/desktop-release/

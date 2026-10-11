@@ -129,3 +129,24 @@ describe('zero-day match setup', () => {
     ui.dispose();
   });
 });
+
+
+describe('Flag hoarding setting', () => {
+  it('edits, validates, locks for guests and resets the base threshold', () => {
+    const { ui, overlay, read } = setup();
+    const field = descendants(overlay).find(node => node.tagName === 'label' && node.children.some(c => c.textContent === 'Flag hoarding threshold'))!.children.find(c => c.tagName === 'input')!;
+    expect(field.value).toBe('24');
+    expect([field.min, field.max, field.step]).toEqual(['0', '1000', '1']);
+    field.value = '42.9'; field.dispatchEvent(new Event('change')); ui.update();
+    expect(read().match?.hoardThreshold).toBe(42);
+    field.value = ''; field.dispatchEvent(new Event('change'));
+    expect(field.value).toBe('42');
+    ui.update(false);
+    field.value = '50'; field.dispatchEvent(new Event('change'));
+    expect(read().match?.hoardThreshold).toBe(42);
+    ui.update(true);
+    descendants(overlay).find(node => node.innerHTML === 'Reset defaults')!.dispatchEvent(new Event('click')); ui.update();
+    expect(read().match?.hoardThreshold).toBe(24);
+    ui.dispose();
+  });
+});

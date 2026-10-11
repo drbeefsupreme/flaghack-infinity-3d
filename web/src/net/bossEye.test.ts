@@ -8,6 +8,7 @@ import { CollisionWorld } from '../sim/physics/collision';
 import { createMatch } from '../sim/setup';
 import { spawnBoss } from '../sim/systems/boss';
 import { updateBossEye } from '../sim/systems/boss/eye';
+import { recordBossFlagThreat } from '../sim/systems/boss/eyeThreats';
 import * as combat from '../sim/systems/combat';
 import { giveFlag } from '../sim/systems/flags';
 import { SnapshotEncoder } from './codec';
@@ -62,6 +63,7 @@ describe('durable boss eye replication', () => {
     expect(giveFlag(host, flag.id, target.id)).toBe(true);
     const strong = host.avatarOf(2); strong.pos = { x: 1, y: 0, z: 40 }; strong.hp = 1600;
     boss.target = { kind: 'avatar', id: target.id };
+    recordBossFlagThreat(host, target.id);
     host.drainEvents();
     const encoder = new SnapshotEncoder(host);
     const peers = [NetMirror.create(host.options, wire(encoder.full())), NetMirror.create(host.options, wire(encoder.full()))];

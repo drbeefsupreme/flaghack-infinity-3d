@@ -8,6 +8,7 @@ import { createMatch } from '../setup';
 import type { BuildingKind, PieceKind } from '../types';
 import { consumeBuilding, spawnBoss, updateBoss } from './boss';
 import { blastBossEye, bossEyeRay, updateBossEye } from './boss/eye';
+import { recordBossFlagThreat } from './boss/eyeThreats';
 import { damageEntity } from './combat';
 import { pieceBottom } from './econ/pieceGeometry';
 import { giveFlag, plantFlag } from './flags';
@@ -26,15 +27,17 @@ function encounter() {
   world.collision = new CollisionWorld();
   world.buildings.clear(); world.pieces.clear(); world.flags.clear(); world.hippies.clear(); world.crystals.clear(); world.piles.clear();
   for (const f of world.factions) { f.hearthIds = []; f.gccId = null; }
-  for (const a of world.avatars.values()) { a.pos = { x: 100, y: 0, z: 100 }; a.carried = []; }
+  for (const a of world.avatars.values()) { a.pos = { x: 100, y: 0, z: 50 + a.faction * 20 }; a.carried = []; }
   world.survey.edgeLey.fill(-1); world.survey.version++;
   const target = world.avatarOf(0); target.pos = { x: 0, y: 0, z: 40 };
   boss.target = { kind: 'avatar', id: target.id };
   world.drainEvents();
-  return { world, boss, target };
+  return { world, boss, target, flagThreat: true };
 }
 function setTime(e: ReturnType<typeof encounter>, now: number) {
   e.world.time = now; e.world.tick++;
+  // Clock/ray fixtures represent an actively attacking Flag thrower.
+  if (e.flagThreat && e.boss.eye.chargeAt === null) recordBossFlagThreat(e.world, e.target.id);
   return updateBossEye(e.world, e.boss, SIM_DT);
 }
 function atDistance(origin: V3, direction: V3, distance: number): V3 {
@@ -74,9 +77,9 @@ describe('authoritative boss eye clock', () => {
     setTime(e, 403.05); expect(raycast).toHaveBeenCalledTimes(2); expect(e.boss.eye.nextFireAt).toBe(433.05);
   });
   it('waits for a valid target, then locks its point throughout the complete charge', () => {
-    const e = encounter(); e.boss.target = null;
+    const e = encounter(); e.boss.target = null; e.flagThreat = false;
     expect(setTime(e, 127)).toBe(false); expect(e.boss.eye.chargeAt).toBeNull();
-    e.boss.target = { kind: 'avatar', id: e.target.id }; setTime(e, 140);
+    e.boss.target = { kind: 'avatar', id: e.target.id }; e.flagThreat = true; setTime(e, 140);
     const target = { ...e.boss.eye.target! }; e.target.pos = { x: -70, y: 30, z: -70 };
     setTime(e, 142.999); expect(e.boss.eye.target).toEqual(target); expect(e.boss.eye.firedAt).toBeNull();
     setTime(e, 143); expect(e.boss.eye.target).toEqual(target); expect(e.boss.eye.firedAt).toBe(143);
@@ -89,6 +92,7 @@ describe('authoritative boss eye clock', () => {
   });
   it('interrupts a pending melee hit and halts movement while charging and firing', () => {
     const e = encounter(); e.target.pos = { x: 0, y: 0, z: 2 };
+    for (const x of [-1, 0, 1]) spawnHippie(e.world, -1, { x, z: 40 });
     e.boss.action = 'stomp'; e.boss.actionAt = 126; e.boss.actionSeq = 12; e.boss.hitSeq = 11;
     const start = { ...e.boss.pos };
     e.world.time = 127; updateBoss(e.world, SIM_DT);
@@ -112,7 +116,7 @@ describe('boss eye ray and first impact', () => {
   it('starts at the real pupil, aims at the locked point, and stops on the first structure', () => {
     const e = encounter(); setTime(e, 127);
     const ray = bossEyeRay(e.world, e.boss), target = e.boss.eye.target!;
-    expect(ray.origin.y).toBeGreaterThan(10); expect(ray.origin.y).toBeLessThan(23);
+    expect(ray.origin.y).toBeGreaterThan(20); expect(ray.origin.y).toBeLessThan(32);
     expect(Math.hypot(ray.direction.x, ray.direction.y, ray.direction.z)).toBeCloseTo(1, 12);
     const range = Math.hypot(target.x - ray.origin.x, target.y - ray.origin.y, target.z - ray.origin.z);
     const endpoint = atDistance(ray.origin, ray.direction, range);
@@ -138,7 +142,7 @@ describe('boss eye ray and first impact', () => {
     expect(events.filter(event => event.t === 'hit' && event.target === e.target.id)).toMatchObject([{ amount: 1000 }]);
   });
   it('caps a skyward miss at 240 meters and never explodes at the fallback endpoint', () => {
-    const e = encounter(); e.target.pos = { x: 0, y: 50, z: 40 }; setTime(e, 127);
+    const e = encounter(); setTime(e, 127); e.target.pos = { x: 0, y: 50, z: 40 };
     e.boss.eye.target = { x: 0, y: 50, z: 40 };
     const ray = bossEyeRay(e.world, e.boss), survivor = e.world.avatarOf(1);
     survivor.pos = atDistance(ray.origin, ray.direction, 240);

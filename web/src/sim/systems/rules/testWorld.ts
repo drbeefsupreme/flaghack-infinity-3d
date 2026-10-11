@@ -137,7 +137,7 @@ export function flagProblems(world: World): string[] {
     } else if (fl.node !== -1 || fl.altNode !== -1) {
       problems.push(`flag ${fl.id} is ${fl.state} but keeps node ${fl.node}/${fl.altNode}`);
     }
-    if (fl.state === 'stock' && world.buildings.get(fl.holder)?.kind !== 'hearth') problems.push(`stock flag ${fl.id} not at a Hearth`);
+    if (fl.state === 'stock' && !['hearth', 'workshop'].includes(world.buildings.get(fl.holder)?.kind ?? '')) problems.push(`stock flag ${fl.id} not at a Hearth`);
     if (fl.history.length > 16) problems.push(`flag ${fl.id} history ${fl.history.length}`);
   }
   for (let n = 0; n < s.nodeFlag.length; n++) {

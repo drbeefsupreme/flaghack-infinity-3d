@@ -4,7 +4,8 @@
  * hysteresis, so a rival that starts an assault sees it through instead of dithering.
  * Owner: AI agent.
  */
-import { BUILDINGS, BURN_TIME, HOARD_THRESHOLD } from '../sim/constants';
+import { BUILDINGS, BURN_TIME } from '../sim/constants';
+import { hoardThreshold } from '../sim/systems/economy';
 import type { FactionId } from '../sim/types';
 import type { Brain, Posture, RivalIntel } from './brain';
 
@@ -116,7 +117,7 @@ export function choose(b: Brain): Choice {
     if (!r.alive || !r.loop || !Number.isFinite(r.loopCost)) continue;
     const softened = r.attacker !== null && r.attacker !== b.f && (r.stage === 'contained' || r.stage === 'contested');
     const need = r.loopCost * P.attackMargin;
-    const affordable = flags >= need || flags >= HOARD_THRESHOLD || (b.target === r.id && flags >= r.loopCost * 0.6);
+    const affordable = flags >= need || flags >= hoardThreshold(b.world, b.f) || (b.target === r.id && flags >= r.loopCost * 0.6);
     if (!affordable) continue;
     if (softened) {
       options.push({ posture: 'opportunist', target: r.id, score: P.opportunism * (0.95 + r.ourPressure / 200) * late });

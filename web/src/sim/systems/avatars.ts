@@ -16,7 +16,9 @@ import { NEUTRAL } from '../types';
 import type { Avatar, AvatarAction, AvatarInput, FactionId, Flag, Pile } from '../types';
 import type { World } from '../world';
 import { isFlagProtected } from './abilities';
+import { observeBossFlagThrow } from './boss/eyeThreats';
 import { damageEntity, knockback } from './combat';
+import { bossPlayerHull } from './boss/playerCollision';
 import { hasEffect, pruneEffects, speedMultiplier } from './effects';
 import { canPlantAt, plantFlag, pullFlag, takeFromStock, defendedPullRate } from './flags';
 import { gccActive } from './gcc';
@@ -177,6 +179,7 @@ export function cmdThrow(world: World, c: CommandOf<'throw'>): void {
   flag.pos.z = from.z;
   flag.history.push({ t: world.time, x: from.x, z: from.z, state: 'flying', by: av.id });
   if (flag.history.length > 16) flag.history.splice(0, flag.history.length - 16);
+  observeBossFlagThrow(world, proj);
   av.throwReadyAt = world.time + AVATAR.throwCooldown;
   world.emit({ t: 'flagThrown', flagId: flag.id, faction: av.faction, from: { ...from }, vel: { ...vel } });
 }
@@ -314,7 +317,7 @@ export type AvatarMotionState = Pick<
  * input and aim are ignored, the body still falls); action (align / channel root it); effects
  * (stun roots it, knockback slides it, speed effects scale it, expiry judged at world.time);
  * pushing (speed capped to the cart's pace, the pushed cart's own shape is passed through).
- * From `world`: `time`, `collision`, and the match's jump-height setting.
+ * From `world`: `time`, `collision`, the live boss hull, and the match's jump-height setting.
  * Writes only av.pos, av.vel, av.onGround, av.yaw and av.pitch: no events or RNG.
  */
 export function stepAvatarMotion(world: World, av: AvatarMotionState, input: AvatarInput, dt: number): void {
@@ -361,7 +364,8 @@ export function stepAvatarMotion(world: World, av: AvatarMotionState, input: Ava
   av.vel.y -= AVATAR.gravity * dt;
   // The pushed cart leads its pusher; a client's copy of it lags, so it never blocks the pusher.
   const ignore = av.pushing >= 0 ? av.pushing : undefined;
-  const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight, ignore);
+  const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight,
+    ignore, bossPlayerHull(world.boss, world.time));
   av.onGround = res.onGround;
   const lim = MAP_HALF - AVATAR.radius;
   if (av.pos.x > lim || av.pos.x < -lim) {
@@ -521,13 +525,13 @@ function collectLooseFlags(world: World, av: Avatar): void {
   }
 }
 
-/** One Flag per restockInterval from any own Hearth's stock within restockRadius of its edge. */
+/** One Flag per restockInterval from own Hearth/Workshop stock within restockRadius of its edge. */
 function restock(world: World, av: Avatar, mind: AvatarMind): void {
   if (av.carried.length >= AVATAR.quiver || world.time < mind.restockAt || av.pos.y > LEVEL_REACH) return;
-  const reach = BUILDINGS.hearth.radius + AVATAR.restockRadius;
-  for (const hid of world.factions[av.faction].hearthIds) {
-    const h = world.buildings.get(hid);
-    if (!h) continue;
+  for (const h of world.buildings.values()) {
+    if (h.faction !== av.faction || (h.kind !== 'hearth' && h.kind !== 'workshop') || h.built < 1) continue;
+    const hid = h.id;
+    const reach = BUILDINGS[h.kind].radius + AVATAR.restockRadius;
     const dx = h.pos.x - av.pos.x;
     const dz = h.pos.z - av.pos.z;
     if (dx * dx + dz * dz > reach * reach) continue;

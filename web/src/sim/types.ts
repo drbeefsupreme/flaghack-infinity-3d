@@ -115,7 +115,7 @@ export interface Flag {
   state: FlagState;
   /** Controlling faction: planter / carrier / stock holder. NEUTRAL for orphaned Flags. */
   owner: Owner;
-  /** Entity holding the Flag (avatar/hippie when carried, hearth when stock, projectile id when flying). */
+  /** Entity holding the Flag (avatar/hippie when carried, Hearth/Workshop when stock, projectile id when flying). */
   holder: EntityId | -1;
   /** Node id when planted, else -1. */
   node: number;

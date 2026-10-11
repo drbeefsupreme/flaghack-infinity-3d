@@ -1,7 +1,7 @@
 /** Original procedural boss voices; no downloaded samples or third-party audio assets. */
 import { noise, tone } from './synth';
-export type BossCue = 'emerge' | 'death' | 'step' | 'stomp' | 'charge' | 'beam';
-export const BOSS_CUE_DURATION: Record<BossCue, number> = { emerge: 4.3, death: 6.2, step: 1.25, stomp: 1.8, charge: 3, beam: .5 };
+export type BossCue = 'emerge' | 'death' | 'step' | 'stomp' | 'charge' | 'beam' | 'impact' | 'crush';
+export const BOSS_CUE_DURATION: Record<BossCue, number> = { emerge: 4.3, death: 6.2, step: 1.25, stomp: 1.8, charge: 3, beam: .5, impact: 1.8, crush: 1.3 };
 
 /** Schedule into a caller-owned, cancellable SFX voice. Supports OfflineAudioContext for QA. */
 export function synthBoss(ctx: BaseAudioContext, out: AudioNode, pink: AudioBuffer, white: AudioBuffer,
@@ -20,7 +20,11 @@ export function synthBoss(ctx: BaseAudioContext, out: AudioNode, pink: AudioBuff
         env: { a: dying ? .08 : .22, h: dying ? .3 : .65, d: duration - (dying ? .38 : .87), peak: .095 } });
     }
     tone(ctx, out, t, { f: dying ? 62 : 38, f2: dying ? 24 : 31, glide: duration - .1,
-      env: { a: .12, h: .15, d: duration - .27, peak: .24 } });
+      env: { a: .12, h: .15, d: duration - .27, peak: .17 } });
+    // Audible chest harmonics carry the growl on laptop/phone speakers, while the
+    // quieter sub stays deep on full-range systems. This redistributes, not boosts, energy.
+    tone(ctx, throat, t, { type: 'triangle', f: dying ? 220 : 155, f2: dying ? 95 : 125,
+      glide: duration - .2, vib: 38, vibRate: 5.1, env: { a: .1, h: .35, d: duration - .45, peak: .10 } });
     for (const [f, q, peak] of [[360, 3, .13], [790, 4, .08]]) {
       noise(ctx, out, t, { buf: pink, filter: 'bandpass', f, f2: dying ? f * .4 : f * 1.3, q,
         sweep: duration - .2, env: { a: .18, h: .3, d: duration - .48, peak } });
@@ -29,12 +33,33 @@ export function synthBoss(ctx: BaseAudioContext, out: AudioNode, pink: AudioBuff
       sweep: duration, env: { a: .06, d: duration - .06, peak: .10 } });
   } else if (cue === 'step' || cue === 'stomp') {
     const heavy = cue === 'stomp', dur = BOSS_CUE_DURATION[cue];
-    tone(ctx, out, t, { f: heavy ? 78 : 64, f2: 27, glide: .32, env: { a: .006, d: dur, peak: .38 } });
-    tone(ctx, out, t + .018, { f: 115, f2: 42, glide: .12, env: { a: .002, d: .24, peak: .12 } });
+    tone(ctx, out, t, { f: heavy ? 78 : 64, f2: 27, glide: .32, env: { a: .006, d: dur, peak: .26 } });
+    tone(ctx, out, t + .018, { type: 'triangle', f: 190, f2: 105, glide: .22, env: { a: .002, d: .42, peak: .20 } });
     noise(ctx, out, t, { buf: pink, filter: 'lowpass', f: 480, f2: 65, sweep: dur,
       env: { a: .009, d: dur - .04, peak: heavy ? .5 : .34 } });
     noise(ctx, out, t, { buf: white, filter: 'bandpass', f: 1100, q: .5,
       env: { a: .002, d: .11, peak: .11 } });
+  } else if (cue === 'impact') {
+    // The electrical beam lives at the eye; this is a separate concussive explosion
+    // at its actual collision point, with a chest hit and a rolling debris tail.
+    tone(ctx, out, t, { f: 86, f2: 31, glide: .4, env: { a: .003, d: 1.45, peak: .27 } });
+    tone(ctx, out, t, { type: 'triangle', f: 245, f2: 80, glide: .3,
+      env: { a: .002, d: .55, peak: .18 } });
+    noise(ctx, out, t, { buf: white, filter: 'lowpass', f: 3600, f2: 170, sweep: .8,
+      env: { a: .002, d: 1.25, peak: .34 } });
+    noise(ctx, out, t + .06, { buf: pink, filter: 'lowpass', f: 650, f2: 70, sweep: 1.5,
+      env: { a: .015, d: 1.65, peak: .30 } });
+  } else if (cue === 'crush') {
+    // Staggered timber/mineral cracks over a crumbling mass. This is one bounded
+    // group per destruction burst, never one full explosion per removed prop.
+    tone(ctx, out, t, { type: 'triangle', f: 165, f2: 56, glide: .25,
+      env: { a: .004, d: .7, peak: .19 } });
+    noise(ctx, out, t, { buf: pink, filter: 'lowpass', f: 950, f2: 130, sweep: 1.1,
+      env: { a: .009, d: 1.22, peak: .27 } });
+    for (const [offset, f, peak] of [[0, 2400, .14], [.065, 1700, .11], [.17, 2900, .09], [.31, 1100, .08], [.53, 900, .05]]) {
+      noise(ctx, out, t + offset, { buf: white, filter: 'bandpass', f, f2: f * .45,
+        sweep: .13, q: .8, env: { a: .001, d: .16, peak } });
+    }
   } else if (cue === 'charge') {
     const remaining = Math.max(.02, 3 - age), progress = Math.min(1, age / 3);
     // Rising electrical whine and dark rumble; stop at the host's firing edge, never

@@ -10,11 +10,13 @@ import type { FactionId, Hippie, Projectile } from '../types';
 import type { World } from '../world';
 import { bossEncounterActive } from './boss/damage';
 import { intersectBossRegions } from './boss/hitRegions';
+import { recordBossFlagThreat } from './boss/eyeThreats';
 import { damageEntity } from './combat';
 import { recruitWithFlag } from './recruitment';
 import { isDrugActive } from './drugs';
 import { applyEffect } from './effects';
-import { destroyFlag, dropLoose, nearestPlantableNode, plantFlag } from './flags';
+import { nearestHearth } from './economy';
+import { depositToStock, destroyFlag, dropLoose, nearestPlantableNode, plantFlag } from './flags';
 
 /** Surfaces at least this flat (normal y) catch a Flag; steeper ones knock it down. */
 const WALKABLE_NY = 0.7;
@@ -64,6 +66,7 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
   const victim = hippieOnSegment(world, p, ox, oy, oz, dx, dy, dz, impact ? impact.t : t);
   if (victim) { bonk(world, p, victim); return; }
   if (impact && world.boss) {
+    recordBossFlagThreat(world, p.thrower);
     const amount = impact.headshot ? 100 : 50;
     damageEntity(world, world.boss.id, amount, p.thrower);
     const flagId = p.flagId;
@@ -74,6 +77,17 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
     return;
   }
   if (hit) {
+    const station = world.buildings.get(hit.tag);
+    // Deposit only at our own completed storage. Earlier walls, units and boss hits retain precedence.
+    if (station && station.faction === p.faction && station.built >= 1 &&
+      (station.kind === 'hearth' || station.kind === 'workshop')) {
+      let stored = depositToStock(world, p.flagId, station.id);
+      if (!stored && station.kind === 'workshop') {
+        const altar = nearestHearth(world, p.faction, station.pos);
+        if (altar) stored = depositToStock(world, p.flagId, altar.id);
+      }
+      if (stored) { finish(world, p, -1); return; }
+    }
     if (hit.ny >= WALKABLE_NY) land(world, p, hit.x, Math.max(0, hit.y), hit.z);
     else {
       const fx = hit.x + hit.nx * WALL_STANDOFF;

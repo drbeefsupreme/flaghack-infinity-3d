@@ -12,6 +12,7 @@
  * Owner: Controls (NetClient role).
  */
 import { SIM_DT } from '../sim/constants';
+import type { BossState } from '../sim/boss';
 import type { V3 } from '../sim/math';
 import { stepAvatarMotion } from '../sim/systems/avatars';
 import type { AvatarMotionState } from '../sim/systems/avatars';
@@ -22,6 +23,7 @@ import type { AvatarKinematics } from './mirror';
 /** The host's latest word as the mirror keeps it: the newest pushed frame, ahead of playback. */
 export interface PredictionSource {
   latestAvatar(id: EntityId): AvatarKinematics | null;
+  latestBoss?(): BossState | null;
   latestAck(playerId: string): number;
   latestTime(): number;
   latestTick(): number;
@@ -55,6 +57,7 @@ export class AvatarPredictor {
   private baseTime = 0;
   private sourceTick = -1;
   private synced = false;
+  private predictionBoss: BossState | null | undefined;
   /** Shown minus predicted position; decays toward zero. */
   private readonly err: V3 = { x: 0, y: 0, z: 0 };
 
@@ -167,6 +170,7 @@ export class AvatarPredictor {
     b.action = latest.action;
     b.effects = latest.effects;
     b.pushing = latest.pushing;
+    this.predictionBoss = source.latestBoss?.();
     this.ack = source.latestAck(this.playerId);
     this.baseTime = source.latestTime();
     this.copyPrev();
@@ -199,9 +203,10 @@ export class AvatarPredictor {
   /** The host's motion step for one tick, run at that tick's host time (effects expire by it). */
   private step(input: AvatarInput, time: number): void {
     const w = this.world;
-    const saved = w.time;
+    const saved = w.time, renderedBoss = w.boss;
     w.time = time;
-    stepAvatarMotion(w, this.body, input, SIM_DT);
-    w.time = saved;
+    if (this.predictionBoss !== undefined) w.boss = this.predictionBoss;
+    try { stepAvatarMotion(w, this.body, input, SIM_DT); }
+    finally { w.time = saved; w.boss = renderedBoss; }
   }
 }

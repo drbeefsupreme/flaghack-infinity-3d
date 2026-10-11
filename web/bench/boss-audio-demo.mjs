@@ -28,7 +28,7 @@ try {
     const rate=44100, duration=22, ctx=new OfflineAudioContext(1,rate*duration,rate);
     const noise=(pink)=>{const b=ctx.createBuffer(1,rate*4,rate),d=b.getChannelData(0);let seed=7711,last=0;for(let i=0;i<d.length;i++){seed=(seed*1664525+1013904223)>>>0;const n=seed/2147483648-1;last=.96*last+.04*n;d[i]=pink?last*4:n;}return b;};
     const pink=noise(true),white=noise(false),gain=ctx.createGain();gain.gain.value=.72;gain.connect(ctx.destination);
-    const cues=[['emerge',.3],['step',5],['step',6.1],['stomp',7.3],['charge',10],['beam',13],['death',15]];
+    const cues=[['emerge',.3],['step',5],['step',6.1],['stomp',7.3],['crush',8.7],['charge',10],['beam',13],['impact',13],['death',15]];
     for(const [cue,t] of cues)synthBoss(ctx,gain,pink,white,cue,t);
     const rendered=await ctx.startRendering(),data=rendered.getChannelData(0);
     let peak=0,sum=0,finite=true;for(const x of data){peak=Math.max(peak,Math.abs(x));sum+=x*x;if(!Number.isFinite(x))finite=false;}

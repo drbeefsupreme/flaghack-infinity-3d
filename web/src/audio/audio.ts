@@ -85,9 +85,9 @@ export class GameAudio {
   constructor(app: AppApi) {
     this.app = app;
     const onGesture = (): void => {
+      // Browser interruptions and rejected autoplay resumes can suspend audio again.
+      // Keep the gesture path available; unlock is a no-op while already running.
       this.unlock();
-      window.removeEventListener('pointerdown', onGesture, true);
-      window.removeEventListener('keydown', onGesture, true);
     };
     window.addEventListener('pointerdown', onGesture, true);
     window.addEventListener('keydown', onGesture, true);
@@ -108,7 +108,7 @@ export class GameAudio {
       };
     }
     const ctx = this.parts.engine.ctx;
-    if (ctx.state !== 'running') void ctx.resume();
+    if (ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => { /* Retry on the next gesture. */ });
   }
 
   onEvents(events: GameEvent[]): void {
@@ -118,6 +118,8 @@ export class GameAudio {
     const t0 = performance.now();
     this.syncWorld(w, parts);
     for (const e of events) parts.sfx.play(e, w, this.perspective);
+    const screen = this.app.session.screen;
+    if (screen === 'playing' || screen === 'ended') parts.boss.onEvents(events);
     this.jsMs += performance.now() - t0;
   }
 

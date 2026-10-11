@@ -11,6 +11,7 @@ import { BossImpactFx } from './impactFx';
 import { BossEyeBeamFx } from './eyeBeamFx';
 import type { GameEvent } from '../../../../sim/events';
 import { EFFIGY_BOSS_REVEAL_AT } from '../../../../sim/effigyBurn';
+import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { applyBossChargeMaterial, bossCharge, bossEmergence, bossFlash, smooth } from './revealTimeline';
 
 function clipAtGround(material: THREE.Material): void {
@@ -134,18 +135,18 @@ export class BossReveal {
       if (charge > 0) {
         light.color.lerp(new THREE.Color(1, 1, 1), charge);
         light.intensity += 180 * charge * charge;
-        light.position.y = 12;
+        light.position.y = 12 * BOSS_GAMEPLAY_SCALE;
       }
       return;
     }
     const flash = bossFlash(this.age);
-    light.position.set(world.map.effigy.x, 9, world.map.effigy.z);
+    light.position.set(world.map.effigy.x, 9 * BOSS_GAMEPLAY_SCALE, world.map.effigy.z);
     // The burst surrounds the boss, rather than re-whitening its just-restored materials.
     light.color.setRGB(1, 0.34, 0.08);
     light.intensity = flash * 45 + 24 * Math.exp(-this.age * 0.9);
     const death = this.combatFx?.deathAge.value ?? -1;
     if (death >= 0 && death < 12 && world.boss) {
-      light.position.set(world.boss.pos.x, 5, world.boss.pos.z);
+      light.position.set(world.boss.pos.x, 5 * BOSS_GAMEPLAY_SCALE, world.boss.pos.z);
       light.intensity = 65 * smooth(0, 1.5, death) * (1 - smooth(8, 12, death));
     }
   }

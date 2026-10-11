@@ -28,6 +28,16 @@ export const GROUND_TAG = 0;
 /** Stage deck height; the stage roof sits at the obstacle height. */
 export const STAGE_DECK_HEIGHT = 1.1;
 
+/** Transient actor hull, included only during this movement call, never in raycasts/nav. */
+export interface MovementCylinder {
+  x: number;
+  z: number;
+  radius: number;
+  bottom: number;
+  top: number;
+  tag: number;
+}
+
 export interface MoveResult {
   onGround: boolean;
   hitWall: boolean;
@@ -354,7 +364,13 @@ export class CollisionWorld {
     height: number,
     stepHeight: number,
     ignoreTag?: number,
+    cylinder?: MovementCylinder | null,
   ): MoveResult {
+    // The live boss hull is deliberately scoped to this call. It cannot enlarge flag
+    // hitboxes, affect navigation, survive death, or leave stale shapes on a mirror.
+    const cylinderId = cylinder
+      ? this.addCylinder(cylinder.x, cylinder.z, cylinder.radius, cylinder.bottom, cylinder.top, cylinder.tag)
+      : -1;
     const res = this.result;
     res.hitWall = false;
     const tdx = vel.x * dt;
@@ -380,16 +396,30 @@ export class CollisionWorld {
     }
     const h = dt / steps;
     let onGround = false;
+    // A spawn / authoritative correction can put a body inside the hull. Recover
+    // gradually rather than teleporting it across the arena or injecting momentum.
+    let recovery = Math.max(.2, Math.hypot(tdx, tdz));
     for (let step = 0; step < steps; step++) {
-      // Horizontal: move, then push out of anything overlapping the body (slides along walls).
+      // Spatial substeps sweep both axes at <= 25 cm, including high-speed impulses.
+      // Keep the previous valid side of the hull when resolving a tight wall contact.
+      const oldX = pos.x, oldZ = pos.z;
+      const oldDepth = cylinderId < 0 ? 0 : this.bodyDepth(this.shapes[cylinderId], oldX, oldZ,
+        radius, pos.y, pos.y + height);
       pos.x += vel.x * h;
       pos.z += vel.z * h;
+      let hullContact = false;
       for (let iter = 0; iter < RESOLVE_ITERS; iter++) {
         let pushed = false;
         for (let k = 0; k < count; k++) {
           const s = this.shapes[this.cand[k]];
-          const depth = this.bodyDepth(s, pos.x, pos.z, radius, pos.y + stepHeight, pos.y + height);
+          let depth = this.bodyDepth(s, pos.x, pos.z, radius,
+            this.cand[k] === cylinderId ? pos.y : pos.y + stepHeight, pos.y + height);
           if (depth <= 0) continue;
+          if (this.cand[k] === cylinderId) hullContact = true;
+          if (this.cand[k] === cylinderId && oldDepth > TOUCH) {
+            depth = Math.min(depth, recovery);
+            recovery -= depth;
+          }
           pos.x += this.dirX * depth;
           pos.z += this.dirZ * depth;
           const vn = vel.x * this.dirX + vel.z * this.dirZ;
@@ -401,6 +431,20 @@ export class CollisionWorld {
           res.hitWall = true;
         }
         if (!pushed) break;
+      }
+      if (hullContact || oldDepth > TOUCH) {
+        // Never let competing wall/hull pushes tunnel into a wall. A previously
+        // embedded body may retreat freely; valid outside contact stays outside.
+        let unsafe = false;
+        for (let k = 0; k < count; k++) {
+          if (this.cand[k] === cylinderId && oldDepth > TOUCH) continue;
+          const s = this.shapes[this.cand[k]];
+          if (this.bodyDepth(s, pos.x, pos.z, radius,
+            this.cand[k] === cylinderId ? pos.y : pos.y + stepHeight, pos.y + height) > TOUCH) {
+            unsafe = true; break;
+          }
+        }
+        if (unsafe) { pos.x = oldX; pos.z = oldZ; vel.x = 0; vel.z = 0; res.hitWall = true; }
       }
       // Vertical: ceilings stop a rise; otherwise land, step up or snap down onto support.
       const dy = vel.y * h;
@@ -427,6 +471,7 @@ export class CollisionWorld {
     }
     res.onGround = onGround;
     res.groundY = this.supportAmong(pos.x, pos.z, pos.y + stepHeight, count);
+    if (cylinderId >= 0) this.remove(cylinderId);
     return res;
   }
 

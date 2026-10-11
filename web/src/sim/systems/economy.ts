@@ -13,7 +13,7 @@ import {
   HEARTH_FLAG_COST,
   HEARTH_FLAG_INTERVAL,
   HIPPIE,
-  HOARD_THRESHOLD,
+  WORKSHOP_FLAG_CAPACITY,
   PILE_COUNT,
   PILE_MAX,
   PILE_MIN,
@@ -22,6 +22,7 @@ import {
   WORKSHOP_FLAG_COST,
   WORKSHOP_FLAG_INTERVAL,
 } from '../constants';
+import { matchSettings } from '../matchSettings';
 import { spawnPile } from '../factory';
 import type { V2 } from '../math';
 import { FACTION_IDS, JOBS } from '../types';
@@ -73,17 +74,25 @@ export function aboveAttentionCap(world: World, h: Hippie): boolean {
 }
 
 /**
- * Hearth stock above HOARD_THRESHOLD: the faction's hippies lose attention faster. The economy
+ * Camp stock above the configured base plus Workshop capacity: the faction's hippies lose attention faster. The economy
  * system tallies it every tick (hippies, which run first, read the previous tick's tally); a
  * replicated mirror never steps the economy, so a tally older than that is retaken here.
  */
+export function hoardThreshold(world: World, f: FactionId): number {
+  let capacity = matchSettings(world.options).hoardThreshold;
+  for (const b of world.buildings.values()) {
+    if (b.faction === f && b.kind === 'workshop' && b.built >= 1 && !b.disabled) capacity += WORKSHOP_FLAG_CAPACITY;
+  }
+  return capacity;
+}
+
 export function isHoarding(world: World, f: FactionId): boolean {
   const st = econ(world);
   if (st.stockTick < world.tick - 1) tallyStock(world, st);
   return st.hoarding[f];
 }
 
-/** Stock per faction (Flags held at its Hearths) and the hoarding flags derived from it. */
+/** Stock per faction across Hearths and Workshops, and its hoarding penalty. */
 function tallyStock(world: World, st: EconState): void {
   st.stock.fill(0);
   for (const fl of world.flags.values()) {
@@ -91,11 +100,11 @@ function tallyStock(world: World, st: EconState): void {
     const hearth = world.buildings.get(fl.holder);
     if (hearth && hearth.faction !== -1) st.stock[hearth.faction]++;
   }
-  for (const f of FACTION_IDS) st.hoarding[f] = st.stock[f] > HOARD_THRESHOLD;
+  for (const f of FACTION_IDS) st.hoarding[f] = st.stock[f] > hoardThreshold(world, f);
   st.stockTick = world.tick;
 }
 
-/** Flags in one Hearth's stock. */
+/** Flags in one storage building. */
 export function stockAt(world: World, hearthId: EntityId): number {
   let n = 0;
   for (const fl of world.flags.values()) if (fl.state === 'stock' && fl.holder === hearthId) n++;
@@ -128,14 +137,14 @@ function craftAtHearth(world: World, b: Building, f: FactionId, dt: number): voi
   hs.craftProgress -= HEARTH_FLAG_INTERVAL;
 }
 
-/** Workshops craft into the nearest own Hearth's stock (Flags live at the Hearth). */
+/** Workshops fill their pickup rack, then send overflow to the nearest own Hearth. */
 function craftAtWorkshop(world: World, b: Building, f: FactionId, dt: number): void {
   b.progress = Math.min(WORKSHOP_FLAG_INTERVAL, b.progress + dt);
   if (b.progress < WORKSHOP_FLAG_INTERVAL) return;
   const fac = world.factions[f];
   if (fac.lumber < WORKSHOP_FLAG_COST) return;
-  const hearth = nearestHearth(world, f, b.pos);
-  if (!hearth || !craftFlag(world, hearth.id)) return;
+  const destination = stockAt(world, b.id) < WORKSHOP_FLAG_CAPACITY ? b : nearestHearth(world, f, b.pos);
+  if (!destination || !craftFlag(world, destination.id)) return;
   fac.lumber -= WORKSHOP_FLAG_COST;
   b.progress -= WORKSHOP_FLAG_INTERVAL;
 }

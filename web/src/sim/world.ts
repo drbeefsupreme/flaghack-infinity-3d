@@ -182,11 +182,10 @@ export class World {
     return out;
   }
 
-  /** Total stock across all of a faction's Hearths. */
+  /** Total stock across all of a faction's Hearths and Workshops. */
   stockCount(f: FactionId): number {
     let n = 0;
-    const hs = this.factions[f].hearthIds;
-    for (const fl of this.flags.values()) if (fl.state === 'stock' && hs.includes(fl.holder)) n++;
+    for (const fl of this.flags.values()) if (fl.state === 'stock' && this.buildings.get(fl.holder)?.faction === f) n++;
     return n;
   }
 

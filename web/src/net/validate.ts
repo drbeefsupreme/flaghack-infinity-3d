@@ -171,7 +171,7 @@ function settingsPatch(v: unknown): Partial<LobbySettings> | null {
       for(const key of Object.keys(MATCH_RANGES) as (keyof typeof MATCH_RANGES)[]){const n=m[key];const [min,max]=MATCH_RANGES[key];if(typeof n!=='number'||!Number.isFinite(n)||n<min||n>max)return null;}
       if(typeof m.bossMode !== 'boolean')return null;
       if(typeof m.structuresBlockFlagPlacement !== 'boolean')return null;
-      if(!Number.isInteger(m.maxSignifiers)||!Number.isInteger(m.startingSignifiers)||!Number.isInteger(m.bossHp))return null;
+      if(!Number.isInteger(m.maxSignifiers)||!Number.isInteger(m.startingSignifiers)||!Number.isInteger(m.bossHp)||!Number.isInteger(m.hoardThreshold))return null;
       if(Object.keys(m).some(key=>!['active','days','bossMode','structuresBlockFlagPlacement',...Object.keys(MATCH_RANGES)].includes(key)))return null;
       out.match=normalizeMatch(m);
     } else if (k === 'seed') {

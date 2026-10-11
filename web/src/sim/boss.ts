@@ -1,9 +1,10 @@
 /** Durable, host-owned encounter state. Renderers never advance gameplay. */
 import type { EntityId, FactionId, Owner } from './types';
 import type { V2, V3 } from './math';
+import { BOSS_GAMEPLAY_SCALE } from './bossDimensions';
 /** Default encounter health; each new boss reads the pregame Boss HP setting. */
 export const BOSS_MAX_HP = 50000;
-export const BOSS_RADIUS = 2.35;
+export const BOSS_RADIUS = 2.35 * BOSS_GAMEPLAY_SCALE;
 export const BOSS_DEATH_DURATION = 12;
 export const BOSS_EYE_TIMING = { period: 30, charge: 3, beam: 0.5 } as const;
 export const BOSS_EYE_BLAST_RADIUS = 5;
@@ -48,6 +49,11 @@ export interface BossState {
   hitSeq: number;
   target: BossTarget | null;
   focusFaction: FactionId | null;
+  /** Strategic altar remains locked through distractions and CMI changes. */
+  objectiveAltarId: EntityId | null;
+  routeStartStride: number;
+  nextSceneryStompStride: number;
+  opportunisticAfter: number;
   retaliateId: EntityId | null;
   retaliateUntil: number;
   nextAttackAt: number;
@@ -61,4 +67,4 @@ export interface BossState {
 }
 export interface BossOutcome { kind: 'victory' | 'defeat'; winners: FactionId[]; at: number; }
 
-export const BOSS_TIMING = { emerge: 1.1, transition: 0.65, swipe: 2.4, swipeHit: 1.1, stomp: 2.2, stompHit: 1.0, grab: 3.8, grasp: 1.35, consume: 2.8 } as const;
+export const BOSS_TIMING = { emerge: 1.1, transition: 0.65, swipe: 1.2, swipeHit: .55, stomp: 2.2, stompHit: 1.0, grab: 3.8, grasp: 1.35, consume: 2.8 } as const;

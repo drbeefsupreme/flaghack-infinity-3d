@@ -163,7 +163,7 @@ export const build: LessonScript = {
     },
   ],
   debrief: [
-    saint('The Workshop crafts a Flag every 5 seconds for 3 lumber. Flags are for moving: hoard more than 24 at a Hearth and your Signifiers lose heart.'),
+    saint('The Workshop crafts a Flag every 5 seconds for 3 lumber. It holds 10 Flags for pickup here and adds 10 to your camp hoarding threshold. Additional Flags go to the altar. The base threshold is adjustable in Advanced Game Settings.'),
     saint('Hoarding is how Tartaria fell. "It\'s not about holding the Flag, it\'s about using the Flag to hold space."'),
   ],
   begin(ctx) {

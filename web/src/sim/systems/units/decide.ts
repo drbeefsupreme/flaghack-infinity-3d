@@ -151,7 +151,7 @@ function startFetch(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Facti
   const loose = nearestLooseFlag(world, sys, h, b, f, HIPPIE_AI.fetchRadius);
   if (loose) {
     const dl = Math.hypot(loose.pos.x - h.pos.x, loose.pos.z - h.pos.z);
-    const dh = hearth ? Math.hypot(hearth.pos.x - h.pos.x, hearth.pos.z - h.pos.z) - BUILDINGS.hearth.radius : Infinity;
+    const dh = hearth ? Math.hypot(hearth.pos.x - h.pos.x, hearth.pos.z - h.pos.z) - BUILDINGS[hearth.kind].radius : Infinity;
     if (dl <= dh) {
       beginTask(world, h, b, 'pickup');
       claimFlag(sys, h, b, loose.id);

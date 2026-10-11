@@ -49,6 +49,8 @@ describe('durable boss replication', () => {
       host.boss.crouched = false;
       host.boss.pos.x += 1;
       host.boss.target = null;
+      host.boss.objectiveAltarId = action === 'dead' ? null : 100 + host.tick;
+      host.boss.routeStartStride += .15; host.boss.nextSceneryStompStride += .25; host.boss.opportunisticAfter += 1.5;
       host.boss.held = null;
       host.boss.barrier = null;
       host.boss.deathAt = action === 'death' || action === 'dead' ? 250 : null;

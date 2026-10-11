@@ -1,8 +1,9 @@
 /** Numeric-only eye socket and aiming shared by host simulation and the real rig. */
 import type { V3 } from './math';
+import { BOSS_MODEL_SCALE } from './bossDimensions';
 
 export type BossEyeQuaternion = readonly [number, number, number, number];
-export const BOSS_EYE_RIG_SCALE = 20 / 32;
+export const BOSS_EYE_RIG_SCALE = BOSS_MODEL_SCALE;
 /** Front-most center vertex of the original Obsidian pupil, in the head bone's rest-local frame. */
 export const BOSS_EYE_HEAD_LOCAL_ORIGIN: Readonly<V3> = {
   x: -3.0107657059508977e-7, y: 4.066181679805435, z: 1.7262217104171163,

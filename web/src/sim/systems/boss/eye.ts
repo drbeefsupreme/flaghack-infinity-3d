@@ -1,6 +1,6 @@
 /** Fixed-clock eye charge, one ray impact and one radial blast. Mirrors only render the facts. */
 import { BOSS_EYE_BLAST_RADIUS, BOSS_EYE_DAMAGE, BOSS_EYE_MAX_RANGE, BOSS_EYE_TIMING, clearBossEyeCharge } from '../../boss';
-import type { BossState, BossTarget } from '../../boss';
+import type { BossState } from '../../boss';
 import { solveBossEyeAim } from '../../bossEyeRig';
 import type { BossEyeQuaternion, BossEyeRay } from '../../bossEyeRig';
 import { AVATAR, BUILDING_HEIGHT, BUILDINGS, HIPPIE, LEVEL_HEIGHT } from '../../constants';
@@ -8,59 +8,20 @@ import { angleDiff, clamp } from '../../math';
 import type { V3 } from '../../math';
 import type { Flag } from '../../types';
 import type { World } from '../../world';
-import { bossFocusAltar, consumeBuilding } from '../boss';
+import { consumeBuilding } from '../boss';
 import { damageEntity } from '../combat';
 import { pieceBottom } from '../econ/pieceGeometry';
 import { dropLoose } from '../flags';
-import { piecePosition } from '../pieces';
 import { destroySceneryHit } from '../scenery';
 import { updateSurvey } from '../survey';
 import { brainOf, releaseTask } from '../units/brain';
 import { breakChannel } from '../units/channel';
 import { pieceClosest } from '../units/reach';
 import { sampleBossHeadPose } from './hitRegions';
+import { BOSS_EYE_HIPPIE_HEIGHT, chooseBossEyeTarget } from './eyeTargeting';
+export { BOSS_EYE_HIPPIE_HEIGHT } from './eyeTargeting';
 
 export const cancelBossEye = clearBossEyeCharge;
-/** Crowd variants are approximately human height; simulation deliberately avoids renderer imports. */
-export const BOSS_EYE_HIPPIE_HEIGHT = 1.8;
-
-function targetPoint(world: World, target: BossTarget | null): V3 | null {
-  if (!target) return null;
-  if (target.kind === 'avatar') {
-    const a = world.avatars.get(target.id);
-    // Aim at the support beneath a unit, so the terrain impact lands at the
-    // telegraphed spot rather than continuing past a torso that has no ray collider.
-    return a && !a.koUntil && world.factions[a.faction].alive ? { x: a.pos.x,
-      y: world.collision.supportHeight(a.pos.x, a.pos.z, a.pos.y + .01), z: a.pos.z } : null;
-  }
-  if (target.kind === 'hippie') {
-    const h = world.hippies.get(target.id);
-    return h && h.status !== 'ko' ? { x: h.pos.x,
-      y: world.collision.supportHeight(h.pos.x, h.pos.z, (h.airborne?.y ?? 0) + .01), z: h.pos.z } : null;
-  }
-  if (target.kind === 'building') {
-    const b = world.buildings.get(target.id);
-    return b ? { x: b.pos.x, y: BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z } : null;
-  }
-  if (target.kind === 'piece') {
-    const p = world.pieces.get(target.id), at = p && piecePosition(world, p);
-    return at ? { x: at.x, y: at.y, z: at.z } : null;
-  }
-  const f = world.flags.get(target.id);
-  return f && (f.state === 'planted' || f.state === 'loose') ? { x: f.pos.x, y: f.pos.y, z: f.pos.z } : null;
-}
-
-function chooseTarget(world: World, boss: BossState): V3 | null {
-  if (boss.retaliateId !== null && world.time < boss.retaliateUntil) {
-    const retaliate = targetPoint(world, { kind: 'avatar', id: boss.retaliateId });
-    if (retaliate) return retaliate;
-  }
-  const current = targetPoint(world, boss.target);
-  if (current) return current;
-  const altar = bossFocusAltar(world);
-  return altar ? targetPoint(world, { kind: 'building', id: altar.id }) : null;
-}
-
 /** Exact actual pupil ray from the zero-breath idle head sample and shared offset-aware aim. */
 export function bossEyeRay(_world: World, boss: BossState): BossEyeRay {
   const head = sampleBossHeadPose(boss, boss.spawnedAt), c = Math.cos(boss.yaw), s = Math.sin(boss.yaw);
@@ -85,7 +46,7 @@ export function updateBossEye(world: World, boss: BossState, dt: number): boolea
   if (eye.chargeAt === null) {
     if (world.time < eye.nextFireAt - BOSS_EYE_TIMING.charge - 1e-9 ||
         boss.action === 'emerge' || boss.action === 'crouch' || boss.action === 'rise' || boss.action === 'death' || boss.action === 'dead') return false;
-    const target = chooseTarget(world, boss);
+    const target = chooseBossEyeTarget(world, boss);
     if (!target) return false;
     // Even a skipped tick or an interrupted stance must still show a full charge.
     eye.chargeAt = world.time; eye.nextFireAt = world.time + BOSS_EYE_TIMING.charge; eye.target = target;

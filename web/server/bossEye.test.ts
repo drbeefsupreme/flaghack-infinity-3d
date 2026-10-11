@@ -7,6 +7,7 @@ import { normalizeMatch } from '../src/sim/matchSettings';
 import { CollisionWorld } from '../src/sim/physics/collision';
 import { Simulation } from '../src/sim/simulation';
 import { spawnBoss } from '../src/sim/systems/boss';
+import { recordBossFlagThreat } from '../src/sim/systems/boss/eyeThreats';
 import { dropLoose, giveFlag } from '../src/sim/systems/flags';
 import type { World } from '../src/sim/world';
 import { cleanup, connect, hello, host, join, until } from './testkit';
@@ -52,6 +53,7 @@ describe('boss eye over real host sockets', () => {
         for (const id of [...target.carried]) dropLoose(world, id, { x: 100, y: 0, z: 100 });
         const flag = spawnFlag(world, { state: 'loose', owner: 0, pos: { ...target.pos } }); flagId = flag.id;
         expect(giveFlag(world, flag.id, target.id)).toBe(true);
+        recordBossFlagThreat(world, target.id);
         boss.target = { kind: 'avatar', id: target.id }; boss.retaliateId = target.id; boss.retaliateUntil = world.time + 100;
       }
       if (phase === 'beam' && world.boss!.eye.firedAt !== null && !survivorPlaced) {

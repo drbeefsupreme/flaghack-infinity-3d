@@ -1,10 +1,13 @@
 /** Read-only encounter feedback. Every effect can be reconstructed on a late join. */
 import * as THREE from 'three';
 import type { BossState } from '../../../../sim/boss';
+import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
 import { Rng } from '../../../../sim/rng';
 import { smooth } from './revealTimeline';
 import { createCrater } from './revealFx';
+import { bossForcefieldContacts } from './forcefieldContact';
+import type { BossForcefieldContact } from './forcefieldContact';
 
 const ADD = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending };
 const PLANE_VERTEX = `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`;
@@ -37,13 +40,15 @@ export class BossCombatFx {
   readonly deathAge = { value: -1 };
   private readonly geos = new Set<THREE.BufferGeometry>();
   private readonly mats = new Set<THREE.Material>();
-  private readonly shield: THREE.Mesh;
-  private readonly shieldColor = { value: new THREE.Color() };
-  private readonly shieldAge = { value: 0 };
+  private readonly shieldGeometry = new THREE.PlaneGeometry(10 * BOSS_GAMEPLAY_SCALE, 20 * BOSS_GAMEPLAY_SCALE, 1, 1);
+  private readonly shieldMaterial: THREE.ShaderMaterial;
+  private readonly shields = new Map<number, THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>>();
+  private readonly shieldTime = { value: 0 };
+  private shieldContacts: BossForcefieldContact[] = [];
   private readonly stomp: THREE.Mesh;
   private readonly stompAge = { value: -1 };
   private readonly flames: { mesh: THREE.Mesh; bone: THREE.Bone }[] = [];
-  private readonly fireUniforms: { uAge: { value: number }; uTime: { value: number }; uNoise: { value: THREE.Texture } };
+  private readonly fireUniforms: { uAge: { value: number }; uTime: { value: number }; uNoise: { value: THREE.Texture }; uBossFxScale: { value: number } };
   private readonly crater: THREE.Mesh;
   private readonly held = new THREE.Group();
   private readonly heldFlag = new THREE.Group();
@@ -54,38 +59,41 @@ export class BossCombatFx {
 
   constructor(private env: EnvContext, model: THREE.Group) {
     this.group.name = 'boss-combat-fx';
-    this.fireUniforms = { uAge: this.deathAge, uTime: { value: 0 }, uNoise: { value: env.noise } };
+    this.fireUniforms = { uAge: this.deathAge, uTime: { value: 0 }, uNoise: { value: env.noise }, uBossFxScale: { value: BOSS_GAMEPLAY_SCALE } };
     const add = <T extends THREE.Mesh>(mesh: T, name: string, parent: THREE.Object3D = this.group): T => {
       mesh.name = name; mesh.frustumCulled = false; parent.add(mesh); this.geos.add(mesh.geometry);
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) this.mats.add(m);
       return mesh;
     };
-    this.shield = add(new THREE.Mesh(new THREE.PlaneGeometry(10, 20, 1, 1), new THREE.ShaderMaterial({
-      ...ADD, side: THREE.DoubleSide, uniforms: { uAge: this.shieldAge, uColor: this.shieldColor }, vertexShader: PLANE_VERTEX,
-      fragmentShader: `uniform float uAge;uniform vec3 uColor;varying vec2 vUv;void main(){
+    this.shieldMaterial = new THREE.ShaderMaterial({
+      ...ADD, side: THREE.DoubleSide, uniforms: { uTime: this.shieldTime, uColor: { value: new THREE.Color() } }, vertexShader: PLANE_VERTEX,
+      // More separate rings, with the original rim/wave/grid opacity and additive gain.
+      // Repeating radius (rather than summing rings) prevents extra overlap brightness.
+      fragmentShader: `uniform float uTime;uniform vec3 uColor;varying vec2 vUv;void main(){
         vec2 p=(vUv-.5)*vec2(1.0,1.65);float r=length(p);float rim=exp(-pow((r-.4)/.016,2.0));
-        float wave=exp(-pow((r-uAge*.8)/.035,2.0));float grid=pow(max(0.0,cos(p.x*74.0)*cos(p.y*74.0)),12.0);
-        float alpha=(rim*.65+wave*.9+grid*.16)*(1.0-smoothstep(.12,.95,uAge))*(1.0-smoothstep(.4,.61,r));
+        float ringDistance=abs(mod(r-uTime*.08+.0475,.095)-.0475);
+        float wave=exp(-pow(ringDistance/.012,2.0));float grid=pow(max(0.0,cos(p.x*74.0)*cos(p.y*74.0)),12.0);
+        float alpha=(rim*.65+wave*.9+grid*.16)*(1.0-smoothstep(.4,.61,r));
         gl_FragColor=vec4(uColor*alpha*2.3,alpha);#include <colorspace_fragment>}`.replace(';#include', ';\n#include'),
-    })), 'boss-faction-forcefield');
-    this.shield.renderOrder = 5;
+    });
+    this.geos.add(this.shieldGeometry); this.mats.add(this.shieldMaterial);
     this.stomp = add(new THREE.Mesh(new THREE.CircleGeometry(6, 64).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
       ...ADD, side: THREE.DoubleSide, uniforms: { uAge: this.stompAge },
       vertexShader: `varying vec3 vLocal;void main(){vLocal=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
       fragmentShader: `uniform float uAge;varying vec3 vLocal;void main(){float r=length(vLocal.xz);float band=exp(-pow((r-(.5+uAge*7.0))/.16,2.0));float a=band*(1.0-smoothstep(.25,.8,uAge));gl_FragColor=vec4(vec3(.72,.48,.23)*a*1.7,a);\n#include <colorspace_fragment>}`,
     })), 'boss-stomp-impact');
-    this.stomp.renderOrder = 3;
+    this.stomp.renderOrder = 3; this.stomp.scale.setScalar(BOSS_GAMEPLAY_SCALE);
     const flameGeo = new THREE.InstancedBufferGeometry();
     flameGeo.setAttribute('position', new THREE.Float32BufferAttribute([-.5,0,0,.5,0,0,.5,1,0,-.5,1,0], 3));
     flameGeo.setIndex([0, 1, 2, 0, 2, 3]); flameGeo.instanceCount = 7;
     const rng = new Rng('boss-combat-flames');
     flameGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(Float32Array.from({ length: 28 }, () => rng.next()), 4));
     const flameMat = new THREE.ShaderMaterial({ ...ADD, side: THREE.DoubleSide, uniforms: this.fireUniforms,
-      vertexShader: `attribute vec4 aSeed;uniform float uAge;uniform float uTime;varying vec2 vUv;varying vec2 vSeed;
+      vertexShader: `attribute vec4 aSeed;uniform float uAge;uniform float uTime;uniform float uBossFxScale;varying vec2 vUv;varying vec2 vSeed;
       void main(){float grow=smoothstep(0.0,1.8,uAge)*(1.0-smoothstep(9.0,12.0,uAge));
-        vec3 center=vec3((aSeed.x-.5)*2.3,aSeed.y*1.2,(aSeed.z-.5)*2.3);vec4 p=modelViewMatrix*vec4(center,1.0);
-        p.xy+=vec2(position.x*(1.0+aSeed.w),position.y*(2.0+aSeed.y*3.2))*grow;
-        p.x+=sin(uTime*5.0+aSeed.z*20.0+position.y*4.0)*position.y*.24*grow;
+        vec3 center=vec3((aSeed.x-.5)*2.3,aSeed.y*1.2,(aSeed.z-.5)*2.3);vec4 p=modelViewMatrix*vec4(center*uBossFxScale,1.0);
+        p.xy+=vec2(position.x*(1.0+aSeed.w),position.y*(2.0+aSeed.y*3.2))*grow*uBossFxScale;
+        p.x+=sin(uTime*5.0+aSeed.z*20.0+position.y*4.0)*position.y*.24*grow*uBossFxScale;
         gl_Position=projectionMatrix*p;vUv=vec2(position.x+.5,position.y);vSeed=aSeed.xz;}`,
       fragmentShader: `uniform sampler2D uNoise;uniform float uTime;uniform float uAge;varying vec2 vUv;varying vec2 vSeed;
       void main(){float n=texture2D(uNoise,vec2(vUv.x*1.5,vUv.y*.8-uTime*.6)+vSeed*5.0).r;
@@ -100,9 +108,11 @@ export class BossCombatFx {
       this.flames.push({ mesh, bone });
     }
     this.crater = add(new THREE.Mesh(createCrater(new Rng('boss-death-crater')), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })), 'boss-death-crater');
-    this.crater.scale.setScalar(.65); this.crater.receiveShadow = true;
+    this.crater.scale.setScalar(.65 * BOSS_GAMEPLAY_SCALE); this.crater.receiveShadow = true;
     this.held.name = 'boss-held-target'; (model.getObjectByName('handR') as THREE.Bone).add(this.held);
     this.held.position.set(0, 1.7, 0); this.held.add(this.heldFlag, this.heldBuilding, this.heldPiece);
+    // Grip grows with the hand, but picked-up world objects retain their existing dimensions.
+    for (const carried of [this.heldFlag, this.heldBuilding, this.heldPiece]) carried.scale.setScalar(1 / BOSS_GAMEPLAY_SCALE);
     const wood = new THREE.MeshStandardMaterial({ color: 0x6d4530, roughness: .95 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x241c18, roughness: .9 });
     add(new THREE.Mesh(new THREE.CylinderGeometry(.055, .06, 3.6, 6), wood), 'boss-held-flag-pole', this.heldFlag);
@@ -119,6 +129,7 @@ export class BossCombatFx {
   update(boss: BossState | null | undefined, now: number): void {
     this.group.visible = !!boss; this.held.visible = !!boss?.held;
     this.deathAge.value = boss?.deathAt === null || boss?.deathAt === undefined ? -1 : Math.max(0, now - boss.deathAt);
+    this.updateShields(boss, now);
     if (!boss) return;
     const origin = this.env.ctx.world.map.effigy;
     const x = boss.pos.x - origin.x, z = boss.pos.z - origin.z, death = this.deathAge.value;
@@ -129,21 +140,35 @@ export class BossCombatFx {
     }
     this.crater.visible = death >= 4;
     this.crater.position.set(x, .012, z);
-    const barrier = boss.barrier;
-    const age = barrier ? Math.max(0, now - barrier.at) : 2;
-    this.shield.visible = !!barrier && age < .95 && death < 0;
-    if (barrier && this.shield.visible) {
-      this.shieldAge.value = age; this.shieldColor.value.set(this.env.ctx.world.factions[barrier.faction].color);
-      this.shield.position.set(barrier.x - origin.x, 7.5, barrier.z - origin.z);
-      this.shield.rotation.y = Math.atan2(boss.pos.x - barrier.x, boss.pos.z - barrier.z);
-    }
     const actionAge = Math.max(0, now - boss.actionAt);
     this.stomp.visible = boss.action === 'stomp' && actionAge >= 1 && actionAge < 1.8;
-    this.stompAge.value = actionAge - 1; this.stomp.position.set(x, .14, z);
+    this.stompAge.value = actionAge - 1; this.stomp.position.set(x, .14 * BOSS_GAMEPLAY_SCALE, z);
     if (boss.held) {
       const owner = boss.held.faction; this.heldColor.color.set(owner === -1 ? 0xe4dfce : this.env.ctx.world.factions[owner].color);
       this.heldFlag.visible = boss.held.kind === 'flag'; this.heldPiece.visible = boss.held.kind === 'piece'; this.heldBuilding.visible = boss.held.kind === 'building';
       this.held.scale.setScalar(1 - smooth(2.55, 2.8, actionAge));
+    }
+  }
+  private updateShields(boss: BossState | null | undefined, now: number): void {
+    const world = this.env.ctx.world, origin = world.map.effigy;
+    this.shieldContacts = bossForcefieldContacts(world, boss, this.shieldContacts);
+    this.shieldTime.value = now;
+    const active = new Set(this.shieldContacts.map(c => c.edge));
+    for (const [edge, mesh] of this.shields) if (!active.has(edge)) {
+      mesh.removeFromParent(); mesh.material.dispose(); this.mats.delete(mesh.material); this.shields.delete(edge);
+    }
+    for (const contact of this.shieldContacts) {
+      let mesh = this.shields.get(contact.edge);
+      if (!mesh) {
+        const material = this.shieldMaterial.clone(); material.uniforms.uTime = this.shieldTime;
+        mesh = new THREE.Mesh(this.shieldGeometry, material);
+        mesh.name = 'boss-faction-forcefield'; mesh.userData.edge = contact.edge;
+        mesh.frustumCulled = false; mesh.renderOrder = 5;
+        this.shields.set(contact.edge, mesh); this.mats.add(material); this.group.add(mesh);
+      }
+      mesh.material.uniforms.uColor.value.set(world.factions[contact.faction].color);
+      mesh.position.set(contact.x - origin.x, 7.5 * BOSS_GAMEPLAY_SCALE, contact.z - origin.z);
+      mesh.rotation.y = contact.yaw;
     }
   }
   dispose(): void {

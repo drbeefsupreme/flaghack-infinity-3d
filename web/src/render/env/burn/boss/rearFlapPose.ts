@@ -76,6 +76,10 @@ export class BossRearFlapPose {
     this.lower.position.z += wrap * wrap * (3 - 2 * wrap);
     const deltaHead = relativeHead.clone().multiply(this.restHeadToChest.clone().invert());
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(deltaHead);
+    // A steeper upward gaze at full32m brings the bridge toward the coat collar.
+    // Bow only that high-tilt segment farther rearward; the hat seam stays fixed.
+    const up = THREE.MathUtils.clamp((Math.atan2(forward.y, forward.z) - 1.15) / .15, 0, 1);
+    this.lower.position.y -= .6 * up * up * (3 - 2 * up);
     const down = THREE.MathUtils.clamp((-Math.atan2(forward.y, forward.z) - .9) / .35, 0, 1);
     this.lower.position.y += 1.5 * down * down * (3 - 2 * down);
     this.lower.updateWorldMatrix(false, true);

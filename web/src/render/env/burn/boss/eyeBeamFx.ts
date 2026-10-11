@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { BossState } from '../../../../sim/boss';
 import { BOSS_EYE_TIMING, BOSS_EYE_BLAST_RADIUS, BOSS_EYE_MAX_RANGE } from '../../../../sim/boss';
 import { BOSS_EYE_HEAD_LOCAL_ORIGIN, BOSS_EYE_HEAD_LOCAL_FORWARD, solveBossEyeAim } from '../../../../sim/bossEyeRig';
+import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { smooth } from './revealTimeline';
 
 const EYE_MATERIALS = new Set([
@@ -27,7 +28,7 @@ export function applyBossEyeGlow(material: THREE.MeshStandardMaterial, power: { 
   return true;
 }
 
-/** Sample the actual head matrix, including the original bone roll and approved 20/32 scale. */
+/** Sample the actual head matrix, including the original bone roll and the current shared model scale. */
 export function readBossEyeGaze(head: THREE.Bone, origin = new THREE.Vector3(), direction = new THREE.Vector3()): { origin: THREE.Vector3; direction: THREE.Vector3 } {
   head.updateWorldMatrix(true, false);
   origin.set(BOSS_EYE_HEAD_LOCAL_ORIGIN.x, BOSS_EYE_HEAD_LOCAL_ORIGIN.y, BOSS_EYE_HEAD_LOCAL_ORIGIN.z).applyMatrix4(head.matrixWorld);
@@ -74,12 +75,12 @@ export class BossEyeBeamFx {
       vertexShader: 'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
       fragmentShader: 'uniform float uAlpha;void main(){gl_FragColor=vec4(vec3(1.0),uAlpha);\n#include <colorspace_fragment>}',
     });
-    const core = add(new THREE.Mesh(cylinder, white(1)), 'boss-eye-white-core', this.beam); core.scale.set(.075, .075, 1); core.renderOrder = 8;
-    const beamGlow = add(new THREE.Mesh(cylinder, white(.18)), 'boss-eye-white-halo', this.beam); beamGlow.scale.set(.24, .24, 1); beamGlow.renderOrder = 9;
+    const core = add(new THREE.Mesh(cylinder, white(1)), 'boss-eye-white-core', this.beam); core.scale.set(.075 * BOSS_GAMEPLAY_SCALE, .075 * BOSS_GAMEPLAY_SCALE, 1); core.renderOrder = 8;
+    const beamGlow = add(new THREE.Mesh(cylinder, white(.18)), 'boss-eye-white-halo', this.beam); beamGlow.scale.set(.24 * BOSS_GAMEPLAY_SCALE, .24 * BOSS_GAMEPLAY_SCALE, 1); beamGlow.renderOrder = 9;
     this.halo = add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uPower: this.power },
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uPower: this.power, uBossScale: { value: BOSS_GAMEPLAY_SCALE } },
       vertexShader: `varying vec2 vUv;void main(){vUv=uv;vec4 center=modelViewMatrix*vec4(0.0,0.0,0.0,1.0);
-        center.xy+=position.xy*(0.7+uPower*1.6);gl_Position=projectionMatrix*center;}`.replace('varying vec2', 'uniform float uPower;varying vec2'),
+        center.xy+=position.xy*(0.7+uPower*1.6)*uBossScale;gl_Position=projectionMatrix*center;}`.replace('varying vec2', 'uniform float uPower;uniform float uBossScale;varying vec2'),
       fragmentShader: `uniform float uPower;varying vec2 vUv;void main(){float r=length((vUv-.5)*2.0);
         float a=exp(-r*r*8.0)*(0.045+uPower*.65)*(1.0-smoothstep(.65,1.0,r));
         gl_FragColor=vec4(vec3(1.0),a);\n#include <colorspace_fragment>}`,
@@ -133,7 +134,7 @@ export class BossEyeBeamFx {
     this.head.parent!.getWorldQuaternion(this.parentRotation).invert();
     this.head.quaternion.copy(this.parentRotation.multiply(this.headRotation)).normalize();
     this.head.updateWorldMatrix(false, true);
-    // Aimed head descendants must not pull the independently chest-locked drape.
+    // Preserve the hat-root attachment and coat-following lower drape after aiming.
     this.stabilizeRearFlap();
   }
 

@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { bossFixture } from '../../../../tests/bossFixture';
-import { BOSS_EYE_REAR_DRAPE_DATA, BOSS_HIT_POSE_DATA, BOSS_HIT_REGION_NAMES, BOSS_HIT_REGION_STRIDE } from '../../bossHitPoseData';
+import { BOSS_ATTACK_CORD_ENVELOPES, BOSS_IDLE_MOTION_REGIONS, BOSS_IDLE_MOTION_REGION_INDICES, BOSS_EYE_REAR_DRAPE_DATA, BOSS_HIT_POSE_DATA, BOSS_HIT_REGION_NAMES, BOSS_HIT_REGION_STRIDE } from '../../bossHitPoseData';
 import { BOSS_TIMING } from '../../boss';
+import { BOSS_HEIGHT, BOSS_MODEL_SCALE } from '../../bossDimensions';
+import { CROUCH_WALK_DATA } from '../../../render/env/burn/boss/crouchWalkData';
 import { BOSS_WALK_STRIDE } from '../../../render/env/burn/boss/combatPose';
 import { sampleBossHitRegions } from './hitRegions';
 
@@ -11,9 +13,10 @@ describe('baked boss pose collision contract', () => {
   it('records the current model and animation source hashes', () => {
     const data = readFileSync(new URL('../../bossHitPoseData.ts', import.meta.url), 'utf8');
     const hashes = [...data.matchAll(/ \* (\S+) sha256 ([a-f0-9]{64})/g)];
-    expect(hashes).toHaveLength(6);
+    expect(hashes).toHaveLength(7);
     expect(hashes.map(([, source]) => source)).toContain('src/render/env/burn/boss/rearFlapPose.ts');
     expect(hashes.map(([, source]) => source)).toContain('src/render/env/burn/boss/bossModel.ts');
+    expect(hashes.map(([, source]) => source)).toContain('src/sim/bossDimensions.ts');
     for (const [, source, expected] of hashes) {
       const bytes = readFileSync(new URL(`../../../../${source}`, import.meta.url));
       expect(createHash('sha256').update(bytes).digest('hex'), source).toBe(expected);
@@ -22,8 +25,9 @@ describe('baked boss pose collision contract', () => {
 
   it('uses the longer standing stride while preserving native crouch-walk distance', () => {
     expect(BOSS_HIT_POSE_DATA['walk:false'].phaseDistance).toBe(BOSS_WALK_STRIDE);
-    expect(BOSS_WALK_STRIDE).toBe(4.875);
-    expect(BOSS_HIT_POSE_DATA['crouchWalk:true'].phaseDistance).toBe(3.75);
+    expect(BOSS_HEIGHT).toBe(32); expect(BOSS_MODEL_SCALE).toBe(1);
+    expect(BOSS_WALK_STRIDE).toBe(7.8 * BOSS_MODEL_SCALE);
+    expect(BOSS_HIT_POSE_DATA['crouchWalk:true'].phaseDistance).toBe(CROUCH_WALK_DATA.stride * BOSS_MODEL_SCALE);
     const boss = bossFixture(); boss.action = 'walk'; boss.crouched = false;
     for (const phase of [0, .17, .43, .8]) {
       boss.stride = phase * BOSS_WALK_STRIDE;
@@ -73,14 +77,40 @@ describe('baked boss pose collision contract', () => {
       for (let i = 40; i < 50; i++) expect(zero[i]).toBeCloseTo(base[i], 3);
       const aimed = sampleBossHitRegions(boss, at + 3);
       expect(aimed).toHaveLength(base.length); expect([...aimed].every(Number.isFinite)).toBe(true);
-      expect(aimed.slice(70)).toEqual(base.slice(70));
+      expect(aimed.slice(70)).toEqual(zero.slice(70));
       expect(Math.hypot(aimed[40] - base[40], aimed[41] - base[41], aimed[42] - base[42])).toBeGreaterThan(.1);
       expect(sampleBossHitRegions(boss, at + 3)).toEqual(aimed);
       boss.eye.target = { x: boss.pos.x + 25, y: 0, z: boss.pos.z };
       const side = sampleBossHitRegions(boss, at + 3);
       expect(side.slice(40, 50)).not.toEqual(aimed.slice(40, 50));
-      expect(side.slice(70)).toEqual(base.slice(70));
+      expect(side.slice(70)).toEqual(zero.slice(70));
     }
+  });
+
+  it('contains secondary idle/attack motion in only the affected regions', () => {
+    expect(BOSS_IDLE_MOTION_REGION_INDICES.map(i => BOSS_HIT_REGION_NAMES[i]))
+      .toEqual(['hatCordL', 'hatCordR', 'handL', 'handR']);
+    for (const low of ['false', 'true'] as const) {
+      expect(BOSS_IDLE_MOTION_REGIONS[low]).toHaveLength(40);
+      expect(BOSS_ATTACK_CORD_ENVELOPES[low].head).toHaveLength(7);
+      expect(BOSS_ATTACK_CORD_ENVELOPES[low].regions).toHaveLength(20);
+      const boss = bossFixture(); boss.action = 'idle'; boss.crouched = low === 'true';
+      const ordinary = sampleBossHitRegions(boss, boss.spawnedAt);
+      expect(sampleBossHitRegions(boss, boss.spawnedAt + 11.7)).toEqual(ordinary);
+      boss.eye.chargeAt = boss.spawnedAt; boss.eye.target = { x: 0, y: 0, z: 30 };
+      const frozen = sampleBossHitRegions(boss, boss.spawnedAt);
+      for (let region = 7; region < BOSS_HIT_REGION_NAMES.length; region++) if (region !== 13 && region !== 16)
+        expect(frozen.slice(region * 10, region * 10 + 10)).toEqual(ordinary.slice(region * 10, region * 10 + 10));
+      expect(frozen.slice(130, 140)).not.toEqual(ordinary.slice(130, 140));
+    }
+  });
+
+  it('refines only the extra recovery intervals needed by the 32 m surface', () => {
+    for (const low of [false, true]) for (const at of [3.46, 3.48, 3.5])
+      expect(BOSS_HIT_POSE_DATA[`grab:${low}`].samples.some(s => s.at === at)).toBe(true);
+    for (const at of [1.05, 1.1, 1.15, 1.25, 1.3, 1.35, 1.45, 1.5, 1.55, 1.65, 1.7, 1.75, 1.85, 1.9, 1.95])
+      expect(BOSS_HIT_POSE_DATA['death:false'].samples.some(s => s.at === at)).toBe(true);
+    expect(BOSS_HIT_POSE_DATA['death:true'].samples).toHaveLength(95);
   });
 
   it('samples the initial death clutch densely enough to preserve hand and head bounds', () => {

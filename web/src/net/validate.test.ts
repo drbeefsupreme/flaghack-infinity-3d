@@ -273,3 +273,14 @@ describe('fitsLattice', () => {
     expect(fitsLattice({ t: 'order', faction: 0, hippies: [1], order: { kind: 'attack', target: 100000 } }, lat)).toBe(true);
   });
 });
+
+
+describe('network Flag hoarding threshold', () => {
+  it.each([0, 24, 75, 1000])('accepts threshold %s', (hoardThreshold) => {
+    const message = { t: 'settings', settings: { match: normalizeMatch({ hoardThreshold }) } };
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+  });
+  it.each([-1, 1001, 3.5, '24', null, undefined])('rejects malformed threshold %s', (hoardThreshold) => {
+    expect(parseClientMessage(JSON.stringify({ t: 'settings', settings: { match: { ...normalizeMatch(), hoardThreshold } } }))).toBeNull();
+  });
+});

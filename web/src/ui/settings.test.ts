@@ -108,3 +108,21 @@ describe('persisted boss health', () => {
     expect(settings.match.bossHp).toBe(expected);
   });
 });
+
+
+describe('persisted Flag hoarding threshold', () => {
+  it('defaults old saves and round-trips the configured base', () => {
+    storage({ version: 2, match: { days: 1 } });
+    const settings = new Session().settings;
+    loadSettings(settings);
+    expect(settings.match.hoardThreshold).toBe(24);
+    settings.match.hoardThreshold = 75;
+    saveSettings(settings);
+    const restored = new Session().settings;
+    loadSettings(restored);
+    expect(restored.match.hoardThreshold).toBe(75);
+  });
+  it.each([[NaN, 24], [Infinity, 24], [-1, 0], [1001, 1000], [17.8, 17]])('normalizes base %s to %s', (input, expected) => {
+    expect(normalizeMatch({ hoardThreshold: input }).hoardThreshold).toBe(expected);
+  });
+});

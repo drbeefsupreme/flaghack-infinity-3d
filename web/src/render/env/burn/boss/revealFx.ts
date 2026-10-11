@@ -1,6 +1,7 @@
 /** One deterministic explosion, reconstructed from seconds since the authoritative reveal. */
 import * as THREE from 'three';
 import { Rng } from '../../../../sim/rng';
+import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
 import { bossFlash, smooth } from './revealTimeline';
 
@@ -31,7 +32,7 @@ void main() {
  gl_FragColor = vec4(mix(vec3(1.0), vec3(1.0, 0.35, 0.055), min(uAge, 1.0)) * band * fade * 2.2, 1.0);
  #include <colorspace_fragment>
 }`;
-const SMOKE_VERTEX = `attribute vec4 aSeed; uniform float uAge; varying vec2 vUv; varying float vAlpha; varying vec2 vSeed;
+const SMOKE_VERTEX = `attribute vec4 aSeed; uniform float uAge; uniform float uBossFxScale; varying vec2 vUv; varying float vAlpha; varying vec2 vSeed;
 void main() {
  float t = max(0.0, uAge - aSeed.x * 0.45);
  float a = aSeed.y * 6.2831853;
@@ -39,7 +40,7 @@ void main() {
  vec3 c = vec3(cos(a) * r, 0.3 + aSeed.z * 5.0 + t * mix(1.0, 2.0, aSeed.w), sin(a) * r);
  vec4 mv = modelViewMatrix * vec4(c, 1.0);
  float size = (3.0 + t * 2.4) * mix(0.75, 1.25, aSeed.x);
- mv.xy += position.xy * size;
+ mv.xy += position.xy * size * uBossFxScale;
  gl_Position = projectionMatrix * mv;
  vUv = position.xy + 0.5; vSeed = aSeed.yz;
  vAlpha = smoothstep(0.0, 0.2, t) * (1.0 - smoothstep(0.6 + aSeed.x, 2.8 + aSeed.w * 1.2, t)) * 0.28;
@@ -55,12 +56,12 @@ void main() {
  gl_FragColor = vec4(ash + hot, a);
  #include <colorspace_fragment>
 }`;
-const EMBER_VERTEX = `attribute vec3 aVelocity; attribute float aSeed; uniform float uAge; uniform float uPointScale; varying float vHeat;
+const EMBER_VERTEX = `attribute vec3 aVelocity; attribute float aSeed; uniform float uAge; uniform float uPointScale; uniform float uBossFxScale; varying float vHeat;
 void main() {
  float t = max(0.0, uAge); vec3 p = position + aVelocity * t; p.y -= 4.8 * t * t; p.y = max(0.06, p.y);
  vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
  vHeat = (1.0 - smoothstep(1.2, 4.0 + aSeed * 2.0, t));
- gl_PointSize = clamp((0.045 + aSeed * 0.1) * uPointScale / max(-mv.z, 0.1), 1.1, 14.0);
+ gl_PointSize = clamp((0.045 + aSeed * 0.1) * uPointScale * uBossFxScale / max(-mv.z, 0.1), 1.1, 14.0 * uBossFxScale);
 }`;
 const EMBER_FRAGMENT = `uniform float uAge; varying float vHeat; void main() {
  float a = 1.0 - smoothstep(0.0, 0.5, length(gl_PointCoord - 0.5));
@@ -123,9 +124,9 @@ export class RevealFx {
   private mats: THREE.Material[] = [];
 
   constructor(private env: EnvContext) {
-    this.group.name = 'boss-reveal-fx';
+    this.group.name = 'boss-reveal-fx'; this.group.scale.setScalar(BOSS_GAMEPLAY_SCALE);
     const rng = new Rng(`boss-reveal:${env.ctx.world.map.seed}`);
-    const age = { uAge: this.uAge };
+    const age = { uAge: this.uAge, uBossFxScale: { value: BOSS_GAMEPLAY_SCALE } };
     const add = <T extends THREE.Mesh | THREE.Points>(o: T, name: string, order = 0): T => {
       o.name = name; o.renderOrder = order; o.frustumCulled = false;
       this.geos.push(o.geometry); this.mats.push(o.material as THREE.Material); this.group.add(o); return o;

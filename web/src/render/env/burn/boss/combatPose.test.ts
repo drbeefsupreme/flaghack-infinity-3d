@@ -3,12 +3,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it } from 'vitest';
 import { BossCombatPose, BOSS_COMBAT_TIMING, BOSS_WALK_STRIDE } from './combatPose';
-import { prepareBossModel, disposeBossModel } from './bossModel';
+import { prepareBossModel, disposeBossModel, BOSS_SCALE } from './bossModel';
 import { CROUCH_WALK_DATA } from './crouchWalkData';
 import { BossReveal } from './bossReveal';
 import { createDayState } from '../../timeOfDay';
 import type { EnvContext } from '../../envTypes';
-import { createBossEyeState, type BossState } from '../../../../sim/boss';
+import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
+import { BOSS_TIMING, createBossEyeState, type BossState } from '../../../../sim/boss';
 
 async function model() {
   const b = fs.readFileSync(new URL('../../../../../public/models/boss/skeletal-boss.glb', import.meta.url));
@@ -16,7 +17,8 @@ async function model() {
 }
 function boss(action: BossState['action'] = 'idle', crouched = false): BossState {
   return { id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action, actionAt: 110,
-    eye: createBossEyeState(100), actionSeq: 3, hitSeq: -1, target: null, focusFaction: null, retaliateId: null, retaliateUntil: 0,
+    eye: createBossEyeState(100), actionSeq: 3, hitSeq: -1, target: null, focusFaction: null,
+    objectiveAltarId: null, routeStartStride: 0, nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
     nextAttackAt: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched };
 }
 function signature(m: THREE.Group): number[] {
@@ -37,7 +39,7 @@ describe('approved-rig combat presentation', () => {
     const i = CROUCH_WALK_DATA.bones.indexOf('root');
     for (const frame of CROUCH_WALK_DATA.frames) expect(frame.positions[i * 3 + 2]).toBeCloseTo(-3.55, 5);
   });
-  it('samples every action reversibly without consuming host state or changing the 20m scale', async () => {
+  it('samples every action reversibly without consuming host state or changing the 32m scale', async () => {
     const m = await model(), p = new BossCombatPose(m);
     for (const action of ['idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'death', 'dead'] as const) {
       const b = boss(action, true); b.stride = 1.4; if (action === 'death' || action === 'dead') b.deathAt = 110;
@@ -46,7 +48,7 @@ describe('approved-rig combat presentation', () => {
       p.sample(boss('walk'), 140); p.sample(b, 111.1);
       expect(signature(m)).toEqual(first); expect(JSON.stringify(b)).toBe(before);
       expect(signature(m).every(Number.isFinite)).toBe(true);
-      expect(m.scale.toArray()).toEqual([.625, .625, .625]);
+      expect(m.scale.toArray()).toEqual([1, 1, 1]);
     }
     disposeBossModel(m);
   });
@@ -54,7 +56,7 @@ describe('approved-rig combat presentation', () => {
     const m = await model(), p = new BossCombatPose(m);
     for (const action of ['walk', 'crouchWalk'] as const) {
       const b = boss(action); b.stride = 0; p.sample(b, 110); const first = matrices(m);
-      b.stride = (action === 'walk' ? BOSS_WALK_STRIDE : CROUCH_WALK_DATA.stride * .625) * 20; p.sample(b, 110);
+      b.stride = (action === 'walk' ? BOSS_WALK_STRIDE : CROUCH_WALK_DATA.stride * BOSS_SCALE) * 20; p.sample(b, 110);
       matrices(m).forEach((v, i) => expect(v).toBeCloseTo(first[i], 6));
       expect(Math.abs((m.getObjectByName('root') as THREE.Bone).position.z)).toBeLessThan(4);
     }
@@ -108,7 +110,7 @@ describe('approved-rig combat presentation', () => {
     const lower = ['root', 'pelvis', 'thighL', 'shinL', 'footL', 'thighR', 'shinR', 'footR', 'skirt_01frontL', 'skirt_01frontR'];
     p.sample(boss('crouchWalk', true), 110);
     const low = lower.map(name => m.getObjectByName(name)!.matrixWorld.clone());
-    for (const [action, duration] of [['swipe', 2.4], ['grab', 3.8]] as const) {
+    for (const [action, duration] of [['swipe', BOSS_COMBAT_TIMING.swipe], ['grab', 3.8]] as const) {
       for (const age of [0, .32, .64, 1.1, 1.35, 2.25, duration - .1, duration]) {
         p.sample(boss(action, true), 110 + age); const expected = signature(m);
         // A stale or older false stance bit cannot select a standing variant.
@@ -121,12 +123,12 @@ describe('approved-rig combat presentation', () => {
     const reach = point(m, 'handR').distanceTo(point(m, 'jaw'));
     p.sample(boss('grab', true), 112.25);
     const bite = point(m, 'handR').distanceTo(point(m, 'jaw'));
-    expect(bite).toBeLessThan(reach); expect(bite).toBeLessThan(2.4);
+    expect(bite).toBeLessThan(reach); expect(bite).toBeLessThan(2.4 * BOSS_GAMEPLAY_SCALE);
     disposeBossModel(m);
   });
   it('lengthens standing steps by 30% and plants the support foot at unchanged travel speed', async () => {
     const m = await model(), p = new BossCombatPose(m), b = boss('walk');
-    expect(BOSS_WALK_STRIDE).toBeCloseTo(3.75 * 1.3, 8);
+    expect(BOSS_WALK_STRIDE).toBeCloseTo(6 * BOSS_SCALE * 1.3, 8);
     const speed = 4.3, cycleSeconds = BOSS_WALK_STRIDE / speed;
     let anchor: THREE.Vector3 | null = null;
     for (const phase of [0, .1, .2, .3, .4, .5, .6]) {
@@ -136,6 +138,17 @@ describe('approved-rig combat presentation', () => {
       if (!anchor) anchor = foot;
       expect(foot.distanceTo(anchor)).toBeLessThan(.0001);
     }
+    disposeBossModel(m);
+  });
+  it('runs the unchanged crouched swipe keys in half the time and matches the host contact', async () => {
+    const m = await model(), p = new BossCombatPose(m);
+    expect(BOSS_COMBAT_TIMING.swipe).toBe(1.2); expect(BOSS_COMBAT_TIMING.swipe).toBe(BOSS_TIMING.swipe);
+    expect(BOSS_COMBAT_TIMING.swipeHit).toBe(.55); expect(BOSS_COMBAT_TIMING.swipeHit).toBe(BOSS_TIMING.swipeHit);
+    const keys = (p as unknown as { clips: Map<string, { at: number }[]> }).clips.get('swipe')!;
+    keys.forEach((key, i) => expect(key.at).toBeCloseTo([0, .32, .55, .68, 1.2][i], 8));
+    p.sample(boss('crouchWalk', true), 110); const rest = point(m, 'handR');
+    p.sample(boss('swipe', true), 110.55); expect(point(m, 'handR').distanceTo(rest)).toBeGreaterThan(4);
+    p.sample(boss('swipe', true), 111.2); expect(point(m, 'handR').distanceTo(rest)).toBeLessThan(.0001);
     disposeBossModel(m);
   });
   it('leans the walking upper body forward while preserving upright planted feet', async () => {
@@ -156,7 +169,7 @@ describe('approved-rig combat presentation', () => {
     const tip = () => chest.worldToLocal(lower.localToWorld(new THREE.Vector3(0, 2.24, 0)));
     p.sample(boss('idle'), 110); const anchor = tip();
     for (const action of ['walk', 'crouchWalk', 'swipe', 'grab', 'death'] as const) for (const phase of [0, .25, .5, .75]) {
-      const b = boss(action, true); b.stride = phase * (action === 'walk' ? BOSS_WALK_STRIDE : CROUCH_WALK_DATA.stride * .625);
+      const b = boss(action, true); b.stride = phase * (action === 'walk' ? BOSS_WALK_STRIDE : CROUCH_WALK_DATA.stride * BOSS_SCALE);
       if (action === 'death') b.deathAt = 110;
       p.sample(b, 110 + phase * 8);
       expect(upper.position.distanceTo(rootPosition)).toBeLessThan(.00001);
@@ -188,9 +201,9 @@ describe('approved-rig combat presentation', () => {
     });
     expect(points.length).toBeGreaterThan(500);
     const pose = new BossCombatPose(m);
-    for (const action of ['walk', 'crouchWalk', 'swipe', 'grab', 'death'] as const) for (const time of [.5, 2.25, 5.8]) {
+    for (const action of ['walk', 'crouchWalk', 'swipe', 'grab', 'death'] as const) for (const time of [.5, 2.25, 5.8]) for (const tilt of [.35, -1.3]) {
       const b = boss(action, true); b.stride = time; if (action === 'death') b.deathAt = 110;
-      pose.sample(b, 110 + time); head.rotateX(.35); m.updateMatrixWorld(true); pose.stabilizeRearFlap();
+      pose.sample(b, 110 + time); head.rotateX(tilt); m.updateMatrixWorld(true); pose.stabilizeRearFlap();
       let maximumDrift = 0;
       for (const point of points) maximumDrift = Math.max(maximumDrift, point.mesh.getVertexPosition(point.index, new THREE.Vector3()).applyMatrix4(point.mesh.matrixWorld)
         .distanceTo(head.localToWorld(point.local.clone())));
@@ -248,17 +261,17 @@ describe('approved-rig combat presentation', () => {
     const m = await model(), p = new BossCombatPose(m);
     for (const crouched of [false, true]) for (const t of [.68, 1]) {
       p.sample(boss('stomp', crouched), 110 + t);
-      expect(point(m, 'footR').y).toBeCloseTo(1.17286 * .625, 3);
+      expect(point(m, 'footR').y).toBeCloseTo(1.17286 * BOSS_SCALE, 3);
     }
     const b = boss('death'); b.deathAt = 110;
     for (const t of [4, 5.8]) {
       p.sample(b, 110 + t);
       for (const side of ['L', 'R']) {
-        expect(point(m, 'shin' + side).y).toBeCloseTo(.95 * .625, 4);
-        expect(point(m, 'foot' + side).y).toBeCloseTo(1.17286 * .625, 4);
+        expect(point(m, 'shin' + side).y).toBeCloseTo(.95 * BOSS_SCALE, 4);
+        expect(point(m, 'foot' + side).y).toBeCloseTo(1.17286 * BOSS_SCALE, 4);
       }
     }
-    expect(BOSS_COMBAT_TIMING.swipeHit).toBe(1.1); expect(BOSS_COMBAT_TIMING.stompHit).toBe(1);
+    expect(BOSS_COMBAT_TIMING.swipeHit).toBe(.55); expect(BOSS_COMBAT_TIMING.stompHit).toBe(1);
     expect(BOSS_COMBAT_TIMING.attach).toBe(1.35); expect(BOSS_COMBAT_TIMING.consume).toBe(2.8);
     disposeBossModel(m);
   });
@@ -271,15 +284,27 @@ describe('approved-rig combat presentation', () => {
   });
   it('follows authoritative position/facing, shows faction barrier, then disappears at12s leaving the crater', async () => {
     const b = boss();
+    const nodes = [{ x: 14.36, z: -20, edges: [0, 3] }, { x: 14.36, z: 10, edges: [0, 1] },
+      { x: 34.36, z: 10, edges: [1, 2] }, { x: 34.36, z: -20, edges: [2, 3] }];
+    const lattice = { version: 0, nodes, edges: nodes.map((_, id) => ({ id, a: id, b: (id + 1) % 4 })) };
+    const survey = { version: 0, edgeLey: new Int8Array([0, 0, 0, 0]) };
     const e = { root: new THREE.Group(), day: createDayState(), fireLight: new THREE.PointLight(), noise: new THREE.DataTexture(new Uint8Array([127,127,127,255]),1,1),
-      ctx: { world: { map: { effigy: { x: 0, z: 0 }, seed: 'combat-test' }, time: 112, boss: b, effigyRevealedAt: 100, factions: [{ color: 0x12bd45 }] },
+      ctx: { world: { lattice, survey, map: { effigy: { x: 0, z: 0 }, seed: 'combat-test' }, time: 112, boss: b, effigyRevealedAt: 100, factions: [{ color: 0x12bd45 }] },
         quality: 'low', renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280,720) }, camera: { fov: 60 } }, uniforms: { uFogColor: { value: new THREE.Color() } } } as unknown as EnvContext;
     const r = new BossReveal(e, model); await r.ready; expect(r.loadError).toBeNull(); r.update(102);
-    const body = e.root.getObjectByName('boss-model-20m')!;
+    const body = e.root.getObjectByName('boss-model-32m')!;
     expect(body.position.toArray()).toEqual([12,0,-7]); expect(body.rotation.y).toBe(.7);
-    b.barrier = { edge: 0, faction: 0, x: 15, z: -7, at: 112 }; r.update(102);
+    // No collision-flash history is needed while the footprint is adjacent to this loop.
+    expect(b.barrier).toBeNull(); r.update(102);
     const shield = e.root.getObjectByName('boss-faction-forcefield') as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
     expect(shield.visible).toBe(true); expect(shield.material.uniforms.uColor.value.getHex()).toBe(0x12bd45);
+    expect(shield.position.y).toBeCloseTo(7.5 * BOSS_GAMEPLAY_SCALE);
+    const plane = shield.geometry as THREE.PlaneGeometry;
+    expect(plane.parameters.width).toBe(10 * BOSS_GAMEPLAY_SCALE); expect(plane.parameters.height).toBe(20 * BOSS_GAMEPLAY_SCALE);
+    expect(e.root.getObjectByName('boss-death-crater')!.scale.x).toBeCloseTo(.65 * BOSS_GAMEPLAY_SCALE);
+    const fire = e.root.getObjectByName('boss-death-fire-head') as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+    expect(fire.material.uniforms.uBossFxScale.value).toBe(BOSS_GAMEPLAY_SCALE);
+    expect(shield.position.x).toBeCloseTo(14.36); expect(shield.position.z).toBeCloseTo(-7);
     b.action = 'death'; b.deathAt = 112; e.ctx.world.time = 123.99; r.update(113.99); expect(body.visible).toBe(true);
     e.ctx.world.time = 124; r.update(114); expect(body.visible).toBe(false);
     expect(e.root.getObjectByName('boss-death-crater')!.visible).toBe(true);

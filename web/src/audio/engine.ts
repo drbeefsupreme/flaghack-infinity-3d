@@ -1,5 +1,5 @@
 /**
- * WebAudio engine: context, mix buses (master → glue compressor → limiter, music / sfx / ui / ambience),
+ * WebAudio engine: context, mix buses (master → glue compressor → limiter, music / sfx / ui / ambience / boss),
  * a generated-impulse convolution reverb, the camera listener, positional voice routing and
  * voice management (a global one-shot cap with priority stealing plus per-sound token-bucket
  * rate limits, so fifty Flags planted in one second ring out instead of clipping).
@@ -7,7 +7,7 @@
 import type { Settings } from '../game/session';
 import type { V2 } from '../sim/math';
 
-export type Bus = 'music' | 'sfx' | 'ui' | 'ambience';
+export type Bus = 'music' | 'sfx' | 'ui' | 'ambience' | 'boss';
 
 /** Per-sound rate limit: sustained plays per second and the burst allowed on top. */
 interface RateRule {
@@ -64,6 +64,8 @@ export interface VoiceSpec {
   at?: V2;
   /** Reference-distance multiplier for big sounds that carry across the burn. */
   range?: number;
+  /** Keep horizontal direction but bypass distance attenuation/culling (arena-wide boss cues). */
+  directionalOnly?: boolean;
   gain?: number;
   /** Reverb send 0..1. */
   wet?: number;
@@ -97,6 +99,12 @@ export class AudioEngine {
   readonly wet: Record<Bus, GainNode>;
   /** Extra gain on the music bus for ducking under huge moments. */
   readonly musicDuck: GainNode;
+  /** Boss sidechain affects other world sounds, not boss/UI or user volume settings. */
+  readonly worldDuck: GainNode;
+  readonly worldWetDuck: GainNode;
+  private bossDucks: { amount: number; until: number }[] = [];
+  private bossDuckAmount = 0;
+  private bossAudible = true;
   readonly reverb: ConvolverNode;
   readonly white: AudioBuffer;
   readonly pink: AudioBuffer;
@@ -146,25 +154,33 @@ export class AudioEngine {
     ret.gain.value = 0.55;
     this.reverb.connect(ret).connect(this.master);
 
+    this.worldDuck = ctx.createGain();
+    this.worldDuck.connect(this.master);
+    this.worldWetDuck = ctx.createGain();
+    this.worldWetDuck.connect(this.reverb);
     this.musicDuck = ctx.createGain();
-    this.musicDuck.connect(this.master);
+    this.musicDuck.connect(this.worldDuck);
     this.buses = {
       music: ctx.createGain(),
       sfx: ctx.createGain(),
       ui: ctx.createGain(),
       ambience: ctx.createGain(),
+      boss: ctx.createGain(),
     };
     this.wet = {
       music: ctx.createGain(),
       sfx: ctx.createGain(),
       ui: ctx.createGain(),
       ambience: ctx.createGain(),
+      boss: ctx.createGain(),
     };
     this.buses.music.connect(this.musicDuck);
-    this.buses.sfx.connect(this.master);
+    this.buses.sfx.connect(this.worldDuck);
+    this.buses.boss.connect(this.master);
     this.buses.ui.connect(this.master);
-    this.buses.ambience.connect(this.master);
-    for (const b of ['music', 'sfx', 'ui', 'ambience'] as const) this.wet[b].connect(this.reverb);
+    this.buses.ambience.connect(this.worldDuck);
+    for (const b of ['music', 'sfx', 'ambience'] as const) this.wet[b].connect(this.worldWetDuck);
+    for (const b of ['ui', 'boss'] as const) this.wet[b].connect(this.reverb);
 
     this.white = this.makeNoise(2, 1, 'white');
     this.pink = this.makeNoise(4, 2, 'pink');
@@ -195,9 +211,13 @@ export class AudioEngine {
     this.master.gain.setTargetAtTime(s.masterVolume, t, 0.05);
     const music = s.musicVolume;
     const sfx = s.sfxVolume * worldScale;
+    this.bossAudible = s.masterVolume > 0 && sfx > 0;
+    this.updateBossDucking();
     this.buses.music.gain.setTargetAtTime(music, t, 0.05);
     this.wet.music.gain.setTargetAtTime(music, t, 0.05);
     this.buses.sfx.gain.setTargetAtTime(sfx, t, 0.05);
+    this.buses.boss.gain.setTargetAtTime(sfx, t, 0.05);
+    this.wet.boss.gain.setTargetAtTime(sfx, t, 0.05);
     this.wet.sfx.gain.setTargetAtTime(sfx, t, 0.05);
     this.buses.ui.gain.setTargetAtTime(s.sfxVolume * 0.8, t, 0.05);
     this.wet.ui.gain.setTargetAtTime(s.sfxVolume * 0.8, t, 0.05);
@@ -259,7 +279,7 @@ export class AudioEngine {
 
     // Positional attenuation first: inaudible voices never take a slot or a token.
     let dist = 1;
-    if (spec.at) {
+    if (spec.at && !spec.directionalOnly) {
       dist = this.distanceGain(spec.at.x, spec.at.z, spec.range ?? 1);
       if (dist * gain < MIN_AUDIBLE) {
         this.stats.inaudible++;
@@ -304,7 +324,7 @@ export class AudioEngine {
       tail.connect(air);
       chain.push(air);
       tail = air;
-      if (this.quality === 'high') {
+      if (this.quality === 'high' && !spec.directionalOnly) {
         const p = ctx.createPanner();
         p.panningModel = 'HRTF';
         p.distanceModel = 'inverse';
@@ -374,6 +394,7 @@ export class AudioEngine {
 
   /** Free finished voices and tracked nodes (in-place compaction, no allocation). */
   prune(): void {
+    this.updateBossDucking();
     const t = this.ctx.currentTime;
     let w = 0;
     for (let i = 0; i < this.voices.length; i++) {
@@ -395,6 +416,31 @@ export class AudioEngine {
     }
     this.tracked.length = w;
     this.trackedEnd.length = w;
+  }
+
+  /** Independent leases let footsteps continue without extending an expired roar's deep duck. */
+  duckForBoss(amount: number, hold: number): () => void {
+    const lease = { amount: Math.max(0, Math.min(.95, amount)), until: this.ctx.currentTime + Math.max(0, hold) };
+    this.bossDucks.push(lease);
+    this.updateBossDucking();
+    return () => { lease.until = -Infinity; this.updateBossDucking(); };
+  }
+
+  private updateBossDucking(): void {
+    const t = this.ctx.currentTime;
+    let amount = 0, n = 0;
+    for (const lease of this.bossDucks) if (lease.until > t) {
+      this.bossDucks[n++] = lease; amount = Math.max(amount, lease.amount);
+    }
+    this.bossDucks.length = n;
+    if (!this.bossAudible) amount = 0;
+    if (amount === this.bossDuckAmount) return;
+    const attack = amount > this.bossDuckAmount;
+    this.bossDuckAmount = amount;
+    for (const node of [this.worldDuck, this.worldWetDuck]) {
+      node.gain.cancelScheduledValues(t);
+      node.gain.setTargetAtTime(1 - amount, t, attack ? .025 : .4);
+    }
   }
 
   /** Briefly pull the music down under a huge moment (capture, Omega, The Burn). */

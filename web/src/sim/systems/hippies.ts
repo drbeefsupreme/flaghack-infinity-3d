@@ -236,7 +236,7 @@ function census(world: World, sys: UnitsState): void {
   }
   for (const f of FACTION_IDS) {
     let stock = 0;
-    for (const id of world.factions[f].hearthIds) stock += sys.stockByHearth.get(id) ?? 0;
+    for (const building of world.buildings.values()) if (building.faction === f) stock += sys.stockByHearth.get(building.id) ?? 0;
     sys.stockByFaction[f] = stock;
     // Hoarding is villainy (the cold is the lack of activity); Acid Cop paranoia doubles it.
     let drain = HIPPIE.attentionDrain;

@@ -4,9 +4,10 @@
  * on our own assault loop, and attack pings on the Flags that hold a target's home ring.
  * Owner: AI agent.
  */
-import { CAPTURE, HOARD_THRESHOLD, LIGHTNING_PULL_MULT, WARD_PULSE_RADIUS } from '../sim/constants';
+import { CAPTURE, LIGHTNING_PULL_MULT, WARD_PULSE_RADIUS } from '../sim/constants';
 import { flagPullDefender } from '../sim/systems/flags';
 import { isFlagProtected } from '../sim/systems/abilities';
+import { hoardThreshold } from '../sim/systems/economy';
 import type { EntityId, Hippie, JobKind } from '../sim/types';
 import type { World } from '../sim/world';
 import type { Brain, Posture } from './brain';
@@ -121,7 +122,7 @@ function setWeights(b: Brain): void {
   const hoarding = v.stock > b.persona.hoard && b.posture !== 'defend';
   if (v.lumber < 40 && !hoarding && b.posture !== 'defend') w.gather = Math.max(w.gather, 3);
   if (hoarding) w.survey = 4;
-  if (v.stock > HOARD_THRESHOLD) w.gather = 0;
+  if (v.stock > hoardThreshold(b.world, b.f)) w.gather = 0;
   const key = `${w.survey}${w.gather}${w.defend}${w.raid}${w.ritual}`;
   if (key === b.sentWeights) return;
   b.sentWeights = key;

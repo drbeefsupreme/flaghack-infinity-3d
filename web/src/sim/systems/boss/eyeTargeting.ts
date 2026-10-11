@@ -1,0 +1,88 @@
+/** Strategic eye targets are independent of the giant's close-range hands and altar route. */
+import { BOSS_EYE_BLAST_RADIUS, BOSS_EYE_MAX_RANGE, BOSS_RADIUS } from '../../boss';
+import type { BossState } from '../../boss';
+import { BOSS_GAMEPLAY_SCALE } from '../../bossDimensions';
+import { AVATAR, BUILDINGS, BUILDING_HEIGHT, HIPPIE, LEVEL_HEIGHT } from '../../constants';
+import type { V3 } from '../../math';
+import type { World } from '../../world';
+import { pieceBottom } from '../econ/pieceGeometry';
+import { piecePosition } from '../pieces';
+import { pieceClosest } from '../units/reach';
+import { BOSS_FLAG_THREAT_SECONDS, recentBossFlagThreats } from './eyeThreats';
+
+/** Keep the entire five-meter blast beyond the giant's footprint, plus a half-meter margin. */
+export const BOSS_EYE_MIN_TARGET_DISTANCE = BOSS_RADIUS + BOSS_EYE_BLAST_RADIUS + .5;
+export const BOSS_EYE_MIN_GROUP = 3;
+/** Crowd variants are approximately human height; no renderer imports in simulation. */
+export const BOSS_EYE_HIPPIE_HEIGHT = 1.8;
+const RETRY_SECONDS = .5;
+const ORIGIN_ENVELOPE = 24 * BOSS_GAMEPLAY_SCALE;
+interface Unit { id: number; x: number; z: number; y: number; height: number; radius: number; aim: V3; threat: number; }
+const radius2 = BOSS_EYE_BLAST_RADIUS ** 2;
+function bodyInside(at: V3, x: number, z: number, y: number, top: number, radius: number): boolean {
+  const horizontal = Math.max(0, Math.hypot(at.x - x, at.z - z) - radius);
+  const vertical = Math.max(y - at.y, 0, at.y - top);
+  return horizontal ** 2 + vertical ** 2 <= radius2 + 1e-9;
+}
+
+/** Deterministic utility: each actual blast victim +2, each live non-altar building +7,
+ * each build piece +4, and each recent Flag attacker +12 fading to +6 over 12s.
+ * A lone ordinary unit (or a pair) is never enough to spend the weapon. */
+export function chooseBossEyeTarget(world: World, boss: BossState): V3 | null {
+  const retry = world.scratch.bossEyeRetry as { bossId: number; at: number } | undefined;
+  if (retry?.bossId === boss.id && world.time < retry.at) return null;
+  const threats = recentBossFlagThreats(world), units: Unit[] = [], candidates: V3[] = [];
+  const farEnough = (x: number, z: number) => Math.hypot(x - boss.pos.x, z - boss.pos.z) >= BOSS_EYE_MIN_TARGET_DISTANCE;
+  const unit = (id: number, x: number, z: number, y: number, height: number, radius: number, threat = 0) => {
+    // Nearby bodies belong to the hand/stomp attacks, even if a crowd gathers at the feet.
+    if (!farEnough(x, z)) return;
+    const aim = { x, y: world.collision.supportHeight(x, z, y + .01), z };
+    units.push({ id, x, z, y, height, radius, aim, threat }); candidates.push(aim);
+  };
+  for (const avatar of world.avatars.values()) if (avatar.hp > 0 && !avatar.koUntil && world.factions[avatar.faction].alive) {
+    const at = threats.get(avatar.id), threat = at === undefined ? 0 : 12 - 6 * (world.time - at) / BOSS_FLAG_THREAT_SECONDS;
+    unit(avatar.id, avatar.pos.x, avatar.pos.z, avatar.pos.y, AVATAR.height, AVATAR.radius, threat);
+  }
+  for (const hippie of world.hippies.values()) if (hippie.hp > 0 && hippie.status !== 'ko' &&
+      (hippie.faction < 0 || world.factions[hippie.faction].alive)) {
+    unit(hippie.id, hippie.pos.x, hippie.pos.z, hippie.airborne?.y ?? 0, BOSS_EYE_HIPPIE_HEIGHT, HIPPIE.radius);
+  }
+  // Include neighborhood centers so a real group spread around a five-meter circle
+  // needn't have a unit standing exactly in its middle. Score only the bodies inside.
+  for (const anchor of units) {
+    const neighbors = units.filter(u => Math.hypot(u.x - anchor.x, u.z - anchor.z, u.aim.y - anchor.aim.y) <= BOSS_EYE_BLAST_RADIUS * 2);
+    if (neighbors.length < BOSS_EYE_MIN_GROUP) continue;
+    const point = neighbors.reduce((sum, u) => ({ x: sum.x + u.x, y: sum.y + u.aim.y, z: sum.z + u.z }), { x: 0, y: 0, z: 0 });
+    point.x /= neighbors.length; point.y /= neighbors.length; point.z /= neighbors.length;
+    point.y = world.collision.supportHeight(point.x, point.z, point.y + .01);
+    candidates.push(point);
+  }
+  const buildings = [...world.buildings.values()].filter(b => b.kind !== 'hearth' && b.hp > 0);
+  for (const b of buildings) candidates.push({ x: b.pos.x, y: BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z });
+  const pieces = [...world.pieces.values()].filter(p => p.hp > 0);
+  for (const p of pieces) { const at = piecePosition(world, p); if (at) candidates.push({ ...at }); }
+  let best: V3 | null = null, bestScore = -Infinity, bestDistance = Infinity;
+  const reach = { x: 0, z: 0, dist: 0 };
+  for (const at of candidates) {
+    const distance = Math.hypot(at.x - boss.pos.x, at.z - boss.pos.z);
+    // Scale the pupil envelope with the giant (38.4 m at 32 m tall), never the 240 m ray limit.
+    if (!farEnough(at.x, at.z) || Math.hypot(distance, at.y) > BOSS_EYE_MAX_RANGE - ORIGIN_ENVELOPE) continue;
+    let count = 0, aggression = 0, structure = 0;
+    for (const u of units) if (bodyInside(at, u.x, u.z, u.y, u.y + u.height, u.radius)) { count++; aggression += u.threat; }
+    for (const b of buildings) if (bodyInside(at, b.pos.x, b.pos.z, 0, BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius)) structure += 7;
+    for (const p of pieces) {
+      pieceClosest(world, p, at.x, at.z, reach);
+      const dy = Math.max(pieceBottom(p.kind, p.level) - at.y, 0, at.y - (p.level + 1) * LEVEL_HEIGHT);
+      if (reach.dist ** 2 + dy ** 2 <= radius2 + 1e-9) structure += 4;
+    }
+    if (count < BOSS_EYE_MIN_GROUP && !aggression && !structure) continue;
+    const score = 2 * count + aggression + structure;
+    if (score > bestScore || score === bestScore && (distance < bestDistance || distance === bestDistance &&
+        (!best || at.x < best.x || at.x === best.x && (at.z < best.z || at.z === best.z && at.y < best.y)))) {
+      best = at; bestScore = score; bestDistance = distance;
+    }
+  }
+  if (!best) world.scratch.bossEyeRetry = { bossId: boss.id, at: world.time + RETRY_SECONDS };
+  else delete world.scratch.bossEyeRetry;
+  return best ? { ...best } : null;
+}

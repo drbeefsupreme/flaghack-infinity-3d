@@ -16,7 +16,7 @@ const Z = new THREE.Vector3(0, 0, 1);
  * Construct once, after prepareBossModel(), before another animation changes the rig.
  * Endpoints are solved once with two-bone IK; rendering only slerps local quaternions.
  * All authored coordinates are in the original 32 m, Y-up, +Z-forward model frame.
- * Root placement, facing and the approved uniform 20/32 scale are left untouched.
+ * Root placement, facing and the configured uniform model scale are left untouched.
  */
 export class BossRevealPose {
   private readonly joints: JointPose[];

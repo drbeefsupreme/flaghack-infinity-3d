@@ -474,7 +474,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   {
     kind: 'canon',
     title: 'Hoarding Is Villainy',
-    text: `Hoarding Flags caused the fall of Tartaria. Keep more than ${HOARD_THRESHOLD} Flags in your Hearth stock and your hippies' attention drains ${HOARD_PCT}% faster, for the cold is the lack of activity.`,
+    text: `Hoarding Flags caused the fall of Tartaria. The base hoarding threshold is ${HOARD_THRESHOLD} (adjustable in Advanced Game Settings), plus 10 per working Workshop. Exceed that total in camp stock and your hippies' attention drains ${HOARD_PCT}% faster, for the cold is the lack of activity.`,
   },
   { kind: 'h', text: 'Buildings' },
   {
@@ -486,7 +486,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
     head: ['Building', 'Lumber', 'Effect'],
     rows: [
       ['**Flag Hearth**', '—', `${BUILDINGS.hearth.hp} HP. Crafts 1 Flag every ${HEARTH_FLAG_INTERVAL} s for ${HEARTH_FLAG_COST} lumber and keeps your stock. Cannot be destroyed, only overwritten.`],
-      ['**Flag Workshop**', `${BUILDINGS.workshop.cost}`, `+1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber.`],
+      ['**Flag Workshop**', `${BUILDINGS.workshop.cost}`, `+1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber. Holds 10 for local pickup; overflow goes to the altar. +10 camp hoarding threshold.`],
       [
         '**Drum Circle**',
         `${BUILDINGS.drumcircle.cost}`,
@@ -589,9 +589,9 @@ export const TIPS: readonly string[] = [
   'A Flag with Ley Lines to two others observes itself, so a finished loop shrugs off the Phason Tide.',
   'Phason Shift ignores Canon III; only a Stabilize Zone keeps a node from hopping.',
   'Plant a real Flag on a rival\'s implied node and the implication evaporates.',
-  `Your quiver refills from Hearth stock whenever you stand within ${AVATAR.restockRadius} m of the Hearth.`,
+  `Your quiver refills from your Hearth or Workshop stock within ${AVATAR.restockRadius} m of its edge. Throw Flags into your altar or Workshops to deposit them; full Workshops send them to the altar.`,
   `A thrown Flag plants itself on the nearest free node within ${AVATAR.throwSnapRadius} m of where it lands.`,
-  `Keep more than ${HOARD_THRESHOLD} Flags in your Hearth and your hippies' attention drains ${HOARD_PCT}% faster: hoarding is villainy.`,
+  `Exceed your camp hoarding threshold (base ${HOARD_THRESHOLD}, adjustable, plus 10 per working Workshop) and your hippies' attention drains ${HOARD_PCT}% faster: hoarding is villainy.`,
   `Break the loop and the siege unwinds: pressure on a Hearth that is no longer contained decays ${CAPTURE.decay} per second.`,
   `Every defending hippie within ${CAPTURE.defenderRadius} m of a Hearth slows the overwrite, down to ×${CAPTURE.defenderFloor} speed.`,
   `A Crystal adds ${CRYSTAL_BONUS_PCT}% containment pressure to every enemy Hearth within ${CRYSTAL_PRESSURE_RADIUS} m.`,

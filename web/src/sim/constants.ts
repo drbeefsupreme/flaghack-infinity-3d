@@ -244,6 +244,8 @@ export const RECRUIT_INTERVAL = 14;
 export const RECRUIT_RADIUS = 15;
 export const RECRUIT_ATTRACT_RADIUS = 60;
 export const HOARD_THRESHOLD = 24;
+/** Each working Flag Workshop holds its own pickup stock. */
+export const WORKSHOP_FLAG_CAPACITY = 10;
 export const WARD_RADIUS = 30;
 export const WARD_OBSERVE_RADIUS = 26;
 export const WARD_PULSE_INTERVAL = 4;

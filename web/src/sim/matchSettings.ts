@@ -1,4 +1,4 @@
-import { BURN_TIME, DAWN_TIME } from './constants';
+import { BURN_TIME, DAWN_TIME, HOARD_THRESHOLD } from './constants';
 import { BOSS_MAX_HP } from './boss';
 import type { MatchOptions, FactionId } from './types';
 export interface MatchSettings {
@@ -8,6 +8,7 @@ export interface MatchSettings {
   gridScale: number;
   startingLumber: number;
   startingFlags: number;
+  hoardThreshold: number; // base soft stock limit; completed Workshops add their storage capacity
   startingSignifiers: number;
   jumpHeight: number; // multiplier of the original jump apex; 1 = original height
   maxSignifiers: number; // fixed shared world population (alive and knocked out)
@@ -24,6 +25,7 @@ export const DEFAULT_MATCH: MatchSettings = {
   gridScale: 8,
   startingLumber: 150,
   startingFlags: 14,
+  hoardThreshold: HOARD_THRESHOLD,
   startingSignifiers: 6,
   jumpHeight: 1,
   maxSignifiers: 40,
@@ -37,6 +39,7 @@ export const MATCH_RANGES = {
   gridScale: [6, 12, 0.5],
   startingLumber: [0, 1000, 25],
   startingFlags: [0, 100, 1],
+  hoardThreshold: [0, 1000, 1],
   startingSignifiers: [0, 12, 1],
   jumpHeight: [0.1, 5, 0.1],
   maxSignifiers: [0, 200, 1],
@@ -59,6 +62,7 @@ export function normalizeMatch(value: Partial<MatchSettings> = {}): MatchSetting
   }
   out.maxSignifiers = Math.floor(out.maxSignifiers);
   out.bossHp = Math.floor(out.bossHp);
+  out.hoardThreshold = Math.floor(out.hoardThreshold);
   out.startingSignifiers = Math.min(Math.floor(out.startingSignifiers), Math.floor(out.maxSignifiers / out.active.length));
   return out;
 }

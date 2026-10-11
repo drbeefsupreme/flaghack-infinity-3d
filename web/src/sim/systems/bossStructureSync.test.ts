@@ -25,7 +25,7 @@ function opportunity(kind: BuildingKind | PieceKind, distance = 6) {
   w.survey.version++;
   for (const av of w.avatars.values()) av.pos = { x: -100, y: 0, z: -100 };
   for (const h of w.hippies.values()) h.pos = { x: -100, z: -100 };
-  // Stage a deterministic, unobstructed path to the high-CMI altar. The nearby
+  // Stage a deterministic, unobstructed path to the locked altar. The nearby
   // opportunity is a different faction's structure and never the strategic focus.
   for (const building of w.buildings.values()) moveBuilding(w, building, -100, -100);
   const facet = w.lattice.facets.filter(f => !f.boundary)
@@ -42,6 +42,7 @@ function opportunity(kind: BuildingKind | PieceKind, distance = 6) {
   w.factions[3].stats.cmi = 100000;
   Object.assign(b, { pos: { x: at.x, z: at.z - distance }, yaw: 0, action: 'idle',
     actionAt: w.time, nextAttackAt: 0, crouched: true, actionSeq: 0, hitSeq: -1 });
+  b.objectiveAltarId = focus.id;
   expect(bossFocusAltar(w)).toBe(focus);
   w.drainEvents();
   return { w, b, s, at, focus };
@@ -211,10 +212,10 @@ describe('boss swipe damage boundaries', () => {
     for (const hp of [1000, 2, 1]) {
       s.hp = hp;
       Object.assign(b, { pos: { x: s.pos.x, z: s.pos.z - 3 }, action: 'idle', actionAt: w.time,
-        crouched: false, stride: 1.19, retaliateId: distant.id, retaliateUntil: w.time + 100 });
-      updateBoss(w, SIM_DT); // Cross the real 1.2 m footfall boundary while walking.
+        crouched: false, stride: 3.89, retaliateId: distant.id, retaliateUntil: w.time + 100 });
+      updateBoss(w, SIM_DT); // Cross the actual right-foot contact at half the7.8m stride.
       expect(b.action).toBe('walk');
-      expect(b.stride).toBeGreaterThan(1.2);
+      expect(b.stride).toBeGreaterThan(3.9);
       expect(s.hp).toBe(Math.max(1, hp - 250));
       expect(w.buildings.get(s.id)).toBe(s);
       consumeBuilding(w, s, true);

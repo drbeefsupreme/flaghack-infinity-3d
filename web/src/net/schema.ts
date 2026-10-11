@@ -1358,11 +1358,12 @@ function bossWire(b: BossState | null): Wire {
     b.focusFaction, b.retaliateId, quant(b.retaliateUntil, MS), quant(b.nextAttackAt, MS),
     b.deathAt === null ? null : quant(b.deathAt, MS),
     b.barrier ? [b.barrier.edge, b.barrier.faction, quant(b.barrier.x, CM), quant(b.barrier.z, CM), quant(b.barrier.at, MS)] : null,
-    quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched, eyeWire(b.eye)];
+    quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched, eyeWire(b.eye),
+    b.objectiveAltarId, quant(b.routeStartStride, CM), quant(b.nextSceneryStompStride, CM), quant(b.opportunisticAfter, MS)];
 }
 
 export function bossFromWire(v: Wire): BossState | null {
-  if (!Array.isArray(v) || v.length < 22 || !oneOf(v[7], BOSS_ACTIONS)) return null;
+  if (!Array.isArray(v) || v.length < 26 || !oneOf(v[7], BOSS_ACTIONS)) return null;
   const target = list(v[11]);
   const barrier = list(v[17]);
   const held = list(v[19]);
@@ -1374,6 +1375,8 @@ export function bossFromWire(v: Wire): BossState | null {
     actionAt: dequant(v[8], MS), actionSeq: int(v[9], 0), hitSeq: int(v[10], 0),
     target: oneOf(target[0], BOSS_TARGET_KINDS) ? { kind: target[0], id: int(target[1], -1) } : null,
     focusFaction: optFaction(v[12]), retaliateId: typeof v[13] === 'number' ? v[13] : null,
+    objectiveAltarId: typeof v[22] === 'number' ? int(v[22], -1) : null,
+    routeStartStride: dequant(v[23], CM), nextSceneryStompStride: dequant(v[24], CM), opportunisticAfter: dequant(v[25], MS),
     retaliateUntil: dequant(v[14], MS), nextAttackAt: dequant(v[15], MS),
     deathAt: v[16] === null ? null : dequant(v[16], MS),
     barrier: barrier.length === 5 ? { edge: int(barrier[0], -1), faction: faction(barrier[1]),

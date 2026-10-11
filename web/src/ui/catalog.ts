@@ -202,7 +202,7 @@ export const BUILD_INFO: Record<CampBuildingKind, BuildInfo> = {
   workshop: {
     name: BUILDING_NAMES.workshop,
     cost: BUILDINGS.workshop.cost,
-    effect: `Crafts +1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber each.`,
+    effect: `Crafts +1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber each. Holds 10 for pickup here; overflow goes to the altar. Adds 10 to the camp hoarding threshold.`,
     icon: 'workshop',
   },
   drumcircle: {

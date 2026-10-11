@@ -5,6 +5,7 @@ import { CollisionWorld } from '../physics/collision';
 import { createMatch } from '../setup';
 import { spawnBoss } from './boss';
 import { bossEyeRay, updateBossEye } from './boss/eye';
+import { recordBossFlagThreat } from './boss/eyeThreats';
 
 function encounter() {
   const world = createMatch({ seed: 'boss-eye-scenery', difficulty: 'normal', humans: [0], mode: 'standard' });
@@ -14,11 +15,11 @@ function encounter() {
   world.collision = new CollisionWorld();
   world.buildings.clear(); world.pieces.clear(); world.flags.clear(); world.hippies.clear(); world.crystals.clear();
   for (const f of world.factions) { f.hearthIds = []; f.gccId = null; }
-  for (const avatar of world.avatars.values()) avatar.pos = { x: 100, y: 0, z: 100 };
+  for (const avatar of world.avatars.values()) avatar.pos = { x: 100, y: 0, z: 50 + avatar.faction * 20 };
   world.avatarOf(0).pos = { x: 0, y: 0, z: 40 };
   boss.target = { kind: 'avatar', id: world.avatarOf(0).id };
   world.survey.edgeLey.fill(-1); world.survey.version++;
-  world.time = 127; updateBossEye(world, boss, SIM_DT);
+  world.time = 127; recordBossFlagThreat(world, world.avatarOf(0).id); updateBossEye(world, boss, SIM_DT);
   const ray = bossEyeRay(world, boss);
   const distance = Math.hypot(boss.eye.target!.x - ray.origin.x, boss.eye.target!.y - ray.origin.y, boss.eye.target!.z - ray.origin.z) - 5;
   const first = { x: ray.origin.x + ray.direction.x * distance, z: ray.origin.z + ray.direction.z * distance };

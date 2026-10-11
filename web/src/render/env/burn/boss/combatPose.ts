@@ -9,7 +9,7 @@ import { BossRearFlapPose } from './rearFlapPose';
 /** World travel per standing gait cycle; cadence derives from distance, not time. */
 export const BOSS_WALK_STRIDE = 7.8 * BOSS_SCALE;
 const WALK_STRIDE_SOURCE = BOSS_WALK_STRIDE / BOSS_SCALE;
-export const BOSS_COMBAT_TIMING = Object.freeze({ emerge: 1.1, transition: .65, swipe: 2.4, swipeHit: 1.1, stomp: 2.2, stompHit: 1, grab: 3.8, attach: 1.35, consume: 2.8, death: 12 });
+export const BOSS_COMBAT_TIMING = Object.freeze({ emerge: 1.1, transition: .65, swipe: 1.2, swipeHit: .55, stomp: 2.2, stompHit: 1, grab: 3.8, attach: 1.35, consume: 2.8, death: 12 });
 type Pose = { positions: Float32Array; quaternions: Float32Array };
 type Joint = { bone: THREE.Bone; restPosition: THREE.Vector3; restScale: THREE.Vector3; restQuaternion: THREE.Quaternion; restWorld: THREE.Quaternion };
 type Key = { at: number; pose: Pose };
@@ -297,7 +297,10 @@ export class BossCombatPose {
     const wind = build(() => { this.turn('chest', Y, -19); this.arm('R', [-8.3, y + 1, .8], new THREE.Vector3(-1, -.3, .1)); this.curl('R', .22); });
     const hit = build(() => { this.turn('chest', Y, 12); this.arm('R', [1.3, y - .4, 10], new THREE.Vector3(1, -.2, .15)); this.curl('R', .15); });
     const through = build(() => { this.turn('chest', Y, 24); this.arm('R', [7.2, y, 5.8], new THREE.Vector3(1, -.2, -.2)); });
-    this.clips.set('swipe', [{ at: 0, pose: base }, { at: .64, pose: wind }, { at: 1.1, pose: hit }, { at: 1.36, pose: through }, { at: 2.4, pose: base }]);
+    // Keep the authored sweep geometry; normalized keys run the full clip twice as fast.
+    const swipeDuration = BOSS_COMBAT_TIMING.swipe;
+    this.clips.set('swipe', [{ at: 0, pose: base }, { at: (.64 / 2.4) * swipeDuration, pose: wind },
+      { at: BOSS_COMBAT_TIMING.swipeHit, pose: hit }, { at: (1.36 / 2.4) * swipeDuration, pose: through }, { at: swipeDuration, pose: base }]);
     const reach = build(() => { this.turn('chest', X, 5); this.arm('R', [-2.4, 4.1, 9.1], new THREE.Vector3(0, -.7, .7)); this.curl('R', .02); });
     const grasp = build(() => { this.turn('chest', X, 5); this.arm('R', [-2.4, 4.1, 9.1], new THREE.Vector3(0, -.7, .7)); this.curl('R', .72); });
     const feed = (jawOpen: number, grip: number): Pose => build(() => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createMatch } from '../setup';
 import { normalizeMatch } from '../matchSettings';
 import { BOSS_MAX_HP, BOSS_RADIUS, BOSS_TIMING } from '../boss';
@@ -30,9 +30,9 @@ function handAttackEncounter(attack: 'swipe' | 'grab') {
   // Isolate stance selection from boundary detours; boundary interception has its own tests.
   w.survey.edgeLey.fill(-1); w.survey.version++;
   const target = attack === 'swipe' ? w.avatarOf(0) : w.hearthOf(1)!;
-  target.pos.x = 0; target.pos.z = 6;
+  target.pos.x = 0; target.pos.z = 9;
   if (attack === 'swipe') { b.retaliateId = target.id; b.retaliateUntil = w.time + 100; }
-  else w.factions[1].stats.cmi = 10000;
+  else { w.factions[1].stats.cmi = 10000; b.objectiveAltarId = target.id; }
   return { w, b, target };
 }
 
@@ -49,14 +49,17 @@ describe('authoritative boss encounter', () => {
     w.options.match = normalizeMatch({ bossHp: 50000 });
     expect(spawnBoss(w)).toBe(b); expect(b.hp).toBe(hp - 25); expect(b.maxHp).toBe(hp);
   });
-  it('targets faction CMI, not hearth count or survey size', () => {
-    const w = encounter(); w.factions[2].stats.cmi = 500;
-    w.factions[1].hearthIds.push(w.hearthOf(0)!.id); w.survey.surveySize[1] = 10000;
-    expect(bossFocusAltar(w)?.faction).toBe(2);
-    tick(w, .1); expect(w.boss!.focusFaction).toBe(2); expect(w.boss!.target?.id).toBe(w.hearthOf(2)!.id);
+  it('chooses a random altar independently of CMI and only draws once until it is gone', () => {
+    const w = encounter(), b = w.boss!; w.factions[0].stats.cmi = 100000;
+    const rng = vi.spyOn(w.rng, 'next').mockReturnValue(.75);
+    expect(bossFocusAltar(w)).toBeNull(); expect(rng).not.toHaveBeenCalled();
+    tick(w, .1); expect(b.objectiveAltarId).toBe(w.hearthOf(3)!.id); expect(rng).toHaveBeenCalledTimes(1);
+    w.factions[1].stats.cmi = 200000;
+    for (let i = 0; i < 100; i++) bossFocusAltar(w);
+    tick(w, 1); expect(b.objectiveAltarId).toBe(w.hearthOf(3)!.id); expect(rng).toHaveBeenCalledTimes(1);
   });
-  it('retaliates briefly then returns to the highest-CMI altar', () => {
-    const w = encounter(), b = w.boss!; w.factions[3].stats.cmi = 900;
+  it('retaliates briefly then returns to its locked altar', () => {
+    const w = encounter(), b = w.boss!; w.factions[3].stats.cmi = 900; b.objectiveAltarId = w.hearthOf(3)!.id;
     const a = w.avatarOf(0); a.pos = { x: b.pos.x + 25, y: 0, z: b.pos.z };
     damageEntity(w, b.id, 22, a.id); tick(w, .05);
     expect(b.target).toEqual({ kind: 'avatar', id: a.id });
@@ -86,8 +89,10 @@ describe('authoritative boss encounter', () => {
       }
       w.time = attackAt + BOSS_TIMING[attack]; updateBoss(w, SIM_DT);
       expect(b.action).toBe('idle'); expect(b.crouched).toBe(true);
-      expect(b.nextAttackAt).toBeCloseTo(w.time + .55);
+      expect(b.nextAttackAt).toBeCloseTo(w.time + (attack === 'swipe' ? .275 : .55));
       w.time += SIM_DT; updateBoss(w, SIM_DT);
+      expect(b.action).toBe('idle'); expect(b.crouched).toBe(true);
+      w.time = b.nextAttackAt; updateBoss(w, SIM_DT);
       expect(b.action).toBe('rise'); expect(b.crouched).toBe(true);
       w.time = b.actionAt + BOSS_TIMING.transition - .001; updateBoss(w, SIM_DT);
       expect(b.action).toBe('rise'); expect(b.crouched).toBe(true);
@@ -121,8 +126,9 @@ describe('authoritative boss encounter', () => {
     const a = w.avatarOf(0); a.pos = { x: 0, y: 0, z: 6 };
     const h = spawnHippie(w, 0, { x: 1, z: 6 });
     b.crouched = true; b.action = 'swipe'; b.actionAt = w.time; b.actionSeq = 20;
+    expect(BOSS_TIMING.swipe).toBe(1.2); expect(BOSS_TIMING.swipeHit).toBe(.55);
     w.time += BOSS_TIMING.swipeHit - .01; updateBoss(w, SIM_DT); expect(a.hp).toBe(AVATAR.maxHp);
-    w.time += .02; updateBoss(w, SIM_DT); expect(a.hp).toBe(AVATAR.maxHp - 100); expect(h.hp).toBe(0);
+    w.time += .01; updateBoss(w, SIM_DT); expect(a.hp).toBe(AVATAR.maxHp - 100); expect(h.hp).toBe(0);
     expect(a.vel.y).toBeGreaterThan(10); expect(h.airborne?.vy).toBe(15);
     for (let i = 0; i < 12; i++) updateBoss(w, SIM_DT);
     expect(a.hp).toBe(AVATAR.maxHp - 100); expect(h.hp).toBe(0); expect(h.status).toBe('ko');

@@ -111,7 +111,7 @@ function smallAltarLoop(closed: boolean) {
   if ((mid.x - facet.cx) * nx + (mid.z - facet.cz) * nz < 0) { nx = -nx; nz = -nz; }
   w.time = 245; w.effigyRevealedAt = 230; w.boss = bossFixture();
   Object.assign(w.boss, { pos: { x: mid.x + nx * (BOSS_RADIUS + .2), z: mid.z + nz * (BOSS_RADIUS + .2) },
-    action: 'idle', crouched: true, actionAt: w.time, target: null, barrier: null, held: null,
+    action: 'idle', crouched: true, actionAt: w.time, target: null, barrier: null, held: null, objectiveAltarId: altar.id,
     retaliateId: null, retaliateUntil: 0, nextAttackAt: 0 });
   w.factions[0].stats.cmi = 100000;
   for (const av of w.avatars.values()) av.pos = { x: -100, y: 0, z: -100 };
@@ -130,7 +130,8 @@ describe('boss barriers on actual lattice topology', () => {
     expect(boss.target?.kind).toBe('flag');
     expect(w.buildings.has(altar.id)).toBe(true);
     const flag = boss.target!.id;
-    updateBoss(w, SIM_DT);
+    // Boundary selection may require a real turn before the hand action can begin.
+    for (let i = 0; i < 120 && boss.action !== 'grab'; i++) { w.time += SIM_DT; updateBoss(w, SIM_DT); }
     expect(boss.action).toBe('grab');
     w.time = boss.actionAt + BOSS_TIMING.grasp;
     updateBoss(w, SIM_DT);

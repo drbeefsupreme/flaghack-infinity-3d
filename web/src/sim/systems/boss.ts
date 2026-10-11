@@ -1,9 +1,12 @@
 /** Host-only giant AI, movement and once-per-action impact windows. */
 import { BOSS_DEATH_DURATION, BOSS_RADIUS, BOSS_TIMING, createBossEyeState } from '../boss';
+import { BOSS_GAMEPLAY_SCALE as SIZE } from '../bossDimensions';
+import { bossFootContacts } from '../bossGait';
 import type { BossAction, BossState, BossTarget } from '../boss';
 import { BUILDINGS, MAP_HALF } from '../constants';
 import { angleDiff, clamp, distToSegment } from '../math';
 import { matchSettings } from '../matchSettings';
+import { footprintDistance } from '../map/mapgen';
 import type { V2 } from '../math';
 import type { Building, EntityId, FactionId, Owner } from '../types';
 import type { World } from '../world';
@@ -13,11 +16,17 @@ import { damageEntity } from './combat';
 import { applyEffect } from './effects';
 import { destroyFlag } from './flags';
 import { destroyPiece, piecePosition } from './pieces';
+import { crushScenery } from './scenery';
 import { eliminateByBoss } from './victory';
 import { cancelBossEye, updateBossEye } from './boss/eye';
+import { moveBossWithPlayerCollision } from './boss/playerCollision';
 
-const WALK_SPEED = 4.3, CROUCH_SPEED = 2.0, GRAB_REACH = 8, SWIPE_REACH = 9;
-const SWIPE_DAMAGE = 100, STOMP_DAMAGE = 140, STOMP_RADIUS = 4.6;
+const WALK_SPEED = 4.3, CROUCH_SPEED = 2.0, GRAB_REACH = 8 * SIZE, SWIPE_REACH = 9 * SIZE;
+const SWIPE_DAMAGE = 100, STOMP_DAMAGE = 140, STOMP_RADIUS = 4.6 * SIZE;
+export const BOSS_FOOTFALL_RADIUS = 2.5, BOSS_FOOTFALL_PROP_SPAN = 5;
+const HAND_HEIGHT = 12 * SIZE, CROUCH_DISTANCE = 15 * SIZE, SCENERY_STOMP_INTERVAL = 8 * SIZE;
+const HAND_FACING = Math.PI / 12, WALK_FACING = Math.PI / 3;
+export const BOSS_WEAVE_ANGLE = Math.PI / 12, BOSS_WEAVE_LEG = 10, BOSS_WEAVE_STRAIGHTEN = 25 * SIZE;
 
 export function spawnBoss(world: World): BossState | null {
   if (world.boss || world.effigyRevealedAt === null || world.phase !== 'playing') return world.boss;
@@ -25,26 +34,26 @@ export function spawnBoss(world: World): BossState | null {
   const hp = matchSettings(world.options).bossHp;
   world.boss = { id: world.newId(), pos: { x: world.map.effigy.x, z: world.map.effigy.z }, yaw: 0,
     hp, maxHp: hp, spawnedAt: at, action: 'emerge', crouched: false, actionAt: at,
-    actionSeq: 0, hitSeq: -1, target: null, focusFaction: null, retaliateId: null, retaliateUntil: 0,
+    actionSeq: 0, hitSeq: -1, target: null, focusFaction: null, objectiveAltarId: null, routeStartStride: 0,
+    nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
     nextAttackAt: at + BOSS_TIMING.emerge, deathAt: null, barrier: null, stride: 0, held: null, eye: createBossEyeState(at) };
   world.emit({ t: 'notify', faction: 'all', text: 'The giant has awakened. Rival camps stand together. Protect your altars and bring it down!', severity: 'epic' });
   return world.boss;
 }
 
-/** Highest faction CMI first; altar count never enters this ordering. */
+/** Read-only objective lookup. Randomness belongs exclusively to host target selection. */
 export function bossFocusAltar(world: World): Building | null {
-  const factions = world.factions.filter(f => f.alive && f.hearthIds.some(id => world.buildings.has(id)))
-    .sort((a, b) => b.stats.cmi - a.stats.cmi || a.id - b.id);
-  const f = factions[0], boss = world.boss;
-  if (!f) return null;
-  return f.hearthIds.map(id => world.buildings.get(id)).filter((b): b is Building => !!b)
-    .sort((a, b) => (boss ? distance(boss.pos, a.pos) - distance(boss.pos, b.pos) : 0) || a.id - b.id)[0] ?? null;
+  const boss = world.boss, locked = boss?.objectiveAltarId === null ? undefined : world.buildings.get(boss?.objectiveAltarId ?? -1);
+  if (locked?.kind === 'hearth' && locked.faction >= 0 && world.factions[locked.faction].alive &&
+      world.factions[locked.faction].hearthIds.includes(locked.id)) return locked;
+  return null;
 }
 
 function distance(a: V2, b: V2): number { return Math.hypot(a.x - b.x, a.z - b.z); }
-function face(b: BossState, to: V2, dt: number): void {
+function face(b: BossState, to: V2, dt: number): number {
   const goal = Math.atan2(to.x - b.pos.x, to.z - b.pos.z);
   b.yaw += clamp(angleDiff(b.yaw, goal), -2.4 * dt, 2.4 * dt);
+  return Math.abs(angleDiff(b.yaw, goal));
 }
 function action(world: World, b: BossState, next: BossAction): void {
   // Hand attacks may only begin from the settled crouch. Keep the full transition
@@ -63,8 +72,21 @@ export function bossTargetPosition(world: World, t: BossTarget | null): V2 | nul
 }
 
 function target(world: World, b: BossState): BossTarget | null {
-  const altar = bossFocusAltar(world);
-  b.focusFaction = altar && altar.faction >= 0 ? altar.faction as FactionId : null;
+  let altar = bossFocusAltar(world);
+  if (!altar) {
+    const eligible = [...world.buildings.values()].filter(s => s.kind === 'hearth' && s.faction >= 0 &&
+      world.factions[s.faction].alive && world.factions[s.faction].hearthIds.includes(s.id)).sort((a, c) => a.id - c.id);
+    // One uniform seeded draw per new objective. Never reroll during a distraction,
+    // approach, CMI change, or a presentation/mirror lookup.
+    altar = eligible.length ? world.rng.pick(eligible) : null;
+  }
+  const focus = altar && altar.faction >= 0 ? altar.faction as FactionId : null;
+  // A defense contacted on the previous camp's route is not a strategic target.
+  // Re-sweep the new route instead of turning back to dismantle an irrelevant loop.
+  if (b.objectiveAltarId !== (altar?.id ?? null)) {
+    b.barrier = null; b.objectiveAltarId = altar?.id ?? null; b.routeStartStride = b.stride;
+  }
+  b.focusFaction = focus;
   if (b.retaliateId !== null && world.time < b.retaliateUntil) {
     const t: BossTarget = { kind: 'avatar', id: b.retaliateId };
     if (bossTargetPosition(world, t)) return t;
@@ -74,18 +96,29 @@ function target(world: World, b: BossState): BossTarget | null {
     const flags = barrierFlags(world, b.barrier.edge).sort((a, c) => distance(a.pos, b.pos) - distance(c.pos, b.pos) || a.id - c.id);
     if (flags[0]) return { kind: 'flag', id: flags[0].id };
   }
+  // Once the strategic altar is within hand reach, finish the approach. Nearby
+  // bystanders must not indefinitely postpone eating it; actual retaliation above
+  // remains a bounded interrupt, and the hand sweep below still protects loops.
+  if (altar && distance(altar.pos, b.pos) <= GRAB_REACH) return { kind: 'building', id: altar.id };
+  // Keep a nearby selected body while lining up. Otherwise two surrounding units
+  // can exchange nearest-place every tick and cancel the turn before either hit.
+  if (world.time >= b.opportunisticAfter && (b.target?.kind === 'avatar' || b.target?.kind === 'hippie')) {
+    const at = bossTargetPosition(world, b.target);
+    const height = b.target.kind === 'avatar' ? world.avatars.get(b.target.id)?.pos.y : world.hippies.get(b.target.id)?.airborne?.y ?? 0;
+    if (at && (height ?? 0) <= HAND_HEIGHT && distance(at, b.pos) < SWIPE_REACH - .5) return b.target;
+  }
   // A nearby body is a brief opportunity, not a new long-range strategic priority.
   let nearest: BossTarget | null = null, best = SWIPE_REACH - 0.5;
   for (const a of world.avatars.values()) {
-    if (a.koUntil || !world.factions[a.faction].alive || a.pos.y > 12) continue;
+    if (a.koUntil || !world.factions[a.faction].alive || a.pos.y > HAND_HEIGHT) continue;
     const d = distance(a.pos, b.pos); if (d < best) { best = d; nearest = { kind: 'avatar', id: a.id }; }
   }
   for (const h of world.hippies.values()) {
-    if (h.status === 'ko' || (h.airborne?.y ?? 0) > 12) continue;
+    if (h.status === 'ko' || (h.airborne?.y ?? 0) > HAND_HEIGHT) continue;
     const d = distance(h.pos, b.pos); if (d < best) { best = d; nearest = { kind: 'hippie', id: h.id }; }
   }
-  if (nearest && world.time >= b.nextAttackAt) return nearest;
-  // Eat structures directly in our path; avoid wandering away from the CMI altar.
+  if (nearest && world.time >= b.nextAttackAt && world.time >= b.opportunisticAfter) return nearest;
+  // Eat structures directly in our path; avoid wandering away from the locked altar.
   if (altar) {
     let obstacle: BossTarget | null = null, gap = GRAB_REACH - 0.5;
     for (const s of world.buildings.values()) {
@@ -93,12 +126,12 @@ function target(world: World, b: BossState): BossTarget | null {
       // construction and the remains of a collapsed GCC.
       if (s.id === altar.id) continue;
       const d = distance(s.pos, b.pos);
-      if (d < gap && distToSegment(s.pos.x, s.pos.z, b.pos.x, b.pos.z, altar.pos.x, altar.pos.z) < 3) { gap = d; obstacle = { kind: 'building', id: s.id }; }
+      if (d < gap && distToSegment(s.pos.x, s.pos.z, b.pos.x, b.pos.z, altar.pos.x, altar.pos.z) < 3 * SIZE) { gap = d; obstacle = { kind: 'building', id: s.id }; }
     }
     for (const p of world.pieces.values()) {
       const at = piecePosition(world, p); if (!at) continue;
       const d = distance(at, b.pos);
-      if (d < gap && distToSegment(at.x, at.z, b.pos.x, b.pos.z, altar.pos.x, altar.pos.z) < 3) { gap = d; obstacle = { kind: 'piece', id: p.id }; }
+      if (d < gap && distToSegment(at.x, at.z, b.pos.x, b.pos.z, altar.pos.x, altar.pos.z) < 3 * SIZE) { gap = d; obstacle = { kind: 'piece', id: p.id }; }
     }
     if (obstacle) return obstacle;
     return { kind: 'building', id: altar.id };
@@ -121,6 +154,8 @@ export function updateBoss(world: World, dt: number): void {
   // settle in the current stance and stop moving until the frozen beam expires.
   if (updateBossEye(world, b, dt)) return;
   if (b.action === 'crouch' || b.action === 'rise') {
+    const at = bossTargetPosition(world, b.target);
+    if (at) face(b, at, dt);
     if (age >= BOSS_TIMING.transition) { b.crouched = b.action === 'crouch'; action(world, b, 'idle'); }
     return;
   }
@@ -136,23 +171,39 @@ export function updateBoss(world: World, dt: number): void {
       else if (b.action === 'stomp') stomp(world, b);
       else consumeTarget(world, b);
     }
-    if (age >= BOSS_TIMING[b.action]) { b.nextAttackAt = world.time + 0.55; action(world, b, 'idle'); }
+    if (age >= BOSS_TIMING[b.action]) {
+      if (b.target?.kind === 'avatar' || b.target?.kind === 'hippie') b.opportunisticAfter = world.time + 8;
+      b.nextAttackAt = world.time + (b.action === 'swipe' ? .275 : .55); action(world, b, 'idle');
+    }
     return;
   }
+  // Recovery is part of the attack. Do not briefly turn/rise toward the distant
+  // altar only to crouch and turn back to the same body when the cooldown ends.
+  if (world.time < b.nextAttackAt) { action(world, b, 'idle'); return; }
   b.target = target(world, b);
   const at = bossTargetPosition(world, b.target);
   if (!at || !b.target) { action(world, b, 'idle'); return; }
   const d = distance(at, b.pos), isUnit = b.target.kind === 'avatar' || b.target.kind === 'hippie';
-  face(b, at, dt);
   const isStructure = b.target.kind === 'building' || b.target.kind === 'piece';
   const isAltar = b.target.kind === 'building' && world.buildings.get(b.target.id)?.kind === 'hearth';
+  const onRoute = isAltar && b.target.id === b.objectiveAltarId;
+  // One local scenery stomp per size-scaled interval of progress, without changing or
+  // chasing away from the altar objective. Ordinary underfoot crushes still apply.
+  if (onRoute && !b.crouched && d > BOSS_WEAVE_STRAIGHTEN && b.stride >= b.nextSceneryStompStride) {
+    const dx = (at.x - b.pos.x) / d, dz = (at.z - b.pos.z) / d;
+    const scenery = world.map.obstacles.find(o => o.kind !== 'effigy' && !world.destroyedScenery.has(o.id) &&
+      (o.x - b.pos.x) * dx + (o.z - b.pos.z) * dz >= 0 && footprintDistance(o, b.pos.x, b.pos.z) <= STOMP_RADIUS &&
+      !sweepBossLoops(world, b.pos, o, .05));
+    if (scenery) { b.nextSceneryStompStride = b.stride + SCENERY_STOMP_INTERVAL; face(b, at, dt); action(world, b, 'stomp'); return; }
+  }
   // Bodies and structures under a standing foot can both provoke a stomp. Flags
   // still require the boundary-aware hand action; feet never bypass a forcefield.
-  if ((isUnit || isStructure && !isAltar) && d < 4.2 && !b.crouched && world.time >= b.nextAttackAt) { action(world, b, 'stomp'); return; }
-  const wantCrouch = d < 15;
-  if (wantCrouch !== b.crouched) { action(world, b, wantCrouch ? 'crouch' : 'rise'); return; }
+  if ((isUnit || isStructure && !isAltar) && d < 4.2 * SIZE && !b.crouched && world.time >= b.nextAttackAt) { face(b, at, dt); action(world, b, 'stomp'); return; }
+  const wantCrouch = d < CROUCH_DISTANCE;
+  if (wantCrouch !== b.crouched) { face(b, at, dt); action(world, b, wantCrouch ? 'crouch' : 'rise'); return; }
   const reach = isUnit ? SWIPE_REACH : GRAB_REACH;
   if (d <= reach && world.time >= b.nextAttackAt) {
+    const facing = face(b, at, dt);
     // A small loop must still protect its altar even when a long hand could reach across
     // from outside. The giant exposes and eats the contacted boundary before reaching in.
     const field = sweepBossLoops(world, b.pos, at, 0.05);
@@ -163,6 +214,9 @@ export function updateBoss(world: World, dt: number): void {
       if (flags[0]) b.target = { kind: 'flag', id: flags[0].id };
       action(world, b, 'idle'); return;
     }
+    // The attack clip owns yaw until recovery. Start it only after the actual
+    // front of the boss faces the target, never eating behind its back or swiping air.
+    if (facing > HAND_FACING) { action(world, b, 'idle'); return; }
     // Alternate some close structure encounters into a swipe, rather than making
     // structure damage depend on a conveniently adjacent player. Action sequence
     // is authoritative and replicated, so this choice needs no client RNG.
@@ -173,35 +227,51 @@ export function updateBoss(world: World, dt: number): void {
   const speed = b.crouched ? CROUCH_SPEED : WALK_SPEED;
   const len = Math.min(speed * dt, Math.max(0, d - reach + 0.2));
   const lim = MAP_HALF - BOSS_RADIUS;
-  const next = { x: clamp(b.pos.x + (at.x - b.pos.x) / d * len, -lim, lim), z: clamp(b.pos.z + (at.z - b.pos.z) / d * len, -lim, lim) };
-  const old = { ...b.pos }, hit = sweepBossLoops(world, old, next);
+  const direct = Math.atan2(at.x - b.pos.x, at.z - b.pos.z);
+  const weave = onRoute && !b.crouched && d > BOSS_WEAVE_STRAIGHTEN && !b.barrier;
+  const side = Math.floor(Math.max(0, b.stride - b.routeStartStride) / BOSS_WEAVE_LEG) % 2 === 0 ? 1 : -1;
+  const headingGoal = direct + (weave ? side * BOSS_WEAVE_ANGLE : 0);
+  let next = { x: clamp(b.pos.x + Math.sin(headingGoal) * len, -lim, lim), z: clamp(b.pos.z + Math.cos(headingGoal) * len, -lim, lim) };
+  // Straighten before a defended boundary rather than letting the decorative weave
+  // discover an irrelevant side loop or make progress around a corner oscillate.
+  if (weave && sweepBossLoops(world, b.pos, next, BOSS_RADIUS + 1)) {
+    next = { x: clamp(b.pos.x + Math.sin(direct) * len, -lim, lim), z: clamp(b.pos.z + Math.cos(direct) * len, -lim, lim) };
+  }
+  const old = { ...b.pos }, oldYaw = b.yaw, hit = sweepBossLoops(world, old, next);
+  let proposed = next;
   if (hit) {
     const t = Math.max(0, hit.fraction - 0.0001);
-    b.pos.x += (next.x - old.x) * t; b.pos.z += (next.z - old.z) * t;
+    proposed = { x: old.x + (next.x - old.x) * t, z: old.z + (next.z - old.z) * t };
     b.barrier = { edge: hit.edge, faction: hit.faction, x: hit.x, z: hit.z, at: world.time };
     // Implied endpoints can be sustained by real flags beyond arm's reach. Follow the
     // outside of the field toward those flags; every alternative is swept too, so corners,
     // nested loops and a topology edit cannot turn steering into a teleport.
     if (b.target.kind === 'flag' && d > GRAB_REACH && hit.fraction < 0.1) {
-      const desired = Math.atan2(at.x - b.pos.x, at.z - b.pos.z);
+      const desired = Math.atan2(at.x - proposed.x, at.z - proposed.z);
       let alternative: V2 | null = null, score = Infinity;
       for (let turn = 15; turn <= 150; turn += 15) for (const side of [-1, 1]) {
         const yaw = desired + side * turn * Math.PI / 180;
-        const trial = { x: clamp(b.pos.x + Math.sin(yaw) * len, -lim, lim), z: clamp(b.pos.z + Math.cos(yaw) * len, -lim, lim) };
-        if (sweepBossLoops(world, b.pos, trial)) continue;
+        const remaining = len * (1 - t);
+        const trial = { x: clamp(proposed.x + Math.sin(yaw) * remaining, -lim, lim), z: clamp(proposed.z + Math.cos(yaw) * remaining, -lim, lim) };
+        if (sweepBossLoops(world, proposed, trial)) continue;
         const cost = distance(trial, at) + turn * 0.0001;
         if (cost < score) { score = cost; alternative = trial; }
       }
-      if (alternative) { b.pos.x = alternative.x; b.pos.z = alternative.z; }
+      if (alternative) proposed = alternative;
     }
   } else {
-    b.pos.x = next.x; b.pos.z = next.z;
     if (b.barrier && !bossLoopEdges(world).includes(b.barrier.edge)) b.barrier = null;
   }
+  // Turn toward the actual safe route (including a boundary detour), not just
+  // the unreachable endpoint. Retaliation/expiry cannot make the rig walk backwards.
+  const heading = face(b, distance(old, proposed) > 1e-6 ? proposed : at, dt);
+  if (heading > WALK_FACING || distance(old, proposed) <= 1e-6) { action(world, b, 'idle'); return; }
+  proposed = moveBossWithPlayerCollision(world, b, old, proposed);
+  b.pos.x = proposed.x; b.pos.z = proposed.z;
   const traveled = distance(old, b.pos);
   b.stride += traveled;
   action(world, b, b.crouched ? 'crouchWalk' : 'walk');
-  if (traveled > 1e-6) crushStep(world, b, old);
+  if (traveled > 1e-6) crushStep(world, b, old, oldYaw);
 }
 
 function holdTarget(world: World, b: BossState): void {
@@ -254,7 +324,7 @@ export function consumeBuilding(world: World, building: Building, destroyed = fa
 
 function inSwipe(b: BossState, p: V2): boolean {
   const dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz);
-  return d <= SWIPE_REACH && (d < 2 || (dx * Math.sin(b.yaw) + dz * Math.cos(b.yaw)) / d >= -0.25);
+  return d <= SWIPE_REACH && (d < 2 * SIZE || (dx * Math.sin(b.yaw) + dz * Math.cos(b.yaw)) / d >= -0.25);
 }
 function launch(world: World, b: BossState, id: number): void {
   const h = world.hippies.get(id), av = world.avatars.get(id), unit = h ?? av;
@@ -280,10 +350,10 @@ function attackReaches(world: World, b: BossState, pos: V2): boolean {
   return false;
 }
 function swipe(world: World, b: BossState): void {
-  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < 12 && inSwipe(b, av.pos) && attackReaches(world, b, av.pos)) {
+  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < HAND_HEIGHT && inSwipe(b, av.pos) && attackReaches(world, b, av.pos)) {
     damageEntity(world, av.id, SWIPE_DAMAGE, b.id); launch(world, b, av.id);
   }
-  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < 12 && inSwipe(b, h.pos) && attackReaches(world, b, h.pos)) {
+  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < HAND_HEIGHT && inSwipe(b, h.pos) && attackReaches(world, b, h.pos)) {
     damageEntity(world, h.id, SWIPE_DAMAGE, b.id); launch(world, b, h.id);
   }
   for (const s of [...world.buildings.values()]) if (inSwipe(b, s.pos) && attackReaches(world, b, s.pos)) {
@@ -295,11 +365,16 @@ function swipe(world: World, b: BossState): void {
   for (const p of [...world.pieces.values()]) { const at = piecePosition(world, p); if (at && inSwipe(b, at) && attackReaches(world, b, at)) damageEntity(world, p.id, 150, b.id); }
 }
 function stomp(world: World, b: BossState): void {
-  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < 2.8 && distance(av.pos, b.pos) <= STOMP_RADIUS && attackReaches(world, b, av.pos)) damageEntity(world, av.id, STOMP_DAMAGE, b.id);
-  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < 2.8 && distance(h.pos, b.pos) <= STOMP_RADIUS && attackReaches(world, b, h.pos)) damageEntity(world, h.id, STOMP_DAMAGE, b.id);
-  crushObjects(world, b, b.pos, STOMP_RADIUS);
+  footImpact(world, b, b.pos, STOMP_RADIUS, true);
 }
-function crushObjects(world: World, b: BossState, at: V2, radius: number): void {
+function footImpact(world: World, b: BossState, at: V2, radius: number, heavy: boolean): void {
+  world.emit({ t: 'bossFootfall', bossId: b.id, pos: { ...at }, heavy });
+  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < 2.8 * SIZE && distance(av.pos, at) <= radius && attackReaches(world, b, av.pos)) damageEntity(world, av.id, STOMP_DAMAGE, b.id);
+  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < 2.8 * SIZE && distance(h.pos, at) <= radius && attackReaches(world, b, h.pos)) damageEntity(world, h.id, STOMP_DAMAGE, b.id);
+  crushObjects(world, b, at, radius, heavy);
+}
+function crushObjects(world: World, b: BossState, at: V2, radius: number, heavy: boolean): void {
+  crushScenery(world, at, at, radius, obstacle => attackReaches(world, b, obstacle), heavy ? Infinity : BOSS_FOOTFALL_PROP_SPAN);
   for (const s of [...world.buildings.values()]) if (distance(s.pos, at) < radius + BUILDINGS[s.kind].radius && attackReaches(world, b, s.pos)) {
     if (s.kind === 'hearth') damageEntity(world, s.id, 250, b.id);
     else consumeBuilding(world, s, true);
@@ -310,11 +385,13 @@ function crushObjects(world: World, b: BossState, at: V2, radius: number): void 
   for (const edge of bossLoopEdges(world)) for (const f of barrierFlags(world, edge)) protectedIds.add(f.id);
   for (const f of [...world.flags.values()]) if ((f.state === 'planted' || f.state === 'loose') && !protectedIds.has(f.id) && distance(f.pos, at) <= radius) consumeFlag(world, f.id);
 }
-function crushStep(world: World, b: BossState, from: V2): void {
-  // Swept feet, not a render callback: no tunnelling or frame-rate-dependent damage.
-  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < 1.7 && distToSegment(av.pos.x, av.pos.z, from.x, from.z, b.pos.x, b.pos.z) < 1.65) damageEntity(world, av.id, STOMP_DAMAGE, b.id);
-  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < 1.7 && distToSegment(h.pos.x, h.pos.z, from.x, from.z, b.pos.x, b.pos.z) < 1.65) damageEntity(world, h.id, STOMP_DAMAGE, b.id);
-  // Object crushes are sampled at a small fixed travel interval, not every simulation tick.
-  const oldStep = Math.floor((b.stride - distance(from, b.pos)) / 1.2), newStep = Math.floor(b.stride / 1.2);
-  if (newStep > oldStep) crushObjects(world, b, b.pos, 1.55);
+function crushStep(world: World, b: BossState, from: V2, oldYaw: number): void {
+  const traveled = distance(from, b.pos), gait = b.crouched ? 'crouchWalk' : 'walk';
+  for (const contact of bossFootContacts(gait, b.stride - traveled, b.stride)) {
+    const t = contact.fraction, yaw = oldYaw + angleDiff(oldYaw, b.yaw) * t;
+    const c = Math.cos(yaw), s = Math.sin(yaw), p = contact.local;
+    const at = { x: from.x + (b.pos.x - from.x) * t + p.x * c + p.z * s,
+      z: from.z + (b.pos.z - from.z) * t - p.x * s + p.z * c };
+    footImpact(world, b, at, BOSS_FOOTFALL_RADIUS, false);
+  }
 }

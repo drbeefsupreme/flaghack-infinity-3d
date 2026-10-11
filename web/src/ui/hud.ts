@@ -12,12 +12,11 @@ import {
   DAWN_TIME,
   DAWN_WARNING,
   HIPPIE_AI,
-  HOARD_THRESHOLD,
   SUDDEN_DEATH_ESCALATE_EVERY,
   TIDE_INTERVAL,
   TIDE_WARNING,
 } from '../sim/constants';
-import { isHoarding, popCap } from '../sim/systems/economy';
+import { hoardThreshold, isHoarding, popCap } from '../sim/systems/economy';
 import { suddenDeathMult } from '../sim/systems/victory';
 import { FACTION_IDS } from '../sim/types';
 import type { World } from '../sim/world';
@@ -116,9 +115,8 @@ export class HudPart implements UiPart {
       const val = el('span', 'res-val num', row, '0');
       return { row, val };
     };
-    this.stock = mk('stock', 'Hearth stock');
+    this.stock = mk('stock', 'Camp stock');
     this.hoard = el('span', 'res-tag is-off', this.stock.row, 'HOARDING');
-    this.hoard.title = `Hoarding is villainy: above ${HOARD_THRESHOLD} Flags in stock your Signifiers lose attention ${Math.round((HIPPIE_AI.hoardDrainMult - 1) * 100)}% faster.`;
     this.lumber = mk('lumber', 'Lumber');
     this.ritual = mk('ritual', 'Ritual');
     this.hippies = mk('hippie', 'Signifiers');
@@ -214,6 +212,8 @@ export class HudPart implements UiPart {
 
     const stock = world.stockCount(P);
     setText(this.stock.val, String(stock));
+    this.stock.row.title = `Hoarding threshold: ${hoardThreshold(world, P)} Flags. Workshops hold up to 10 Flags each for pickup.`;
+    this.hoard.title = `Above ${hoardThreshold(world, P)} stock Flags, Signifiers lose attention ${Math.round((HIPPIE_AI.hoardDrainMult - 1) * 100)}% faster.`;
     const hoarding = isHoarding(world, P);
     show(this.hoard, hoarding);
     setClass(this.stock.row, 'warn', hoarding);

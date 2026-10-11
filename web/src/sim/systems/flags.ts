@@ -9,7 +9,7 @@
  * (the throw, which hands a Flag to a projectile, is the one exception and lives in Units).
  * Owner: SurveyRules agent.
  */
-import { AVATAR, BUILDING_HEIGHT, CRYSTAL_HEIGHT, LIGHTNING_PULL_MULT, PULL_LIGHTNING_INTERVAL, SIM_HZ, WARD_FLAG_RADIUS } from '../constants';
+import { AVATAR, BUILDING_HEIGHT, CRYSTAL_HEIGHT, LIGHTNING_PULL_MULT, PULL_LIGHTNING_INTERVAL, SIM_HZ, WARD_FLAG_RADIUS, WORKSHOP_FLAG_CAPACITY } from '../constants';
 import { spawnFlag } from '../factory';
 import type { V2, V3 } from '../math';
 import { NEUTRAL } from '../types';
@@ -211,11 +211,11 @@ export function destroyFlag(world: World, flagId: EntityId): boolean {
   return true;
 }
 
-/** Move one Flag from a Hearth's stock into a carrier's hands. Returns the Flag or null. */
+/** Move one Flag from an own Hearth/Workshop into a carrier's hands. */
 export function takeFromStock(world: World, hearthId: EntityId, carrier: EntityId): Flag | null {
   const hearth = world.buildings.get(hearthId);
   const c = carrierOf(world, carrier);
-  if (!hearth || hearth.kind !== 'hearth' || !c) return null;
+  if (!hearth || (hearth.kind !== 'hearth' && hearth.kind !== 'workshop') || hearth.built < 1 || !c) return null;
   const taker = holdingFaction(world, c);
   if (taker === null || taker !== hearth.faction) return null;
   for (const fl of world.flags.values()) {
@@ -243,11 +243,16 @@ export function giveFlag(world: World, flagId: EntityId, carrier: EntityId): boo
   return true;
 }
 
-/** Put a carried/loose Flag into a Hearth's stock (owner becomes the Hearth's faction). */
-export function depositToStock(world: World, flagId: EntityId, hearthId: EntityId): void {
+/** Store a Flag at a Hearth or a completed Workshop with room; rejected deposits leave it untouched. */
+export function depositToStock(world: World, flagId: EntityId, hearthId: EntityId): boolean {
   const fl = world.flags.get(flagId);
   const hearth = world.buildings.get(hearthId);
-  if (!fl || !hearth || hearth.kind !== 'hearth' || hearth.faction === NEUTRAL) return;
+  if (!fl || !hearth || (hearth.kind !== 'hearth' && hearth.kind !== 'workshop') || hearth.faction === NEUTRAL || hearth.built < 1) return false;
+  if (hearth.kind === 'workshop') {
+    let stock = 0;
+    for (const flag of world.flags.values()) if (flag.state === 'stock' && flag.holder === hearth.id) stock++;
+    if (stock >= WORKSHOP_FLAG_CAPACITY) return false;
+  }
   const by = fl.state === 'carried' ? fl.holder : -1;
   detach(world, fl);
   fl.owner = hearth.faction;
@@ -257,12 +262,19 @@ export function depositToStock(world: World, flagId: EntityId, hearthId: EntityI
   fl.pos.z = hearth.pos.z;
   fl.tilt = 0;
   record(world, fl, 'stock', by);
+  return true;
 }
 
-/** Create a brand-new Flag in a Hearth's stock (crafting). Emits flagCrafted. */
+/** Create a Flag in Hearth/Workshop stock, respecting local capacity. Emits flagCrafted. */
 export function craftFlag(world: World, hearthId: EntityId): Flag | null {
   const hearth = world.buildings.get(hearthId);
-  if (!hearth || hearth.kind !== 'hearth') return null;
+  if (!hearth || (hearth.kind !== 'hearth' && hearth.kind !== 'workshop')) return null;
+  if (hearth.kind === 'workshop') {
+    if (hearth.built < 1 || hearth.disabled) return null;
+    let stock = 0;
+    for (const flag of world.flags.values()) if (flag.state === 'stock' && flag.holder === hearth.id) stock++;
+    if (stock >= WORKSHOP_FLAG_CAPACITY) return null;
+  }
   const f = hearth.faction;
   if (f === NEUTRAL) return null;
   const fl = spawnFlag(world, { state: 'stock', owner: f, holder: hearth.id, pos: { x: hearth.pos.x, y: 0, z: hearth.pos.z } });

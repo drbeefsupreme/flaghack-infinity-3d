@@ -1,7 +1,7 @@
 # Skeletal boss source asset
 
 This is the approved rigged GLB, copied byte-for-byte from the 32 m source model.
-The game loader uniformly scales its complete hierarchy by 0.625, giving a 20 m
+The game loader now uses the complete hierarchy at its original scale of 1, giving a 32 m
 hat-inclusive standing height without changing proportions, materials, or bones.
 The original external source remains unchanged.
 
@@ -38,7 +38,7 @@ The GLB remains byte-for-byte unchanged. To prevent the authored rear seam from
 showing the skull through the cloth below the hat band, preparation applies a
 small rearward corrective shape to exactly 1,174 vertices in seven named
 rear-drape shell, lining, gold-bound edge and sewn-panel primitives. Maximum
-movement is 0.18 source units (11.25 cm at the 20 m game scale), along Z only.
+movement is 0.18 source units (18 cm at the 32 m game scale), along Z only.
 The original affected source-coordinate bounds are X −1.799090 to 1.798913,
 Y 25.500854 to 26.613836, Z −1.614735 to −0.100583. Vertices outside this local
 selection are bitwise unchanged. Normals are recomputed only on those drape

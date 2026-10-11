@@ -131,6 +131,7 @@ export function captureHearth(world: World, hearth: Building, to: FactionId): vo
   for (const b of world.buildings.values()) {
     if (b.faction !== from || b.kind === 'hearth' || b.kind === 'gcc' || !inCamp(b.pos.x, b.pos.z)) continue;
     b.faction = to;
+    for (const fl of world.flags.values()) if (fl.state === 'stock' && fl.holder === b.id) fl.owner = to;
     disableBuilding(world, b);
   }
   if (remaining.length === 0) {

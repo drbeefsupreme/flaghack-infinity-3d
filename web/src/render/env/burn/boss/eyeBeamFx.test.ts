@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it } from 'vitest';
-import { createBossEyeState, type BossState } from '../../../../sim/boss';
+import { BOSS_EYE_TIMING, BOSS_EYE_BLAST_RADIUS, BOSS_EYE_MAX_RANGE, createBossEyeState, type BossState } from '../../../../sim/boss';
+import { BOSS_HEIGHT, BOSS_MODEL_SCALE, BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { bossEyeRay } from '../../../../sim/systems/boss/eye';
 import { prepareBossModel, disposeBossModel } from './bossModel';
 import { BossCombatPose } from './combatPose';
@@ -17,7 +18,8 @@ async function model() {
 }
 function boss(): BossState {
   return { id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action: 'idle', actionAt: 110,
-    actionSeq: 3, hitSeq: -1, target: null, focusFaction: null, retaliateId: null, retaliateUntil: 0,
+    actionSeq: 3, hitSeq: -1, target: null, focusFaction: null,
+    objectiveAltarId: null, routeStartStride: 0, nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
     nextAttackAt: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched: false, eye: createBossEyeState(100) };
 }
 function parent(m: THREE.Group, fx: BossEyeBeamFx) { const p = new THREE.Group(); p.position.set(-9, 0, 13); p.add(m, fx.group); p.updateMatrixWorld(true); return p; }
@@ -29,6 +31,24 @@ function materialValues(m: THREE.Group) {
 }
 
 describe('original hat eye and instantaneous beam presentation', () => {
+  it('scales the eye halo and beam width with the 32 m rig while keeping the blast and attack clock fixed', async () => {
+    const m = await model(), fx = new BossEyeBeamFx(m);
+    expect(BOSS_HEIGHT).toBe(32); expect(m.userData.height).toBe(32);
+    expect(m.scale.toArray()).toEqual([BOSS_MODEL_SCALE, BOSS_MODEL_SCALE, BOSS_MODEL_SCALE]);
+    expect(BOSS_MODEL_SCALE).toBe(1); expect(BOSS_GAMEPLAY_SCALE).toBe(1.6);
+    const core = fx.group.getObjectByName('boss-eye-white-core')!, beamHalo = fx.group.getObjectByName('boss-eye-white-halo')!;
+    expect(core.scale.x).toBeCloseTo(.12, 10); expect(core.scale.y).toBeCloseTo(.12, 10);
+    expect(beamHalo.scale.x).toBeCloseTo(.384, 10);
+    const halo = fx.group.getObjectByName('boss-eye-charge-halo') as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+    expect(halo.material.uniforms.uBossScale.value).toBe(1.6);
+    expect(halo.material.fragmentShader).toContain('(0.045+uPower*.65)');
+    expect((beamHalo as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>).material.uniforms.uAlpha.value).toBe(.18);
+    expect(BOSS_EYE_TIMING).toEqual({ period: 30, charge: 3, beam: .5 });
+    expect(BOSS_EYE_BLAST_RADIUS).toBe(5); expect(BOSS_EYE_MAX_RANGE).toBe(240);
+    for (const name of ['boss-eye-impact-explosion', 'boss-eye-impact-rays'])
+      expect(fx.group.getObjectByName(name)!.scale.toArray()).toEqual([5, 5, 5]);
+    fx.dispose(); disposeBossModel(m);
+  });
   it('uses the actual fully head-weighted front pupil vertex in every pose and yaw', async () => {
     const m = await model(), combat = new BossCombatPose(m), head = m.getObjectByName('head') as THREE.Bone;
     let pupil!: THREE.SkinnedMesh;
@@ -116,7 +136,7 @@ describe('original hat eye and instantaneous beam presentation', () => {
     const b = boss(); b.eye.chargeAt = 127; b.eye.firedAt = 130; b.eye.target = { x: 28, y: 0, z: 40 };
     b.eye.origin = { x: 12, y: 17, z: -7 }; b.eye.direction = { x: 0, y: -1, z: 0 }; b.eye.impact = { x: 12, y: 0, z: -7 };
     const e = { root: new THREE.Group(), day: createDayState(), fireLight: new THREE.PointLight(), noise: new THREE.DataTexture(new Uint8Array([127,127,127,255]),1,1),
-      ctx: { world: { map: { effigy: { x: 0, z: 0 }, seed: 'eye-end-test' }, time: 130.2, phase: 'playing', boss: b, effigyRevealedAt: 100, factions: [{ color: 0x12bd45 }] },
+      ctx: { world: { lattice: { version: 0, nodes: [], edges: [] }, survey: { version: 0, edgeLey: new Int8Array() }, map: { effigy: { x: 0, z: 0 }, seed: 'eye-end-test' }, time: 130.2, phase: 'playing', boss: b, effigyRevealedAt: 100, factions: [{ color: 0x12bd45 }] },
         quality: 'low', renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280,720) }, camera: { fov: 60 } }, uniforms: { uFogColor: { value: new THREE.Color() } } } as unknown as EnvContext;
     const r = new BossReveal(e, model); await r.ready; expect(r.loadError).toBeNull(); r.update(120.2);
     expect(e.root.getObjectByName('boss-eye-beam')!.visible).toBe(true);
@@ -131,7 +151,7 @@ describe('original hat eye and instantaneous beam presentation', () => {
   it('reconstructs late-joined charge/fire through BossReveal without accumulating head rotations', async () => {
     const b = boss(); b.eye.chargeAt = 127; b.eye.target = { x: 28, y: 0, z: 40 };
     const e = { root: new THREE.Group(), day: createDayState(), fireLight: new THREE.PointLight(), noise: new THREE.DataTexture(new Uint8Array([127,127,127,255]),1,1),
-      ctx: { world: { map: { effigy: { x: 0, z: 0 }, seed: 'eye-test' }, time: 129, boss: b, effigyRevealedAt: 100, factions: [{ color: 0x12bd45 }] },
+      ctx: { world: { lattice: { version: 0, nodes: [], edges: [] }, survey: { version: 0, edgeLey: new Int8Array() }, map: { effigy: { x: 0, z: 0 }, seed: 'eye-test' }, time: 129, boss: b, effigyRevealedAt: 100, factions: [{ color: 0x12bd45 }] },
         quality: 'low', renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280,720) }, camera: { fov: 60 } }, uniforms: { uFogColor: { value: new THREE.Color() } } } as unknown as EnvContext;
     const r = new BossReveal(e, model); await r.ready; expect(r.loadError).toBeNull(); r.update(119);
     const head = e.root.getObjectByName('head') as THREE.Bone, initial = head.quaternion.toArray();

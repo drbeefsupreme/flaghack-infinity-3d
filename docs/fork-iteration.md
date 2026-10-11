@@ -4,7 +4,7 @@
 
 Begin the Survey opens the lobby for local games; joining a host opens the multiplayer lobby. Each of the four player seats has an On/Off toggle, and the number of days is selected in the lobby. At least one seat remains on. Offline, choose any enabled character with Play this character; other enabled seats use AI. Turning off the selected local seat moves you to another enabled seat. Disabled seats show a neutral numbered placeholder and have no avatar, Hearth, GCC, starting stock or Signifiers in the match. They also stay out of the Hearth rail, standings and end-of-match statistics. Their camp scenery remains part of the map.
 
-In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 7; all players must use the same build.
+In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 8; all players must use the same build.
 
 Choose 0–5 days or Unlimited. A day means one complete daylight/night cycle. Default: 1 day at 1,800 seconds, preserving the original 14:00 Burn and 30:00 Dawn deadline. With multiple days, the Burn occurs at the same point in the **last** cycle. The sky repeats each cycle. Zero days begins at ignition, with the Burn sky and simulation time 0:00; the boss still reveals 90 seconds later. With boss mode off, zero days retains the full remaining Burn night before Dawn (16 minutes at the default day length, or 160 seconds with a 300-second day). Conquest can finish a competitive match earlier; a single-camp creative/solo match finishes only at its time limit. Unlimited remains a separate choice with no time limit or scheduled Burn; competitive conquest still works. Previously saved Unlimited choices are migrated without changing their meaning.
 
@@ -17,6 +17,7 @@ Advanced Game Settings opens a separate window with a scrolling body, a fixed he
 | Lattice edge spacing | 6–12 metres | 8 |
 | Starting lumber | 0–1,000 | 150 |
 | Stock Flags per Hearth | 0–100 | 14 |
+| Flag hoarding threshold | 0–1,000 | 24 |
 | Starting Signifiers per camp | 0–12, limited to an equal share of the world population | 6 |
 | Jump height multiplier | 0.1–5.0 | 1.0 (original height) |
 | Maximum Signifiers (whole world) | 0–200 | 40 |
@@ -25,6 +26,20 @@ Advanced Game Settings opens a separate window with a scrolling body, a fixed he
 Home-loop Flags and the avatar's six carried Flags are unchanged by stock tuning. Lore/help text that describes the original rules retains the original default values; the live clock uses the chosen match settings.
 
 Jump height scales the jump apex (2.0 is twice the original height) for both authoritative movement and client prediction. Structure blocking reserves the corner nodes of standing camp buildings when enabled. Terrain, occupied nodes and crystals always prevent placement.
+
+## Flag stock and hoarding
+
+Each completed, working Workshop adds 10 to the camp's configurable hoarding threshold.
+A Workshop holds up to 10 ordinary stock Flags, available for pickup. When it is full,
+production continues and its excess Flags go to the nearest owned altar. Altars retain their
+existing unlimited storage and the default starting stock of 14. The hoarding threshold is
+still a soft attention-drain penalty, not a hard inventory cap.
+
+Throwing a Flag directly into your completed altar or Workshop deposits that same Flag.
+A full Workshop sends thrown deposits to the nearest owned altar too. Walls and other first
+hits still intercept the throw; enemy combat and neutral recruitment keep their normal rules.
+Capture transfers the ownership of stored Flags, and destruction cleans up or drops stock
+through the normal building/Flag lifecycle.
 
 ## Original scaffold burn with an exposed burning Flag and pole
 
@@ -86,7 +101,7 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   attract world opt out; disabling it preserves the approved non-boss sequence.
 - The simulation stores and replicates `effigyRevealedAt` exactly 90 seconds after
   the scheduled Burn. A skipped step or late join reconstructs the same state.
-  Protocol version 7 includes this field and the full encounter state, and distinguishes
+  Protocol version 8 includes this field and the full encounter state, and validates the configurable hoarding threshold. It distinguishes
   zero-day ignition from Unlimited (`days: -1`). Older clients must reload.
 - Reveal clears both original pedestal and mast collision, rebuilding static
   navigation and lattice plantability without discarding dynamic blockers.
@@ -98,8 +113,8 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   restores every original material instantly; no rise or glow fade follows the
   explosion. A short back-shell burst leaves the colored boss visible in front
   of it, and a persistent black crater remains.
-- The original source GLB is unchanged; a uniform 0.625 scale makes the complete
-  boss 20 m tall including its hat. Per-material runtime consolidation reduces
+- The original source GLB is unchanged; its original uniform scale makes the complete
+  boss 32 m tall including its hat. Per-material runtime consolidation reduces
   594 draws to 31 while preserving all 401,386 triangles and 109 bones. The later
   rear-drape seam repair is confined to runtime-prepared cloth vertices, as described below.
 - The reveal starts the cooperative encounter below. Ordinary Dawn and conquest
@@ -126,9 +141,17 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   bursts into a colored firework at the exact impact point. Swept collision regions follow
   the approved animated rig, including crouching, arms, skull and hat; walls still stop a
   throw before it reaches the giant.
-- The giant prioritizes the living faction with the highest CMI, briefly retaliates against
+- The giant uniformly chooses a random eligible altar using host-seeded randomness, briefly retaliates against
   attacking vexillomancers, walks standing over distance, and crouches for hand attacks.
-  Swipes deal 100 damage to players and Signifiers and launch them through real ballistic
+  It turns toward a target before hand attacks or reversing its travel. Attack recovery
+  keeps the settled stance, and a reached strategic altar takes priority over bystanders.
+  The chosen altar stays locked until it is eaten or becomes invalid; then it randomly chooses another
+  living camp altar. Each altar has equal selection weight, regardless of CMI or owner. Long routes zigzag ±15° in alternating 10 m legs,
+  straighten within 40 m of the altar or near a boundary, and make bounded stops to crush
+  scenery along the way. Retaliation and incidental melee cannot indefinitely replace the
+  altar objective. Intact loops still block every step and protected hand reach.
+  Swipes run in 1.2 seconds, hit once at 0.55 seconds, and recover for 0.275 seconds.
+  They deal 100 damage to players and Signifiers and launch them through real ballistic
   flight. Swipes deal 110 damage to buildings and 150 to build pieces; lethal hits permanently
   destroy them, except altars. Stomps and steps crush other built structures. Grabs instantly
   consume any of the six camp-building types or wall/deck/ramp pieces on the authoritative
@@ -136,17 +159,28 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   The giant can select a structure for a stomp, swipe or grab without a player standing nearby.
   Altars can only be destroyed by eating: swipe, foot and beam damage stop at 1 HP, and
   the giant deliberately crouches to eat an altar rather than stomping it indefinitely.
+- A continuous player-movement hull blocks the body and leg gaps: 5.2 m radius, 32 m
+  standing or 19.2 m crouched height. Swept contacts match local prediction, push safely
+  against walls and defended loops, and disappear at death. Staff attacks still reach
+  from the hull edge; projectile scoring continues to use the separate animated rig.
 - During the fight its health replaces the top-center clock in the same ornate plaque.
   Gentle, single lightning pulses illuminate its original materials for 0.9 seconds,
   spaced 8–14 seconds apart; reveal, death and menu screens do not flash.
 - Distinct procedural bellows accompany emergence and death. Low footstep impacts follow
   the actual standing and crouching foot-contact phases; the eye has a three-second
-  charging sound and a half-second firing sound. These use the existing spatial SFX,
+  charging sound, a half-second firing sound, and an impact explosion. Destroyed scenery
+  produces a coalesced crushing sound. Footfall and deliberate stomp cues follow the exact
+  authoritative damage-contact events. These use the existing spatial SFX,
   volume and mute controls, and do not replay old cues on late join or resume.
+  Boss cues retain horizontal direction but carry across the arena on a dedicated bus;
+  their envelopes briefly lower music and other world effects without changing user volume.
 - The original hat eye glows dimly. Every 30 seconds the giant pauses, charges for three
   seconds, and tilts its head toward a locked target point. Its first shot is due 30 seconds
   after reveal. The complete white beam appears instantly for half a second along the
   actual pupil's gaze, stopping at the first terrain/structure hit (240 m maximum reach).
+  Beam targeting favors groups of at least three units, non-altar structures and recent
+  Flag throwers. It skips targets closer than 9.26 m and defers without a useful target,
+  instead of firing at isolated Signifiers around its feet.
   A single 5 m spherical burst at that impact deals 1,000 damage to units, buildings and
   build pieces. Surviving targets retain their remaining HP; lethal hits remove non-altar
   structures. Altars retain at least 1 HP. Flags in the burst fall loose and
@@ -158,8 +192,18 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   terrain receives the normal impact burst. Crystals follow their ordinary sustaining-Flag
   rules when a knocked-down Flag breaks the pentacle. Charge/fire and the explosion are
   host-authoritative, cancel on boss death, and reconstruct for late joins.
+- Every standing or crouched walking footfall is a 2.5 m-radius stomp at the measured sole
+  landing point, dealing 140 damage once per contact and crushing scenery up to 5 m across.
+  The deliberate stomp covers a larger 7.36 m radius and can crush any scenery size. Contact
+  uses exact circular or rotated-box footprints and the durable removal/blocking cleanup
+  of direct beam impacts. Only eating can remove an altar.
 - Every intact Flag cycle, including nested loops and implied-Flag loops, blocks the whole
-  giant footprint. Contact flashes the owner's color. The giant must consume real supporting
+  giant footprint. About six thin rings in the current owner's color remain visible while
+  each intact segment is within 5 m of the giant's center, including while crouching,
+  eating or charging. Every qualifying segment gets its own line-aligned field, so both
+  sides of a corner can appear at once. Their opacity is unchanged; a 5.3 m exit distance
+  prevents flicker. Departure, a broken loop
+  or boss death clears the field. The giant must consume real supporting
   boundary Flags, rather than teleporting through a defense. A small loop also prevents a
   hand from reaching across it to consume an altar.
 - Losing an original altar does not eliminate a camp with another owned altar. Losing the
@@ -172,13 +216,13 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
 Combat decisions, hits and outcomes run on the host's fixed simulation clock. Snapshots and
 state frames include movement, HP, action times, stance, held targets, barriers, airborne
 Signifiers and the shared result. Late joins reconstruct the current state without replaying
-old fireworks. Clients animate the approved 20 m, 109-bone model in place; its 594 source
+old fireworks. Clients animate the approved 32 m, 109-bone model in place; its 594 source
 primitives remain consolidated into 31 equal-material skinned draws. The original GLB,
 topology, skin weights and material colors are preserved; a bounded preparation correction
 is confined to the rear hat drape's shell/lining/edge/seam vertices to keep the skull covered.
 Boss-off mode and the Training Burn keep their original behavior.
-Standing travel uses an 8° forward lean and a 4.875 m stride while keeping its 4.3 m/s
-speed; distance-driven cadence prevents the larger steps from speeding it up. Front coat
+Standing travel uses an 8° forward lean and a 7.8 m stride while keeping its 4.3 m/s
+speed; native crouch travel uses a 6 m stride at 2 m/s. Distance-driven cadence prevents the larger steps from speeding it up. Front coat
 panels follow the legs, swipe/eat actions stay crouched, and the resting jaw is slightly
 open. The rear hat drape stays attached to the hat while its lower portion follows the coat,
 without jiggle; the ear flaps and cords retain their motion.

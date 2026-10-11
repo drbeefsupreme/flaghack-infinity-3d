@@ -1,12 +1,12 @@
-/** The approved rig, uniformly resized from 32 m to 20 m including the hat. */
+/** The approved original 32 m rig, including the hat, at its authored scale. */
 import * as THREE from 'three';
 import { prepareBossRearDrapeSeam } from './rearFlapPose';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-export const BOSS_HEIGHT = 20;
-export const BOSS_SOURCE_HEIGHT = 32;
-export const BOSS_SCALE = BOSS_HEIGHT / BOSS_SOURCE_HEIGHT;
+import { BOSS_HEIGHT, BOSS_SOURCE_HEIGHT, BOSS_MODEL_SCALE } from '../../../../sim/bossDimensions';
+export { BOSS_HEIGHT, BOSS_SOURCE_HEIGHT } from '../../../../sim/bossDimensions';
+export const BOSS_SCALE = BOSS_MODEL_SCALE;
 export type BossModelLoader = () => Promise<THREE.Group>;
 
 /** Merge only equal-material/equal-bind meshes. No decimation, recolouring or rig changes. */
@@ -46,7 +46,7 @@ export function prepareBossModel(source: THREE.Group): THREE.Group {
   }
   for (const geometry of originals) geometry.dispose();
   const root = new THREE.Group();
-  root.name = 'boss-model-20m';
+  root.name = `boss-model-${BOSS_HEIGHT}m`;
   root.scale.setScalar(BOSS_SCALE);
   root.add(source);
   root.userData.sourceHeight = BOSS_SOURCE_HEIGHT;

@@ -1,5 +1,5 @@
-/** Numeric-only projectile hit shapes baked from the exact 20 m combat rig poses. */
-import { BOSS_EYE_REAR_DRAPE_DATA, BOSS_HEAD_REGION_COUNT, BOSS_HIT_POSE_DATA, BOSS_HIT_REGION_STRIDE } from '../../bossHitPoseData';
+/** Numeric-only projectile hit shapes baked from the exact dimension-scaled combat rig poses. */
+import { BOSS_ATTACK_CORD_ENVELOPES, BOSS_IDLE_MOTION_REGIONS, BOSS_IDLE_MOTION_REGION_INDICES, BOSS_EYE_REAR_DRAPE_DATA, BOSS_HEAD_REGION_COUNT, BOSS_HIT_POSE_DATA, BOSS_HIT_REGION_STRIDE } from '../../bossHitPoseData';
 import type { BossState } from '../../boss';
 import type { V3 } from '../../math';
 import { BOSS_EYE_TIMING } from '../../boss';
@@ -47,6 +47,27 @@ export function sampleBossHitRegions(boss: BossState, now: number): Float64Array
     length = Math.sqrt(length) || 1;
     for (let i = 0; i < 4; i++) out[qi + i] /= length;
   }
+  if (boss.eye?.chargeAt == null) {
+    if (boss.action === 'idle') {
+      const motion = BOSS_IDLE_MOTION_REGIONS[boss.crouched ? 'true' : 'false'];
+      BOSS_IDLE_MOTION_REGION_INDICES.forEach((region, i) => copyMotionRegion(out, region, motion, i * BOSS_HIT_REGION_STRIDE));
+    } else if (boss.action === 'swipe' || boss.action === 'stomp' || boss.action === 'grab') {
+      // These cords use time since spawn, independently of the attack clock.
+      // Their narrow source-motion envelope follows the attack's sampled head.
+      const low = boss.action === 'stomp' ? boss.crouched : true;
+      const motion = BOSS_ATTACK_CORD_ENVELOPES[low ? 'true' : 'false'];
+      const h = motion.head, head = sampleBossHeadPose(boss, now), n = Math.hypot(...h.slice(3)) || 1;
+      const delta = multiplyQuaternion(head.quaternion, [-h[3] / n, -h[4] / n, -h[5] / n, h[6] / n]);
+      for (const [i, region] of [5, 6].entries()) {
+        copyMotionRegion(out, region, motion.regions, i * BOSS_HIT_REGION_STRIDE);
+        const base = region * BOSS_HIT_REGION_STRIDE;
+        const p = inverseRotate(out[base] - h[0], out[base + 1] - h[1], out[base + 2] - h[2], -delta[0], -delta[1], -delta[2], delta[3]);
+        out[base] = p.x + head.position.x; out[base + 1] = p.y + head.position.y; out[base + 2] = p.z + head.position.z;
+        const q = multiplyQuaternion(delta, [out[base + 6], out[base + 7], out[base + 8], out[base + 9]]);
+        for (let k = 0; k < 4; k++) out[base + 6 + k] = q[k];
+      }
+    }
+  }
   if (boss.eye?.chargeAt != null && boss.eye.target && boss.hp > 0) {
     const head = sampleBossHeadPose(boss, now), target = boss.eye.target;
     const c = Math.cos(boss.yaw), s = Math.sin(boss.yaw), x = target.x - boss.pos.x, z = target.z - boss.pos.z;
@@ -66,6 +87,14 @@ export function sampleBossHitRegions(boss: BossState, now: number): Float64Array
     out.set(aimedRearDrape(boss, head.position, q, delta, out), 4 * BOSS_HIT_REGION_STRIDE);
   }
   return out;
+}
+
+/** Copy a compact envelope while normalizing its quantized orientation. */
+function copyMotionRegion(out: Float64Array, region: number, source: readonly number[], from: number): void {
+  const base = region * BOSS_HIT_REGION_STRIDE;
+  out.set(source.slice(from, from + BOSS_HIT_REGION_STRIDE), base);
+  const n = Math.hypot(out[base + 6], out[base + 7], out[base + 8], out[base + 9]) || 1;
+  for (let i = 6; i < 10; i++) out[base + i] /= n;
 }
 
 function multiplyQuaternion(a: BossEyeQuaternion, b: BossEyeQuaternion): [number, number, number, number] {
@@ -103,7 +132,8 @@ function aimedRearDrape(boss: BossState, head: V3, aimedHead: BossEyeQuaternion,
   const chestDelta = multiplyQuaternion(multiplyQuaternion([-chest[0], -chest[1], -chest[2], chest[3]], fromRest), chest);
   const forward = rotate(0, 0, 1, chestDelta);
   const down = Math.max(0, Math.min(1, (-Math.atan2(forward.y, forward.z) - .9) / .35));
-  const pitch = 1.5 * down * down * (3 - 2 * down);
+  const up = Math.max(0, Math.min(1, (Math.atan2(forward.y, forward.z) - 1.15) / .15));
+  const pitch = 1.5 * down * down * (3 - 2 * down) - .6 * up * up * (3 - 2 * up);
   const rootOffset = rotate(rig.rootOffset[0] + rig.rootBowAxis[0] * bow + rig.rootPitchAxis[0] * pitch,
     rig.rootOffset[1] + rig.rootBowAxis[1] * bow + rig.rootPitchAxis[1] * pitch,
     rig.rootOffset[2] + rig.rootBowAxis[2] * bow + rig.rootPitchAxis[2] * pitch, delta);

@@ -82,7 +82,7 @@ describe('actual boss reveal bone gesture', () => {
     }
     expect(meshes).toHaveLength(31);
     expect(meshes[0].skeleton.bones).toHaveLength(109);
-    expect(model.scale.toArray()).toEqual([.625, .625, .625]);
+    expect(model.scale.toArray()).toEqual([1, 1, 1]);
     expect(model.position.toArray()).toEqual([0, 0, 0]);
   });
 
@@ -102,7 +102,7 @@ describe('actual boss reveal bone gesture', () => {
     expectPoint(point(transformed, 'handL'), [9.6, 23, .6]);
     expectPoint(point(transformed, 'handR'), [-9.6, 23, .6]);
     expect(transformed.position.toArray()).toEqual([-6, -14, 8]);
-    expect(transformed.scale.toArray()).toEqual([.625, .625, .625]);
+    expect(transformed.scale.toArray()).toEqual([1, 1, 1]);
     disposeBossModel(transformed);
   });
 });

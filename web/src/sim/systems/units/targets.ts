@@ -31,9 +31,10 @@ const REPAIR_BELOW = 0.98;
 export function hearthWithStock(world: World, sys: UnitsState, f: FactionId, x: number, z: number): Building | null {
   let best: Building | null = null;
   let bestD = Infinity;
-  for (const id of world.factions[f].hearthIds) {
-    const hb = world.buildings.get(id);
-    if (!hb || (sys.stockByHearth.get(id) ?? 0) - (sys.fetchers.get(id) ?? 0) <= 0) continue;
+  for (const hb of world.buildings.values()) {
+    if (hb.faction !== f || (hb.kind !== 'hearth' && hb.kind !== 'workshop') || hb.built < 1) continue;
+    const id = hb.id;
+    if ((sys.stockByHearth.get(id) ?? 0) - (sys.fetchers.get(id) ?? 0) <= 0) continue;
     const d2 = (hb.pos.x - x) * (hb.pos.x - x) + (hb.pos.z - z) * (hb.pos.z - z);
     if (d2 < bestD) {
       bestD = d2;

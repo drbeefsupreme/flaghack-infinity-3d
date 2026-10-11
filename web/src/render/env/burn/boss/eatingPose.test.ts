@@ -25,7 +25,7 @@ async function rig() {
   const headRest = head.getWorldQuaternion(new THREE.Quaternion());
   const pose = new BossCombatPose(model);
   const env = { noise: new THREE.DataTexture(new Uint8Array([127, 127, 127, 255]), 1, 1),
-    ctx: { world: { map: { effigy: { x: 0, z: 0 } }, factions: [{ color: 0xdddddd }] } },
+    ctx: { world: { lattice: { version: 0, nodes: [], edges: [] }, survey: { version: 0, edgeLey: new Int8Array() }, map: { effigy: { x: 0, z: 0 } }, factions: [{ color: 0xdddddd }] } },
   } as unknown as EnvContext;
   const fx = new BossCombatFx(env, model);
   return { model, head, headRest, teeth, pose, fx };
@@ -73,6 +73,20 @@ describe('crouched eating hand-to-mouth alignment', () => {
           expect(distance, `${kind}, crouched=${crouched}, yaw=${yaw}, time=${time}`).toBeLessThan(.06);
         }
       }
+    fx.dispose(); disposeBossModel(model);
+  });
+
+  it('enlarges the grip with the 32m hand while keeping carried world objects their existing size', async () => {
+    const { model, pose, fx } = await rig();
+    const boss = bossFixture(); boss.action = 'grab'; boss.crouched = true; boss.actionAt = boss.spawnedAt = 0;
+    boss.held = { kind: 'building', id: 2, faction: 0, x: 0, z: 0 };
+    pose.sample(boss, 2.25); fx.update(boss, 2.25); model.updateMatrixWorld(true);
+    const held = model.getObjectByName('boss-held-target')!, hand = model.getObjectByName('handR')!;
+    expect(held.getWorldPosition(new THREE.Vector3()).distanceTo(hand.getWorldPosition(new THREE.Vector3()))).toBeCloseTo(1.7, 5);
+    for (const name of ['boss-held-flag-pole', 'boss-held-building-body', 'boss-held-wall-planks']) {
+      const size = model.getObjectByName(name)!.getWorldScale(new THREE.Vector3());
+      size.toArray().forEach(value => expect(value).toBeCloseTo(20 / 32, 5));
+    }
     fx.dispose(); disposeBossModel(model);
   });
 

@@ -9,11 +9,10 @@ import type { World } from '../../world';
 import { pieceBottom } from '../econ/pieceGeometry';
 import { piecePosition } from '../pieces';
 import { pieceClosest } from '../units/reach';
-import { activeBossCrystals } from './lightning';
+import { crystalFlagTargets } from './crystalTargets';
 import { sampleBossHeadPose } from './hitRegions';
 import { solveBossEyeAim } from '../../bossEyeRig';
 import type { BossEyeQuaternion } from '../../bossEyeRig';
-import { crystalDimensions } from '../../crystalGeometry';
 import { bossSceneryBrightness } from './sceneryBrightness';
 import { BOSS_FLAG_THREAT_SECONDS, recentBossFlagThreats } from './eyeThreats';
 
@@ -35,7 +34,7 @@ function bodyInside(at: V3, x: number, z: number, y: number, top: number, radius
 /** Deterministic utility: each actual blast victim +2, each live non-altar building +7,
  * each build piece +4, and each recent Flag attacker +12 fading to +6 over 12s.
  * A lone ordinary unit (or a pair) is never enough to spend the weapon. */
-interface RatedTarget { at: V3; score: number; distance: number; brightness: number; }
+interface RatedTarget { at: V3; score: number; distance: number; brightness: number; supports: number[]; }
 function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
   const threats = recentBossFlagThreats(world), units: Unit[] = [], candidates: V3[] = [];
   const farEnough = (x: number, z: number) => Math.hypot(x - boss.pos.x, z - boss.pos.z) >= BOSS_EYE_MIN_TARGET_DISTANCE;
@@ -67,8 +66,8 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
   for (const b of buildings) candidates.push({ x: b.pos.x, y: BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z });
   const pieces = [...world.pieces.values()].filter(p => p.hp > 0);
   for (const p of pieces) { const at = piecePosition(world, p); if (at) candidates.push({ ...at }); }
-  const crystalAims = activeBossCrystals(world, boss).map(c => ({ x: c.pos.x, y: crystalDimensions(c).height * .6, z: c.pos.z }));
-  candidates.push(...crystalAims);
+  const crystalTargets = crystalFlagTargets(world, boss), crystalAims = new Map(crystalTargets.map(t => [t.at, t.supports]));
+  candidates.push(...crystalAims.keys());
   const bright = world.map.obstacles.filter(o => !world.destroyedScenery.has(o.id) && bossSceneryBrightness(o) > 0);
   for (const o of bright) candidates.push({ x: o.x, y: o.height / 2, z: o.z });
   const ranked: RatedTarget[] = [];
@@ -76,7 +75,7 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
   for (const at of candidates) {
     const distance = Math.hypot(at.x - boss.pos.x, at.z - boss.pos.z);
     // Scale the pupil envelope with the giant (38.4 m at 32 m tall), never the 240 m ray limit.
-    const crystal = crystalAims.includes(at);
+    const supports = crystalAims.get(at) ?? [], crystal = supports.length > 0;
     // Crystal retaliation uses the exact future-idle pupil range, avoiding the ordinary
     // conservative origin envelope that would unnecessarily exclude a distant giant.
     if (crystal) {
@@ -97,9 +96,9 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
     }
     if (count < BOSS_EYE_MIN_GROUP && !aggression && !structure && !brightness) continue;
     const score = 2 * count + aggression + structure;
-    ranked.push({ at, score, distance, brightness });
+    ranked.push({ at, score, distance, brightness, supports });
   }
-  return ranked.sort((a, b) => b.brightness - a.brightness || b.score - a.score || a.distance - b.distance ||
+  return ranked.sort((a, b) => b.brightness - a.brightness || b.supports.length - a.supports.length || b.score - a.score || a.distance - b.distance ||
     a.at.x - b.at.x || a.at.z - b.at.z || a.at.y - b.at.y);
 }
 
@@ -117,16 +116,20 @@ export function chooseBossEyeTarget(world: World, boss: BossState): V3 | null {
  * Nearby candidate duplicates never waste the route on the same crowd/installation. */
 export function planBossEyeSweep(world: World, boss: BossState, first: V3): V3[] {
   const route = [{ ...first }], candidates = rankedBossEyeTargets(world, boss);
+  const covered = new Set(candidates.find(c => c.at.x === first.x && c.at.y === first.y && c.at.z === first.z)?.supports ?? []);
+  const newSupports = (c: RatedTarget) => c.supports.reduce((n, id) => n + (covered.has(id) ? 0 : 1), 0);
   while (route.length < 5) {
     const last = route[route.length - 1];
-    const remaining = candidates.filter(c => route.every(p => Math.hypot(c.at.x - p.x, c.at.y - p.y, c.at.z - p.z) >= BOSS_EYE_BLAST_RADIUS * 1.6));
-    remaining.sort((a, b) => b.brightness - a.brightness ||
+    const remaining = candidates.filter(c => c.supports.length ? newSupports(c) > 0 :
+      route.every(p => Math.hypot(c.at.x - p.x, c.at.y - p.y, c.at.z - p.z) >= BOSS_EYE_BLAST_RADIUS * 1.6));
+    remaining.sort((a, b) => b.brightness - a.brightness || newSupports(b) - newSupports(a) ||
       (b.score / (1 + Math.hypot(b.at.x - last.x, b.at.y - last.y, b.at.z - last.z) / 40)) -
       (a.score / (1 + Math.hypot(a.at.x - last.x, a.at.y - last.y, a.at.z - last.z) / 40)) ||
       Math.hypot(a.at.x - last.x, a.at.y - last.y, a.at.z - last.z) - Math.hypot(b.at.x - last.x, b.at.y - last.y, b.at.z - last.z) ||
       a.at.x - b.at.x || a.at.z - b.at.z || a.at.y - b.at.y);
     if (!remaining.length) break;
     route.push({ ...remaining[0].at });
+    for (const id of remaining[0].supports) covered.add(id);
   }
   return route;
 }

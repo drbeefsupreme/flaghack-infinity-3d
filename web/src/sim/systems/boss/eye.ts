@@ -10,8 +10,6 @@ import type { Flag } from '../../types';
 import type { World } from '../../world';
 import { consumeBuilding } from '../boss';
 import { damageEntity } from '../combat';
-import { rayCrystal } from '../../crystalGeometry';
-import { shatterCrystal } from '../crystals';
 import { pieceBottom } from '../econ/pieceGeometry';
 import { dropLoose } from '../flags';
 import { destroySceneryBlast } from '../scenery';
@@ -60,17 +58,8 @@ function fireSample(world: World, boss: BossState, index: number): void {
   const yaw = Math.atan2(eye.target.x - boss.pos.x, eye.target.z - boss.pos.z);
   if (index > 0) boss.yaw += clamp(angleDiff(boss.yaw, yaw), -1.2 / BOSS_EYE_SAMPLE_HZ, 1.2 / BOSS_EYE_SAMPLE_HZ);
   const ray = bossEyeRay(world, boss), previous = eye.impact, previousTag = eye.impactTag;
-  let hit = world.collision.raycast(ray.origin.x, ray.origin.y, ray.origin.z,
+  const hit = world.collision.raycast(ray.origin.x, ray.origin.y, ray.origin.z,
     ray.direction.x, ray.direction.y, ray.direction.z, BOSS_EYE_MAX_RANGE, boss.id);
-  let crystalHit: import('../../types').Crystal | null = null;
-  const sampledAt = eye.firedAt! + index / BOSS_EYE_SAMPLE_HZ;
-  for (const crystal of world.crystals.values()) {
-    const distance = rayCrystal(crystal, sampledAt, ray.origin, ray.direction, hit?.dist ?? BOSS_EYE_MAX_RANGE);
-    if (distance === null) continue;
-    crystalHit = crystal;
-    hit = { x: ray.origin.x + ray.direction.x * distance, y: ray.origin.y + ray.direction.y * distance,
-      z: ray.origin.z + ray.direction.z * distance, dist: distance, tag: crystal.id, shape: -1, nx: 0, ny: 0, nz: 0 };
-  }
   eye.origin = ray.origin; eye.direction = ray.direction;
   eye.impact = hit ? { x: hit.x, y: hit.y, z: hit.z } : null;
   eye.impactTag = hit?.tag ?? null; eye.sample = index;
@@ -79,7 +68,6 @@ function fireSample(world: World, boss: BossState, index: number): void {
   // between those disconnected impacts; only continuous contact sweeps a sphere.
   const from = previous && previousTag === eye.impactTag &&
     Math.hypot(previous.x - eye.impact.x, previous.y - eye.impact.y, previous.z - eye.impact.z) <= 6 ? previous : null;
-  if (crystalHit) shatterCrystal(world, crystalHit, 'beam');
   blastBossEye(world, boss, eye.impact, from);
 }
 

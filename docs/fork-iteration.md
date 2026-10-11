@@ -123,7 +123,7 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
 
 ### Cooperative giant encounter
 
-When the default-on boss option reaches its reveal, the giant becomes an authoritative
+When the hidden, default-on encounter reaches its reveal, the giant becomes an authoritative
 encounter. The approved 85–90 second effigy reveal is unchanged. Before that moment camps
 remain rivals; afterward player-controlled and NPC camps are allies. Rival damage,
 knockback, Dialectics conversion and altar overwrites stop. Players can still pick up and
@@ -131,10 +131,12 @@ pull each other's Flags; ordinary pull timing, Ward/Crystal slowdown and Stabili
 protection still apply. NPC vexillomancers
 and their Signifiers attack the giant. Priority Beacons can direct your Signifiers at it.
 
-- The giant starts with 50,000 HP by default. Advanced Game Settings → Boss HP sets its
-  starting and maximum health for the next match, from 100 to 1,000,000 whole HP. The choice
-  persists locally, resets to 50,000 with Reset defaults, and is controlled by the host's
-  lobby leader online. Changing settings cannot heal or resize a running boss's health pool.
+- The giant starts with 50,000 HP by default. The mode and health controls are deliberately
+  absent from menus and settings so the reveal stays a surprise. Internal validated match
+  fields remain available for testing and network configuration; they are sampled once at
+  encounter creation and cannot heal a running boss. Saved UI settings older than version 3
+  reset only the former encounter testing values to enabled/50,000, preserving other choices
+  and version-2 zero-day starts. Earlier zero-day-to-Unlimited migration remains separate.
   Staff timing and damage are unchanged; cooperation, Signifiers and thrown Flags shorten
   the encounter.
 - A thrown Flag deals 50 damage to the body or 100 to the head/hat, destroys the Flag, and
@@ -178,9 +180,9 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   seconds, tilting its head toward the first target. Its first shot is due 30 seconds after
   reveal. The complete white beam then stays visible for five seconds while the head sweeps
   through up to five useful target points. It follows the actual pupil's gaze and stops at
-  the first terrain, structure or Crystal surface (240 m maximum reach).
-  Actively shocking Crystals receive first priority, followed by rainbow arches, rainbow
-  campers and LED totems, then other strongly lit installations. Groups of at least three
+  the first terrain or structure surface (240 m maximum reach).
+  The planted Flags sustaining actively shocking Crystals receive first priority, followed
+  by rainbow arches, rainbow campers and LED totems, then other strongly lit installations. Groups of at least three
   units, non-altar structures and recent Flag throwers remain useful secondary targets.
   Ordinary unit targets must be at least 9.26 m away; isolated Signifiers around the feet
   are left to melee. Unreachable targets defer the beam instead of starting a futile charge.
@@ -192,10 +194,12 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   thrown and simulacrum Flags. Damage occurs around the impact, never along the beam.
   Every static scenery prop touched by the impact blast can explode: tents, domes, art,
   portas, trees, rocks, stages, shades and cars. Terrain and resource piles remain intact.
-  Direct hits use the Crystal's displayed rotating prism and normal shatter lifecycle,
-  without introducing Crystal HP. An intact sustaining pentacle can manifest a replacement.
-  Nearby sustaining Flags may also fall if they intersect the 5 m blast. The host replicates
-  the route, live gaze/impact, sample index and once-per-beam hit ledger for late joins.
+  Crystal retaliation aims at ground-level support Flags, preferring 5 m blast centers
+  covering the most supports and sweeping uncovered groups afterward. Implied pentacle
+  nodes are traced to their real planted parent Flags, including simulacra. The visual
+  prism does not intercept the beam or shatter from a visual hit; normal Crystal rules
+  shatter it when the supporting pattern breaks. This applies equally to the 75 m giant.
+  The host replicates the route, live gaze/impact, sample index and once-per-beam hit ledger for late joins.
   Charge/fire cancel on death or the end of the match.
 - Each fully grown ordinary Crystal shocks the living giant for 25 HP/s while its focus
   is within 50 m of the giant's ground center. The manifested giant Crystal deals 35 HP/s
@@ -209,6 +213,7 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   head/hat shots when possible and body shots otherwise, with melee as a fallback.
   Successful player and Signifier melee contacts create a small faction-colored firework
   on existing valid targets, including the giant, units, structures and lumber piles.
+  Generic boss-damage bookkeeping does not add a duplicate burst at its body center.
 - Every standing or crouched walking footfall is a 2.5 m-radius stomp at the measured sole
   landing point, dealing 140 damage once per contact and crushing scenery up to 5 m across.
   The deliberate stomp covers a larger 7.36 m radius and can crush any scenery size. Contact

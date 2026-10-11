@@ -32,6 +32,25 @@ describe('boss health HUD state', () => {
     hud.update(null, true); expect(node.classList.contains('is-off')).toBe(true);
     world.boss!.action = 'dead'; hud.update(world, true); expect(node.classList.contains('is-off')).toBe(true);
   });
+  it('has no creature text or accessible label before reveal or after returning to menus', () => {
+    const { hud, world, node } = setup();
+    const content = (n: Node): string => [n.textContent, ...n.attributes.values(), ...n.children.map(content)].join(' ');
+    const hidden = () => {
+      expect(node.getAttribute('aria-hidden')).toBe('true');
+      expect(content(node)).not.toMatch(/boss|effigy|feeds on|protect your altars/i);
+    };
+    hidden();
+    hud.update({ boss: null } as World, true); hidden();
+    for (let match = 0; match < 2; match++) {
+      hud.update(world, true);
+      expect(node.getAttribute('aria-hidden')).toBe('false');
+      expect(node.getAttribute('aria-label')).toBe('Effigy boss');
+      expect(node.children[1].getAttribute('aria-label')).toBe('Effigy health');
+      expect(content(node)).toContain('THE EFFIGY');
+      hud.update(world, false); hidden();
+      hud.update(null, true); hidden();
+    }
+  });
   it('shows authoritative health and exposes accessible progress values', () => {
     const { hud, world, node } = setup(); hud.update(world, true);
     const bar = node.children[1], fill = bar.children[0];

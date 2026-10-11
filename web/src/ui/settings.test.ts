@@ -46,11 +46,11 @@ describe('independent look inversion preferences', () => {
 });
 
 describe('persisted match duration', () => {
-  it('migrates the former zero-days Unlimited setting without changing other settings', () => {
+  it('migrates the former zero-days Unlimited setting and retired encounter controls without changing other settings', () => {
     storage({ match: { ...DEFAULT_MATCH, days: 0, bossMode: false, dayLength: 600 }, masterVolume: 0.4 });
     const settings = new Session().settings;
     loadSettings(settings);
-    expect(settings.match).toEqual({ ...DEFAULT_MATCH, days: UNLIMITED_DAYS, bossMode: false, dayLength: 600 });
+    expect(settings.match).toEqual({ ...DEFAULT_MATCH, days: UNLIMITED_DAYS, dayLength: 600 });
     expect(settings.masterVolume).toBe(0.4);
     saveSettings(settings);
     const restored = new Session().settings;
@@ -94,7 +94,7 @@ describe('persisted boss health', () => {
   it.each([100, 12345, 50000, 1000000])('round-trips boss HP %s and the explicit zero-day start', (bossHp) => {
     storage({});
     const settings = new Session().settings;
-    settings.match = normalizeMatch({ days: 0, bossHp });
+    settings.match = normalizeMatch({ days: 0, bossHp, bossMode: false });
     saveSettings(settings);
     const restored = new Session().settings;
     loadSettings(restored);
@@ -102,7 +102,7 @@ describe('persisted boss health', () => {
   });
 
   it.each([[0, 100], [1000001, 1000000], [55000.9, 55000], [null, 50000]])('normalizes invalid persisted boss HP %s to %s', (bossHp, expected) => {
-    storage({ match: { bossHp } });
+    storage({ matchSettingsVersion: 3, match: { bossHp } });
     const settings = new Session().settings;
     loadSettings(settings);
     expect(settings.match.bossHp).toBe(expected);
@@ -124,5 +124,35 @@ describe('persisted Flag hoarding threshold', () => {
   });
   it.each([[NaN, 24], [Infinity, 24], [-1, 0], [1001, 1000], [17.8, 17]])('normalizes base %s to %s', (input, expected) => {
     expect(normalizeMatch({ hoardThreshold: input }).hoardThreshold).toBe(expected);
+  });
+});
+
+
+describe('retired encounter settings migration', () => {
+  it.each([undefined, 1, 2])('resets hidden controls once for saved version %s and preserves unrelated preferences', matchSettingsVersion => {
+    const match = normalizeMatch({ active: [0, 2], days: 0, dayLength: 600, bossMode: false, bossHp: 100, hoardThreshold: 75, startingLumber: 250 });
+    storage({ matchSettingsVersion, match, masterVolume: 0.4, quality: 'low', difficulty: 'hard', invertMouseY: true, controls: { invertPadY: true } });
+    const settings = new Session().settings;
+    loadSettings(settings);
+    expect(settings.match).toEqual({ ...match, days: matchSettingsVersion === 2 ? 0 : UNLIMITED_DAYS, bossMode: true, bossHp: 50000 });
+    expect(settings).toMatchObject({ masterVolume: 0.4, quality: 'low', difficulty: 'hard', invertMouseY: true, controls: { invertPadY: true } });
+    saveSettings(settings);
+    expect(JSON.parse(localStorage.getItem('fh.settings.v1')!).matchSettingsVersion).toBe(3);
+    const restored = new Session().settings;
+    loadSettings(restored);
+    expect(restored).toEqual(settings);
+    // The migration does not become an unconditional override of explicit current settings.
+    restored.match.bossMode = false; restored.match.bossHp = 72500;
+    saveSettings(restored);
+    const explicit = new Session().settings;
+    loadSettings(explicit);
+    expect(explicit.match).toEqual(restored.match);
+  });
+
+  it.each([UNLIMITED_DAYS, 0, 1, 5])('preserves version-2 duration %s while retiring encounter overrides', days => {
+    storage({ matchSettingsVersion: 2, match: { days, bossMode: false, bossHp: 1000000 } });
+    const settings = new Session().settings;
+    loadSettings(settings);
+    expect(settings.match).toMatchObject({ days, bossMode: true, bossHp: 50000 });
   });
 });

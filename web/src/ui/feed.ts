@@ -199,7 +199,7 @@ export class FeedPart implements UiPart {
           dur: 4,
         });
         this.host.post(matchSettings(w.options).bossMode
-          ? 'The effigy burns. Something stirs beneath the flames.'
+          ? 'The effigy burns. Sudden death has begun!'
           : `The effigy burns. Sudden death until dawn at ${fmtClock(endTime(w.options))}!`, 'epic');
         break;
       case 'victory':

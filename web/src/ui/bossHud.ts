@@ -5,6 +5,7 @@ import './bossHud.css';
 
 export class BossHud {
   readonly element: HTMLElement;
+  private readonly name: HTMLElement;
   private readonly fill: HTMLElement;
   private readonly value: HTMLElement;
   private readonly status: HTMLElement;
@@ -12,12 +13,12 @@ export class BossHud {
   constructor(parent: HTMLElement, private readonly timer: HTMLElement) {
     // Reuse the clock's actual plaque frame, rather than approximating its border.
     this.element = el('section', 'boss-hud plaque is-off', parent);
-    this.element.setAttribute('aria-label', 'Effigy boss');
+    this.element.setAttribute('aria-hidden', 'true');
     const title = el('div', 'boss-hud-title', this.element);
-    el('span', 'boss-hud-name', title, 'THE EFFIGY');
+    this.name = el('span', 'boss-hud-name', title);
     this.value = el('span', 'boss-hud-value num', title);
     const bar = el('div', 'boss-hud-bar', this.element);
-    bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-label', 'Effigy health');
+    bar.setAttribute('role', 'progressbar');
     bar.setAttribute('aria-valuemin', '0');
     this.fill = el('i', 'boss-hud-fill', bar);
     this.status = el('div', 'boss-hud-status', this.element);
@@ -27,9 +28,17 @@ export class BossHud {
     const boss = world?.boss;
     const active = visible && !!boss && boss.action !== 'dead';
     show(this.element, active);
+    setAttr(this.element, 'aria-hidden', String(!active));
+    setAttr(this.element, 'aria-label', active ? 'Effigy boss' : '');
+    setAttr(this.fill.parentElement!, 'aria-label', active ? 'Effigy health' : '');
+    setText(this.name, active ? 'THE EFFIGY' : '');
     // Run before every early return so leaving/restarting a match cannot strand the clock.
     show(this.timer, !active);
-    if (!active || !boss) return;
+    if (!active || !boss) {
+      setText(this.value, '');
+      setText(this.status, '');
+      return;
+    }
     const hp = Math.max(0, Math.ceil(boss.hp));
     setVar(this.fill, '--boss-health', String(Math.max(0, Math.min(1, boss.hp / boss.maxHp))));
     setText(this.value, `${hp.toLocaleString()} / ${boss.maxHp.toLocaleString()}`);

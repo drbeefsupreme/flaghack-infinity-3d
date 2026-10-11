@@ -108,19 +108,24 @@ export function barrierFlags(world: World, edgeId: number): Flag[] {
   if (!edge) return [];
   const faction = world.survey.edgeLey[edgeId];
   if (faction < 0) return [];
+  return nodeSupportingFlags(world, [edge.a, edge.b], faction as FactionId);
+}
+
+/** Real planted Flags sustaining arbitrary real/implied nodes, including simulacra. */
+export function nodeSupportingFlags(world: World, nodes: readonly number[], faction: FactionId): Flag[] {
   const s = world.survey, topo = latticeTopology(world.lattice);
-  const stack = [edge.a, edge.b], visited = new Set<number>(), flags = new Map<number, Flag>();
+  const stack = [...nodes], visited = new Set<number>(), flags = new Map<number, Flag>();
   while (stack.length) {
     const n = stack.pop()!;
-    if (visited.has(n)) continue;
+    if (n < 0 || n >= world.lattice.nodes.length || visited.has(n)) continue;
     visited.add(n);
     const real = world.flags.get(s.nodeFlag[n]);
-    if (real && real.owner === faction) { flags.set(real.id, real); continue; }
+    if (real?.state === 'planted' && real.owner === faction) { flags.set(real.id, real); continue; }
     if (s.impliedOwner[n] !== faction) continue;
     for (let i = topo.midStart[n]; i < topo.midStart[n + 1]; i++) {
       const a = topo.midA[i], b = topo.midB[i], order = s.impliedOrder[n];
       if (s.holder[a] === faction && s.holder[b] === faction && s.impliedOrder[a] < order && s.impliedOrder[b] < order) stack.push(a, b);
     }
   }
-  return [...flags.values()];
+  return [...flags.values()].sort((a, b) => a.id - b.id);
 }

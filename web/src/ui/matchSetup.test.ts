@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_MATCH, UNLIMITED_DAYS, normalizeMatch } from '../sim/matchSettings';
 import type { LobbySettings } from '../net/protocol';
 import { MatchSetup } from './matchSetup';
+import { Session } from '../game/session';
+import { SettingsPanel } from './settings';
+import type { UiHost } from './core';
 
 /** Small DOM contract: menu choices, mirrored controls, permissions and reset behavior. */
 class Element extends EventTarget {
@@ -33,8 +36,8 @@ function descendants(node: Element): Element[] {
   return node.children.flatMap((child) => [child, ...descendants(child)]);
 }
 
-function bossHpField(overlay: Element): Element {
-  return descendants(overlay).find((node) => node.tagName === 'label' && node.children.some((child) => child.textContent === 'Boss HP'))!.children.find((child) => child.tagName === 'input')!;
+function menuText(...roots: Element[]): string {
+  return roots.flatMap(descendants).flatMap(node => [node.textContent, node.innerHTML, ...node.attributes.values()]).join(' ');
 }
 
 function setup() {
@@ -53,30 +56,6 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('zero-day match setup', () => {
-  it('edits bounded whole-number Boss HP for the next match and resets it to 50,000', () => {
-    const { ui, overlay, read } = setup();
-    const input = bossHpField(overlay);
-    expect(input.value).toBe('50000');
-    expect([input.min, input.max, input.step]).toEqual(['100', '1000000', '100']);
-    input.value = '72500';
-    input.dispatchEvent(new Event('change'));
-    ui.update();
-    expect(read().match?.bossHp).toBe(72500);
-    expect(input.value).toBe('72500');
-    input.value = '12345.9';
-    input.dispatchEvent(new Event('change'));
-    ui.update();
-    expect(read().match?.bossHp).toBe(12345);
-    input.value = '';
-    input.dispatchEvent(new Event('change'));
-    expect(input.value).toBe('12345');
-    descendants(overlay).find((node) => node.innerHTML === 'Reset defaults')!.dispatchEvent(new Event('click'));
-    ui.update();
-    expect(read().match?.bossHp).toBe(50000);
-    expect(input.value).toBe('50000');
-    expect(read().match?.active).toEqual([0, 2]);
-    ui.dispose();
-  });
   it('offers distinct zero-day and Unlimited choices in the lobby and advanced settings', () => {
     const { ui, root, days, read } = setup();
     expect(days).toHaveLength(2);
@@ -90,7 +69,7 @@ describe('zero-day match setup', () => {
     ui.update();
     expect(read().match?.days).toBe(0);
     expect(days.map((field) => field.value)).toEqual(['0', '0']);
-    expect(descendants(root).find((node) => node.className === 'panel-hint')?.textContent).toContain('Burn starts immediately. Boss reveal after 90 seconds.');
+    expect(descendants(root).find((node) => node.className === 'panel-hint')?.textContent).toContain('Burn starts immediately.');
     days[1].value = String(UNLIMITED_DAYS);
     days[1].dispatchEvent(new Event('change'));
     ui.update();
@@ -120,10 +99,12 @@ describe('zero-day match setup', () => {
       field.value = '0';
       field.dispatchEvent(new Event('change'));
     }
-    const hp = bossHpField(overlay);
-    expect(hp.disabled).toBe(true);
-    hp.value = '100';
-    hp.dispatchEvent(new Event('change'));
+    const inputs = descendants(overlay).filter(node => node.tagName === 'input');
+    expect(inputs.every(input => input.disabled)).toBe(true);
+    for (const input of inputs) {
+      input.value = '100';
+      input.dispatchEvent(new Event('change'));
+    }
     descendants(overlay).find((node) => node.innerHTML === 'Reset defaults')!.dispatchEvent(new Event('click'));
     expect(write).not.toHaveBeenCalled();
     ui.dispose();
@@ -148,5 +129,48 @@ describe('Flag hoarding setting', () => {
     descendants(overlay).find(node => node.innerHTML === 'Reset defaults')!.dispatchEvent(new Event('click')); ui.update();
     expect(read().match?.hoardThreshold).toBe(24);
     ui.dispose();
+  });
+});
+
+
+describe('surprise encounter menu privacy', () => {
+  it('omits encounter controls, hints and accessibility spoilers for every schedule, seat count and host permission', () => {
+    const { ui, root, overlay, write, read } = setup();
+    const fields = descendants(overlay).filter(node => node.tagName === 'label' && node.className === 'setup-field');
+    expect(fields.flatMap(node => node.children.map(child => child.textContent))).not.toContain('Boss HP');
+    expect(fields.flatMap(node => node.children.map(child => child.textContent))).not.toContain('Boss mode');
+    expect(read().match).toMatchObject({ bossMode: true, bossHp: 50000 });
+    for (const days of [0, 1, 2, 3, 4, 5, UNLIMITED_DAYS]) {
+      for (const active of [[0], [0, 2]] as const) {
+        for (const bossMode of [true, false]) {
+          write({ match: normalizeMatch({ days, active: [...active], bossMode }) });
+          for (const enabled of [true, false]) {
+            ui.update(enabled);
+            expect(menuText(root, overlay)).not.toMatch(/boss|encounter|giant|effigy|reveal|allies|90 seconds|shared victory/i);
+          }
+        }
+      }
+    }
+    // Current explicit options remain intact even though the menu no longer edits them.
+    write({ match: normalizeMatch({ days: 1, bossMode: false, bossHp: 72500 }) });
+    const days = descendants(root).find(node => node.tagName === 'select')!;
+    ui.update(true);
+    days.value = '0'; days.dispatchEvent(new Event('change'));
+    expect(read().match).toMatchObject({ days: 0, bossMode: false, bossHp: 72500 });
+    descendants(overlay).find(node => node.innerHTML === 'Reset defaults')!.dispatchEvent(new Event('click'));
+    expect(read().match).toMatchObject({ bossMode: true, bossHp: 50000 });
+    ui.dispose();
+  });
+
+  it.each(['title', 'paused'] as const)('keeps the general settings panel spoiler-free on %s', screen => {
+    const { ui, overlay } = setup();
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem() {} });
+    const session = new Session(); session.screen = screen; session.panels.settings = true;
+    const panel = new SettingsPanel({ app: { session } } as UiHost, overlay as unknown as HTMLElement);
+    panel.update(null, 0);
+    expect(menuText(overlay)).not.toMatch(/boss|encounter|giant|effigy|reveal|allies|90 seconds|shared victory/i);
+    expect(menuText(overlay)).toContain('Master volume');
+    expect(menuText(overlay)).toContain('Customize controls');
+    panel.dispose(); ui.dispose();
   });
 });

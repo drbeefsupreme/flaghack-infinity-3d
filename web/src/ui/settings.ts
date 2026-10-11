@@ -1,4 +1,4 @@
-import { UNLIMITED_DAYS, normalizeMatch } from "../sim/matchSettings";
+import { DEFAULT_MATCH, UNLIMITED_DAYS, normalizeMatch } from "../sim/matchSettings";
 import { normalizeControls } from "../game/bindings";
 import { controlSettings } from "./controlSettings";
 /**
@@ -14,8 +14,8 @@ import { button, el, setAttr, setClass, setText, show } from './dom';
 import { iconSvg } from './icons';
 
 const STORAGE_KEY = 'fh.settings.v1';
-/** Before version 2, persisted days=0 meant Unlimited. Keep that intent on upgrade. */
-const MATCH_SETTINGS_VERSION = 2;
+/** v2 separated zero days from Unlimited; v3 retired the encounter controls. */
+const MATCH_SETTINGS_VERSION = 3;
 const QUALITIES: readonly Settings['quality'][] = ['low', 'medium', 'high'];
 
 type RangeKey = 'masterVolume' | 'musicVolume' | 'sfxVolume' | 'mouseSensitivity';
@@ -47,10 +47,17 @@ export function loadSettings(target: Settings): void {
   if (typeof raw !== 'object' || raw === null) return;
   const src: Record<string, unknown> = { ...raw };
   const match = src.match;
-  const legacy = typeof src.matchSettingsVersion !== 'number' || src.matchSettingsVersion < MATCH_SETTINGS_VERSION;
-  target.match = normalizeMatch(legacy && typeof match === 'object' && match !== null && 'days' in match && match.days === 0
+  const version = typeof src.matchSettingsVersion === 'number' && Number.isFinite(src.matchSettingsVersion) ? src.matchSettingsVersion : 0;
+  // Before v2, saved zero days meant Unlimited, not an immediate Burn.
+  target.match = normalizeMatch(version < 2 && typeof match === 'object' && match !== null && 'days' in match && match.days === 0
     ? { ...match, days: UNLIMITED_DAYS }
     : match as never);
+  // Retired UI values must not leave an invisible disabled or test-health encounter.
+  // Scope this upgrade to old local saves; explicit current and network options still work.
+  if (version < 3) {
+    target.match.bossMode = DEFAULT_MATCH.bossMode;
+    target.match.bossHp = DEFAULT_MATCH.bossHp;
+  }
   target.controls = normalizeControls(src.controls);
   for (const r of RANGES) {
     const v = src[r.key];

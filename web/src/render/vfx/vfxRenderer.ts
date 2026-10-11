@@ -332,7 +332,9 @@ export class VfxRenderer implements RenderModule {
         const toPlayer = this.isPlayerAvatar(e.target);
         const byPlayer = e.by >= 0 && this.isPlayerAvatar(e.by);
         if (!toPlayer && !byPlayer && !this.spend(1)) break;
-        fx.hit(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1, e.pos.z, toPlayer);
+        // Boss hit facts use a bookkeeping point between its legs, not a surface contact.
+        // Its meleeImpact/bossImpact events already render the actual contact fireworks.
+        if (e.target !== w.boss?.id) fx.hit(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1, e.pos.z, toPlayer);
         if (toPlayer) this.shake(e.pos.x, e.pos.z, 0.3 + Math.min(0.4, e.amount / 100), 1000, 2000);
         else if (byPlayer) this.shake(e.pos.x, e.pos.z, 0.12, 1000, 2000);
         break;

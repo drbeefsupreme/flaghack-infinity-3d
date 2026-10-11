@@ -59,6 +59,7 @@ export class Fireworks {
   private nextSalvo = 0;
   private cx = 0;
   private cz = 0;
+  private groundY: (x: number, z: number) => number = () => 0;
 
   constructor(pool: ParticlePool, rng: Prng, camera: THREE.Camera, density: number) {
     this.pool = pool;
@@ -90,7 +91,8 @@ export class Fireworks {
   }
 
   /** Begin the show above (cx, cz). */
-  start(now: number, cx: number, cz: number): void {
+  start(now: number, cx: number, cz: number, groundY: (x: number, z: number) => number = () => 0): void {
+    this.groundY = groundY;
     this.showStart = now;
     this.nextLaunch = now + 0.6;
     this.nextSalvo = now + 6;
@@ -142,8 +144,8 @@ export class Fireworks {
     r.launch = at;
     r.burst = at + T;
     r.x0 = this.cx + Math.cos(la) * lr;
-    r.y0 = 0;
     r.z0 = this.cz + Math.sin(la) * lr;
+    r.y0 = this.groundY(r.x0, r.z0);
     const bx = this.cx + Math.cos(ba) * br;
     const by = rng.range(42, 80);
     const bz = this.cz + Math.sin(ba) * br;

@@ -9,7 +9,8 @@
 import { LEVEL_HEIGHT, MAX_BUILD_LEVEL, PIECE } from '../../constants';
 import type { Lattice } from '../../lattice/lattice';
 import type { V3 } from '../../math';
-import type { PieceKind } from '../../types';
+import type { World } from '../../world';
+import type { Piece, PieceKind } from '../../types';
 
 export const DECK_THICKNESS = 0.25;
 export const RAMP_THICKNESS = 0.25;
@@ -102,4 +103,10 @@ export function slotCenter(lat: Lattice, kind: PieceKind, edge: number, facet: n
     out.y = kind === 'floor' ? (level + 1) * LEVEL_HEIGHT : (level + 0.5) * LEVEL_HEIGHT;
   }
   return out;
+}
+
+/** Rigid piece base, shared by collision, hit tests and contact effects. */
+export function pieceGroundHeight(world: World, piece: Piece): number {
+  const anchor = slotCenter(world.lattice, piece.kind, piece.edge, piece.facet, piece.level, { x: 0, y: 0, z: 0 });
+  return world.collision.groundHeight(anchor.x, anchor.z);
 }

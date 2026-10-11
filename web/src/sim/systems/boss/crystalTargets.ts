@@ -1,6 +1,7 @@
 /** Retaliate against the planted pattern sustaining a Crystal, never its visual prism. */
 import { BOSS_EYE_BLAST_RADIUS } from '../../boss';
 import type { BossState } from '../../boss';
+import { groundHeight } from '../../terrain';
 import type { V3 } from '../../math';
 import type { World } from '../../world';
 import { nodeSupportingFlags } from './barriers';
@@ -15,7 +16,7 @@ export function crystalFlagTargets(world: World, boss: BossState): CrystalFlagTa
       seen.add(flag.id); points.push({ ...flag.pos, id: flag.id });
       if (flag.altNode >= 0) {
         const n = world.lattice.nodes[flag.altNode];
-        if (n) points.push({ x: n.x, y: 0, z: n.z, id: flag.id });
+        if (n) points.push({ x: n.x, y: groundHeight(n.x, n.z, world.map.half), z: n.z, id: flag.id });
       }
     }
   }

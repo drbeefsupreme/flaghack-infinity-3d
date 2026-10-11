@@ -19,7 +19,6 @@ import type {
   Difficulty,
   DrugId,
   FactionId,
-  GccAction,
   HippieOrder,
   JobKind,
   PieceKind,
@@ -46,8 +45,6 @@ const MAX_INDEX = 0x7fffffff;
 /** Above the pile of every node on the map, so a whole-Survey 'set' always fits. */
 const MAX_PLAN_NODES = 4096;
 const MAX_ORDER_HIPPIES = 512;
-/** A simulacrum names two nodes; dialectics names none. */
-const MAX_GCC_NODES = 2;
 const MAX_BUILD_LEVEL_INDEX = 64;
 
 type Rec = Record<string, unknown>;
@@ -108,7 +105,6 @@ const BUILDING_KINDS: Record<BuildingKind, true> = {
 const ABILITIES: Record<AbilityId, true> = { beacon: true, march: true, stabilize: true, phason: true, omega: true };
 const CHAKRA_IDS: Record<ChakraId, true> = { hoist: true, fly: true, canton: true, field: true, finial: true };
 const DRUG_IDS: Record<DrugId, true> = { saffron: true, dust: true, acidcop: true };
-const GCC_ACTIONS: Record<GccAction, true> = { dialectics: true, simulacra: true };
 const PING_KINDS: Record<PingKind, true> = { rally: true, attack: true, flag: true, sos: true, shot: true };
 const JOB_KINDS: Record<JobKind, true> = { survey: true, gather: true, defend: true, raid: true, ritual: true };
 const PLAN_OPS: Record<CommandOf<'plan'>['op'], true> = { add: true, remove: true, set: true, clear: true };
@@ -361,11 +357,8 @@ const COMMANDS: { [K in CommandType]: CommandEntry<CommandOf<K>> } = {
   },
   gcc: {
     keys: ['t', 'faction', 'action', 'target', 'nodes'],
-    parse: (m, faction) => {
-      const { action, target } = m;
-      const nodes = intList(m.nodes, 0, MAX_GCC_NODES);
-      return nodes && isKeyOf(GCC_ACTIONS, action) && isInt(target, -1) ? { t: 'gcc', faction, action, target, nodes } : null;
-    },
+    // Keep the legacy discriminator reserved, but never admit either removed power.
+    parse: () => null,
   },
   pushGcc: {
     keys: ['t', 'faction', 'on'],
@@ -498,8 +491,9 @@ export function fitsLattice(cmd: Command, lat: LatticeSizes): boolean {
       return cmd.edge < lat.edges && cmd.facet < lat.facets;
     case 'placeBuilding':
       return cmd.facet < lat.facets;
-    case 'plan':
     case 'gcc':
+      return false;
+    case 'plan':
       for (const n of cmd.nodes) if (n >= lat.nodes) return false;
       return true;
     case 'order':

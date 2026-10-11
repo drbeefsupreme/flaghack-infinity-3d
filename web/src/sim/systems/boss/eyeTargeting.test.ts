@@ -1,3 +1,4 @@
+import { groundHeight } from '../../terrain';
 import { describe, expect, it } from 'vitest';
 import { BOSS_EYE_BLAST_RADIUS, BOSS_EYE_MAX_RANGE, BOSS_EYE_TIMING } from '../../boss';
 import { BOSS_GAMEPLAY_SCALE, BOSS_HEIGHT } from '../../bossDimensions';
@@ -58,7 +59,7 @@ describe('independent strategic eye targeting', () => {
     const { world, boss, avatar } = setup();
     expect(BOSS_HEIGHT).toBe(32); expect(BOSS_EYE_MIN_TARGET_DISTANCE).toBeCloseTo(9.26);
     expect(BOSS_EYE_BLAST_RADIUS).toBe(5); expect(BOSS_EYE_MAX_RANGE).toBe(240);
-    const limit = BOSS_EYE_MAX_RANGE - 24 * BOSS_GAMEPLAY_SCALE;
+    const limit = Math.sqrt((BOSS_EYE_MAX_RANGE - 24 * BOSS_GAMEPLAY_SCALE) ** 2 - groundHeight(0,0,world.map.half) ** 2);
     avatar.pos = { x: 0, y: 0, z: limit + .001 }; recordBossFlagThreat(world, avatar.id);
     expect(chooseBossEyeTarget(world, boss)).toBeNull();
     avatar.pos.z = limit; recordBossFlagThreat(world, avatar.id);
@@ -68,7 +69,7 @@ describe('independent strategic eye targeting', () => {
     const { world, boss } = setup();
     const dead = spawnBuilding(world, 'gcc', 0, 0, 1); dead.pos = { x: 0, z: 20 }; dead.hp = 0;
     const live = spawnBuilding(world, 'workshop', 0, 1, 1); live.pos = { x: 0, z: 60 };
-    expect(chooseBossEyeTarget(world, boss)).toEqual({ x: 0, y: 1.5, z: 60 });
+    expect(chooseBossEyeTarget(world, boss)).toEqual({ x: 0, y: groundHeight(0,60,world.map.half) + 1.5, z: 60 });
     world.buildings.delete(live.id); expect(chooseBossEyeTarget(world, boss)).toBeNull();
   });
   it('recognizes player-built pieces as structures', () => {

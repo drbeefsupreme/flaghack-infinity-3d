@@ -402,7 +402,7 @@ function shove(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId)
     }
   }
   for (const av of world.avatars.values()) {
-    if (av.faction === f || av.koUntil > 0 || av.pos.y > SHOVE_Y) continue;
+    if (av.faction === f || av.koUntil > 0 || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > SHOVE_Y) continue;
     const d = Math.hypot(av.pos.x - h.pos.x, av.pos.z - h.pos.z) - AVATAR.radius;
     if (d < bestD) {
       bestD = d;
@@ -460,18 +460,18 @@ function respawn(world: World, h: Hippie, b: Brain): void {
   b.faction = h.faction;
   releaseTask(world, h, b);
   setStatus(h, 'idle');
-  world.emit({ t: 'respawn', id: h.id, kind: 'hippie', faction: h.faction, pos: { x, y: 0, z } });
+  world.emit({ t: 'respawn', id: h.id, kind: 'hippie', faction: h.faction, pos: { x, y: world.collision.groundHeight(x, z), z } });
 }
 
 /** Host ballistic flight with the same geometry used by avatars. */
 export function stepHippieAirborne(world: World, h: Hippie, dt: number): boolean {
   const air = h.airborne;
   if (!air) return false;
-  const pos = { x: h.pos.x, y: air.y, z: h.pos.z };
+  const pos = { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + air.y, z: h.pos.z };
   const vel = { x: h.vel.x, y: air.vy - AVATAR.gravity * dt, z: h.vel.z };
   const hit = world.collision.moveCharacter(pos, vel, dt, HIPPIE.radius, 1.8, 0.2);
   h.pos.x = pos.x; h.pos.z = pos.z; h.vel.x = vel.x; h.vel.z = vel.z;
-  air.y = pos.y; air.vy = vel.y;
+  air.y = pos.y - world.collision.groundHeight(pos.x, pos.z); air.vy = vel.y;
   if (hit.onGround) { h.airborne = undefined; h.vel.x *= 0.35; h.vel.z *= 0.35; }
   return true;
 }

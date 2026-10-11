@@ -554,7 +554,7 @@ export class FlagRenderer {
         tr.kind = 1;
         tr.start = t;
         tr.x = node.x;
-        tr.y = 0;
+        tr.y = this.ctx.world.collision.groundHeight(node.x, node.z);
         tr.z = node.z;
         tr.yaw = this.windYaw - Math.PI / 2;
         tr.phase = hash01(e.flagId);
@@ -573,7 +573,6 @@ export class FlagRenderer {
     const t = ctx.time;
     const dt = Math.max(1e-3, Math.min(0.1, t - this.uniforms.uTime.value));
     this.frame++;
-    const groundAt = ctx.shared.groundOffset;
     const hover = ctx.session.hover.entity;
     const sel = ctx.session.selection;
     const windYaw = this.windYaw;
@@ -602,7 +601,7 @@ export class FlagRenderer {
       const decohere = clamp01(1 - (t - v.decohereAt) / DECOHERE_GLITCH_TIME);
       // Superposed Flags shimmer subtly between bursts; decohering Flags glitch hard briefly.
       const glitch = f.altNode >= 0 ? Math.max(0.45, decohere) : decohere;
-      const gy = groundAt ? groundAt(f.pos.x, f.pos.z) : 0;
+      const gy = 0; // Flag positions are absolute simulation coordinates.
 
       if (f.state === 'planted') {
         const age = t - v.plantAt;
@@ -625,7 +624,7 @@ export class FlagRenderer {
         if (f.altNode >= 0) {
           const twin = w.lattice.nodes[f.altNode];
           if (twin) {
-            const ty = groundAt ? groundAt(twin.x, twin.z) : 0;
+            const ty = w.collision.groundHeight(twin.x, twin.z);
             writeTransform(m16, 0, twin.x, ty + rise, twin.z, yaw + 0.3, wob, -wob * 0.6, 1);
             this.commit((v.phase + 0.37) % 1, wave, 0, plantedDroop, glitch, highlight, ribbon, false);
           }
@@ -649,7 +648,7 @@ export class FlagRenderer {
       const n = w.lattice.nodes[node];
       if (!n) continue;
       const ph = hash01(node * 7919);
-      writeTransform(m16, 0, n.x, groundAt ? groundAt(n.x, n.z) : 0, n.z, windYaw - Math.PI / 2 + (ph - 0.5) * 0.4, 0, 0, 1);
+      writeTransform(m16, 0, n.x, w.collision.groundHeight(n.x, n.z), n.z, windYaw - Math.PI / 2 + (ph - 0.5) * 0.4, 0, 0, 1);
       this.commit(ph, ws * (0.8 + 0.4 * ph), 0, plantedDroop, 0.18, 0, this.factionColors[(pf + 1 + (node % 3)) % 4], false);
     }
 

@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 import { describe, expect, it } from 'vitest';
 import { HIPPIE } from '../constants';
 import { BOSS_EYE_TIMING } from '../boss';
@@ -51,7 +52,7 @@ describe('continuous authoritative eye sweep', () => {
     const { world, boss } = fixture(); boss.eye.firedAt = 130;
     const on = spawnHippie(world, -1, { x: 0, z: 5 + HIPPIE.radius }), outside = spawnHippie(world, -1, { x: 0, z: 5 + HIPPIE.radius + .001 });
     // HIPPIE.radius is .4; the two endpoint spheres miss this tangent body.
-    blastBossEye(world, boss, { x: 2, y: .9, z: 0 }, { x: -2, y: .9, z: 0 });
+    blastBossEye(world, boss, { x: 2, y: 2.9, z: 0 }, { x: -2, y: 2.9, z: 0 });
     expect(on.hp).toBe(0); expect(outside.hp).toBeGreaterThan(0);
   });
 
@@ -111,8 +112,8 @@ describe('beam scenery blast and bright preferences', () => {
     const { world, prop } = fixture();
     world.map.obstacles = [prop(10000, 6, 0, { shape: 'circle', radius: 1 }), prop(10001, -6.001, 0, { shape: 'circle', radius: 1 }),
       prop(10002, 0, 0, { height: 3 }), prop(10003, 0, 7, { hx: 2, hz: .1, yaw: Math.PI / 2 })];
-    expect(destroySceneryBlast(world, { x: 0, y: 8.001, z: 0 }, 5)).toBe(0);
-    expect(destroySceneryBlast(world, { x: 0, y: 8, z: 0 }, 5)).toBe(1);
+    expect(destroySceneryBlast(world, { x: 0, y: 10.001, z: 0 }, 5)).toBe(0);
+    expect(destroySceneryBlast(world, { x: 0, y: 10, z: 0 }, 5)).toBe(1);
     expect(destroySceneryBlast(world, { x: 0, y: 2, z: 0 }, 5)).toBe(2);
     expect([...world.destroyedScenery]).toEqual([10002, 10000, 10003]);
   });
@@ -127,11 +128,11 @@ describe('beam scenery blast and bright preferences', () => {
     for (let i = 0; i < 10; i++) spawnHippie(world, -1, { x: 0, z: 40 + i * .1 });
     expect(bossSceneryBrightness(rainbow)).toBe(3); expect(bossSceneryBrightness(pinwheel)).toBe(0);
     expect(bossSceneryBrightness(prop(9, 0, 0, { kind: 'car', variant: 2 }))).toBe(3);
-    const target = chooseBossEyeTarget(world, boss)!; expect(target).toEqual({ x: -45, y: 6, z: 40 });
+    const target = chooseBossEyeTarget(world, boss)!; expect(target).toEqual({ x: -45, y: groundHeight(-45,40,world.map.half) + 6, z: 40 });
     const route = planBossEyeSweep(world, boss, target); expect(route.length).toBeGreaterThanOrEqual(3);
-    expect(route[1]).toEqual({ x: 45, y: 6, z: 40 });
+    expect(route[1]).toEqual({ x: 45, y: groundHeight(45,40,world.map.half) + 6, z: 40 });
     world.destroyedScenery.add(rainbow.id); world.destroyedScenery.add(totem.id);
-    expect(chooseBossEyeTarget(world, boss)).toEqual({ x: 0, y: 4, z: 30 });
+    expect(chooseBossEyeTarget(world, boss)).toEqual({ x: 0, y: groundHeight(0,30,world.map.half) + 4, z: 30 });
     expect(BOSS_EYE_TIMING).toEqual({ period: 30, charge: 3, beam: 5 });
   });
 });

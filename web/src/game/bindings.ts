@@ -27,7 +27,7 @@ export const ACTIONS: Record<string, string> = {
   KeyJ: 'Liber HH',
   KeyL: 'Lattice overlay',
   KeyN: 'Node planner',
-  KeyR: 'Ring planner',
+  KeyR: 'Enclose: expand home',
   Digit1: 'Priority Beacon',
   Digit2: 'Forced March',
   Digit3: 'Stabilize Zone',

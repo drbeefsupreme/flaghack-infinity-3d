@@ -40,8 +40,6 @@ export type IconName =
   | 'popcap'
   // GCC actions
   | 'gift'
-  | 'dialectics'
-  | 'simulacra'
   // Command View plan tools
   | 'select'
   | 'node'
@@ -231,25 +229,12 @@ export const ICONS: Record<IconName, string> = {
     line('M2 20.5h20') +
     `<circle cx="12" cy="13" r="1.9" fill="currentColor"/>` +
     line('M8.6 20.5c0-2.5 1.5-4 3.4-4s3.4 1.5 3.4 4'),
-  // ── GCC actions ────────────────────────────────────────────────────────────
+  // ── Recruitment ────────────────────────────────────────────────────────────
   gift:
     soft('M4.5 11.5h15V21h-15z', '.2') +
     line('M3.5 8.5h17v3h-17zM12 8.5V21') +
     line('M12 8.5V2.8') +
     cloth('M12 2.8h5v3.4h-5z'),
-  dialectics:
-    line('M4.5 21V3M19.5 21V3') +
-    cloth('M4.5 3h5.5v4h-5.5z') +
-    `<path d="M19.5 3H14v4h5.5z" fill="var(--ic-flag, #ffd400)" fill-opacity=".35" stroke-width="1.2"/>` +
-    line('M8 13c2.5-2 5.5-2 8 0M15.6 10.6 16 13l-2.4.4') +
-    line('M16 17c-2.5 2-5.5 2-8 0M8.4 19.4 8 17l2.4-.4'),
-  simulacra:
-    line('M6 18V4.5') +
-    cloth('M6 4.5h5.5v4H6z') +
-    `<path d="M17 18V4.5" stroke-dasharray="2 2.2"/>` +
-    `<path d="M17 4.5h5v4h-5z" fill="var(--ic-flag, #ffd400)" fill-opacity=".4" stroke-width="1.2" stroke-opacity=".6"/>` +
-    `<circle cx="6" cy="20" r="1.6" fill="currentColor"/><circle cx="17" cy="20" r="1.6" fill="currentColor" fill-opacity=".35"/>` +
-    line('M8.5 20c1.4-1.6 2.6-1.6 3 0s1.6 1.6 3 0'),
   // ── Command View plan tools ────────────────────────────────────────────────
   select:
     soft('M5 3v15l3.8-3.4 2.7 6 2.6-1.2-2.7-5.9 5.1-.3z', '.3'),

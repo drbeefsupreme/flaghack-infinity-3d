@@ -28,6 +28,7 @@ import {
   facetInradius,
   facetPolygon,
   pieceBottom,
+  pieceGroundHeight,
   RAMP_THICKNESS,
   rampHighEdge,
   slotCenter,
@@ -305,6 +306,7 @@ function indexPiece(world: World, p: Piece): V3 {
   const lat = world.lattice;
   const st = econ(world);
   const centre = slotCenter(lat, p.kind, p.edge, p.facet, p.level, { x: 0, y: 0, z: 0 });
+  centre.y += world.collision.groundHeight(centre.x, centre.z);
   if (p.kind === 'wall') {
     st.edgeSlots.set(slotKey(p.edge, p.level), p.id);
     const e = lat.edges[p.edge];
@@ -320,8 +322,9 @@ function indexPiece(world: World, p: Piece): V3 {
 function registerPieceShapes(world: World, p: Piece): void {
   const lat = world.lattice;
   const col = world.collision;
-  const y0 = p.level * LEVEL_HEIGHT;
-  const top = (p.level + 1) * LEVEL_HEIGHT;
+  const base = pieceGroundHeight(world, p);
+  const y0 = base + p.level * LEVEL_HEIGHT;
+  const top = base + (p.level + 1) * LEVEL_HEIGHT;
   if (p.kind === 'wall') {
     const [ax, az, bx, bz] = wallSegment(lat, p.edge, SEG);
     const len = Math.hypot(bx - ax, bz - az);
@@ -340,7 +343,7 @@ function registerPieceShapes(world: World, p: Piece): void {
     if (p.level === 0) {
       for (let i = 0; i < 4; i++) {
         const [sx, sz] = stiltFoot(lat, p.facet, i, FOOT);
-        p.shapeIds.push(col.addCylinder(sx, sz, STILT_RADIUS, 0, top - DECK_THICKNESS, p.id));
+        p.shapeIds.push(col.addCylinder(sx, sz, STILT_RADIUS, col.groundHeight(sx, sz), top - DECK_THICKNESS, p.id));
       }
     }
     return;

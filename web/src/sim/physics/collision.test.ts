@@ -289,7 +289,7 @@ describe('CollisionWorld', () => {
       // Straight down onto the footprint centre: the first thing hit is this obstacle's top.
       const hit = w.raycast(o.x, 40, o.z, 0, -1, 0, 80);
       expect(hit?.tag, kind).toBe(-1 - o.id);
-      expect(hit?.y).toBeCloseTo(o.height, 6);
+      expect(hit?.y).toBeCloseTo(o.height + w.groundHeight(o.x, o.z), 6);
     }
   });
 
@@ -304,8 +304,8 @@ describe('CollisionWorld', () => {
     const run = walk(w, pos, c * 6, -s * 6, 14 / 6);
     expect(run.hitWall).toBe(false);
     expect(pos.x * c - pos.z * s).toBeGreaterThan(6);
-    expect(pos.y).toBe(0);
-    expect(w.supportHeight(0, 0, 10)).toBeCloseTo(shade.height, 6);
+    expect(pos.y).toBeCloseTo(w.groundHeight(pos.x, pos.z), 6);
+    expect(w.supportHeight(0, 0, 10)).toBeCloseTo(shade.height + 2, 6);
     // Straight at a corner pole: blocked.
     const px = 3.85 * c + 2.85 * s;
     const pz = -3.85 * s + 2.85 * c;
@@ -315,15 +315,15 @@ describe('CollisionWorld', () => {
     // Stage: walking into the deck front is blocked, a running jump lands on the deck.
     const front = { x: 40, y: 0, z: 8 };
     expect(walk(w, front, 0, -6, 1.5).hitWall).toBe(true);
-    expect(front.y).toBe(0);
-    const jumper = { x: 40, y: 0, z: 5.2 };
+    expect(front.y).toBeCloseTo(w.groundHeight(front.x, front.z), 6);
+    const jumper = { x: 40, y: w.groundHeight(40, 5.2), z: 5.2 };
     const vel: V3 = { x: 0, y: AVATAR.jumpSpeed, z: -AVATAR.runSpeed };
     for (let i = 0; i < 60; i++) {
       vel.y -= AVATAR.gravity * SIM_DT;
       vel.z = jumper.z > 1 ? -AVATAR.runSpeed : 0;
       w.moveCharacter(jumper, vel, SIM_DT, R, H, STEP);
     }
-    expect(jumper.y).toBeCloseTo(STAGE_DECK_HEIGHT, 6);
+    expect(jumper.y).toBeCloseTo(STAGE_DECK_HEIGHT + w.groundHeight(stage.x, stage.z), 6);
   });
 
   it('moves a character in ~200 nearby shapes within budget', () => {
@@ -359,5 +359,29 @@ describe('CollisionWorld', () => {
     expect(Number.isFinite(sink)).toBe(true);
     // Budget 0.05 ms; asserted loosely for noisy CI.
     expect(perCall).toBeLessThan(0.15);
+  });
+});
+
+describe('domed gameplay ground', () => {
+  it('uses the same two metre profile for support, walking and terrain rays', () => {
+    const layout = layoutOf([]);
+    const w = CollisionWorld.fromMap(layout);
+    expect(w.supportHeight(0, 0, 100)).toBe(2);
+    expect(w.supportHeight(layout.half, 0, 100)).toBe(0);
+    const hit = w.raycast(0, 5, 0, 0, -1, 0, 10)!;
+    expect(hit.shape).toBe(GROUND_SHAPE);
+    expect(hit.y).toBeCloseTo(2, 7);
+    expect(hit.ny).toBeCloseTo(1, 7);
+    const slope = w.raycast(-layout.half, 1, 0, 1, 0, 0, layout.half)!;
+    expect(slope.shape).toBe(GROUND_SHAPE);
+    expect(slope.y).toBeCloseTo(w.groundHeight(slope.x, slope.z), 7);
+    expect(slope.nx).toBeLessThan(0);
+    const pos = { x: -layout.half + 2, y: w.groundHeight(-layout.half + 2, 0), z: 0 };
+    const result = walk(w, pos, 8, 0, layout.half / 8);
+    expect(result.onGround).toBe(true);
+    expect(pos.y).toBeCloseTo(w.groundHeight(pos.x, pos.z), 6);
+    const descending = walk(w, pos, 8, 0, layout.half / 8 - 1);
+    expect(descending.onGround).toBe(true);
+    expect(pos.y).toBeCloseTo(w.groundHeight(pos.x, pos.z), 6);
   });
 });

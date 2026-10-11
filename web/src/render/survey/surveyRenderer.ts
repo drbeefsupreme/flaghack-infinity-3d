@@ -12,6 +12,7 @@
  * dynamic marker layers (decals, beams, sprites) from the feature controllers.
  */
 import * as THREE from 'three';
+import { groundHeight } from '../../sim/terrain';
 import { NEUTRAL_COLOR } from '../../sim/constants';
 import { gccActive } from '../../sim/systems/gcc';
 import type { GameEvent } from '../../sim/events';
@@ -74,7 +75,7 @@ export class SurveyRenderer implements RenderModule {
     const { scene, world, session } = ctx;
     this.data = new SurveyData(world);
     const d = this.data;
-    this.u = createSurveyUniforms({ node: d.nodeTex, aux: d.auxTex, edge: d.edgeTex, facet: d.facetTex });
+    this.u = createSurveyUniforms({ node: d.nodeTex, aux: d.auxTex, edge: d.edgeTex, facet: d.facetTex }, world.map.half);
     const palette = this.u.uFactionColor.value;
     for (let f = 0; f < 4; f++) palette[f].setHex(world.factions[f].color);
     palette[4].setHex(NEUTRAL_COLOR);
@@ -217,7 +218,7 @@ export class SurveyRenderer implements RenderModule {
     cam.getWorldDirection(this.viewDir);
     const ax = cam.position.x;
     const az = cam.position.z;
-    const t = this.viewDir.y < -0.05 ? Math.min(40, cam.position.y / -this.viewDir.y) : 20;
+    const t = this.viewDir.y < -0.05 ? Math.min(40, (cam.position.y - groundHeight(ax, az, this.ctx.world.map.half)) / -this.viewDir.y) : 20;
     const bx = ax + this.viewDir.x * t;
     const bz = az + this.viewDir.z * t;
     const r2 = COVERAGE_RADIUS * COVERAGE_RADIUS;

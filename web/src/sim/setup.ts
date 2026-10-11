@@ -278,7 +278,7 @@ function clearSpot(world: World, hearth: Building, gcc: Building, angle: number,
     const x = hearth.pos.x + Math.cos(a) * dist;
     const z = hearth.pos.z + Math.sin(a) * dist;
     if (dist2(x, z, gcc.pos.x, gcc.pos.z) < clearGcc * clearGcc || !world.nav.isWalkable(x, z)) continue;
-    if (world.collision.blockedCircle(x, z, radius, 0.1, AVATAR.height)) continue;
+    if (world.collision.blockedCircle(x, z, radius, world.collision.groundHeight(x, z) + 0.1, world.collision.groundHeight(x, z) + AVATAR.height)) continue;
     return { x, z };
   }
   return world.nav.nearestWalkable(hearth.pos.x + Math.cos(angle) * dist, hearth.pos.z + Math.sin(angle) * dist);

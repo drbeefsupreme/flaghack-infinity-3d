@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
+import { groundHeight } from '../../sim/terrain';
 import { rayCrystal } from '../../sim/crystalGeometry';
 import { CRYSTAL_HEIGHT } from '../../sim/constants';
 import { spawnCrystal } from '../../sim/factory';
@@ -43,7 +44,7 @@ describe('crystal scale rendering', () => {
     expect(bigDecal[3]).toBeCloseTo(decal[3] * 10);
     expect(s.prism.frustumCulled).toBe(false); expect(s.shard.frustumCulled).toBe(false);
     // Both shaders anchor at world ground; no elevated group/pivot can float the larger crystal.
-    expect(s.prism.material.vertexShader).toContain('vec3(iA.x, 0.0, iA.y) + p');
+    expect(s.prism.material.vertexShader).toContain('vec3(iA.x, fhGround(iA.xy), iA.y) + p');
     s.layer.dispose(); s.texture.dispose();
   });
 
@@ -71,18 +72,19 @@ describe('authoritative prism ray geometry', () => {
       expect(s.prism.material.uniforms.uCrystalTime.value).toBe(time);
       const a = s.prism.geometry.getAttribute('iA'), b = s.prism.geometry.getAttribute('iB');
       const height = a.getZ(0) * (.12 + .88 * b.getY(0)), radius = a.getW(0) * (.55 + .45 * b.getY(0));
+      const ground = groundHeight(s.c.pos.x, s.c.pos.z, s.world.map.half);
       const rotation = b.getX(0) + time * .12, cs = Math.cos(rotation), sn = Math.sin(rotation);
       const pos = s.prism.geometry.getAttribute('position'), vertices: number[] = [];
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i) * radius, z = pos.getZ(i) * radius;
-        vertices.push(a.getX(0) + x * cs - z * sn, pos.getY(i) * height, a.getY(0) + x * sn + z * cs);
+        vertices.push(a.getX(0) + x * cs - z * sn, ground + pos.getY(i) * height, a.getY(0) + x * sn + z * cs);
       }
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
       const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), mesh = new THREE.Mesh(geo, material); mesh.updateMatrixWorld(true);
       for (const y of [.05, .79, .95, 1.001]) for (const x of [0, .5, .99, 1.01]) {
-        const origin = new THREE.Vector3(s.c.pos.x + x * radius, y * height, s.c.pos.z - radius * 3), direction = new THREE.Vector3(0, 0, 1);
+        const origin = new THREE.Vector3(s.c.pos.x + x * radius, ground + y * height, s.c.pos.z - radius * 3), direction = new THREE.Vector3(0, 0, 1);
         const shown = new THREE.Raycaster(origin, direction, 0, 1000).intersectObject(mesh)[0]?.distance ?? null;
-        const authoritative = rayCrystal(s.c, time, origin, direction, 1000);
+        const authoritative = rayCrystal(s.c, time, origin, direction, 1000, s.world.map.half);
         if (shown === null) expect(authoritative).toBeNull();
         else expect(authoritative).toBeCloseTo(shown, 4);
       }

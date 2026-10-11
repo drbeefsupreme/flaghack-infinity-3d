@@ -5,12 +5,13 @@ import { solveBossEyeAim } from '../../bossEyeRig';
 import type { BossEyeQuaternion, BossEyeRay } from '../../bossEyeRig';
 import { AVATAR, BUILDING_HEIGHT, BUILDINGS, HIPPIE, LEVEL_HEIGHT } from '../../constants';
 import { angleDiff, clamp } from '../../math';
+import { groundHeight } from '../../terrain';
 import type { V3 } from '../../math';
 import type { Flag } from '../../types';
 import type { World } from '../../world';
 import { consumeBuilding } from '../boss';
 import { damageEntity } from '../combat';
-import { pieceBottom } from '../econ/pieceGeometry';
+import { pieceBottom, pieceGroundHeight } from '../econ/pieceGeometry';
 import { dropLoose } from '../flags';
 import { destroySceneryBlast } from '../scenery';
 import { segmentPointDistanceSquared, sweptBodyDistanceSquared } from './blastGeometry';
@@ -24,13 +25,13 @@ export { BOSS_EYE_HIPPIE_HEIGHT } from './eyeTargeting';
 
 export const cancelBossEye = clearBossEyeCharge;
 /** Exact actual pupil ray from the zero-breath idle head sample and shared offset-aware aim. */
-export function bossEyeRay(_world: World, boss: BossState): BossEyeRay {
+export function bossEyeRay(world: World, boss: BossState): BossEyeRay {
   const head = sampleBossHeadPose(boss, boss.spawnedAt), c = Math.cos(boss.yaw), s = Math.sin(boss.yaw);
-  const position = { x: boss.pos.x + c * head.position.x + s * head.position.z, y: head.position.y,
+  const position = { x: boss.pos.x + c * head.position.x + s * head.position.z, y: groundHeight(boss.pos.x, boss.pos.z, world.map.half) + head.position.y,
     z: boss.pos.z - s * head.position.x + c * head.position.z };
   const half = boss.yaw / 2, sy = Math.sin(half), cy = Math.cos(half), q = head.quaternion;
   const rotation: BossEyeQuaternion = [cy * q[0] + sy * q[2], cy * q[1] + sy * q[3], cy * q[2] - sy * q[0], cy * q[3] - sy * q[1]];
-  const target = boss.eye.target ?? { x: position.x + s * 50, y: 0, z: position.z + c * 50 };
+  const target = boss.eye.target ?? { x: position.x + s * 50, y: groundHeight(position.x + s * 50, position.z + c * 50, world.map.half), z: position.z + c * 50 };
   return solveBossEyeAim(position, rotation, target);
 }
 
@@ -127,18 +128,19 @@ function flagInside(world: World, at: V3, flag: Flag, from: V3 | null): V3 | nul
   let pos: V3 = flag.pos;
   if (flag.state === 'stock') {
     const building = world.buildings.get(flag.holder);
-    if (building) pos = { ...building.pos, y: 0 };
+    if (building) pos = { ...building.pos, y: groundHeight(building.pos.x, building.pos.z, world.map.half) };
   } else if (flag.state === 'carried') {
     const avatar = world.avatars.get(flag.holder), hippie = world.hippies.get(flag.holder);
     if (avatar) pos = avatar.pos;
-    else if (hippie) pos = { ...hippie.pos, y: hippie.airborne?.y ?? 0 };
+    else if (hippie) pos = { ...hippie.pos, y: groundHeight(hippie.pos.x, hippie.pos.z, world.map.half) + (hippie.airborne?.y ?? 0) };
   } else if (flag.state === 'flying') {
     for (const projectile of world.projectiles.values()) if (projectile.flagId === flag.id) { pos = projectile.pos; break; }
   }
   if (pointInside(at, pos, from)) return { ...pos };
   if (flag.state !== 'planted' || flag.altNode < 0) return null;
   const twin = world.lattice.nodes[flag.altNode];
-  return twin && pointInside(at, { ...twin, y: 0 }, from) ? { x: twin.x, y: 0, z: twin.z } : null;
+  const y = twin ? groundHeight(twin.x, twin.z, world.map.half) : 0;
+  return twin && pointInside(at, { ...twin, y }, from) ? { x: twin.x, y, z: twin.z } : null;
 }
 
 /** One impact sphere (or continuous surface sweep). Each actor takes 1,000 once per beam;
@@ -149,11 +151,11 @@ export function blastBossEye(world: World, boss: BossState, at: V3, from: V3 | n
   // Capture contents before KO scatter or structure removal changes their positions.
   const hitFlags = new Map<number, V3>();
   for (const flag of world.flags.values()) { if (knocked.has(flag.id)) continue; const pos = flagInside(world, at, flag, from); if (pos) hitFlags.set(flag.id, pos); }
-  const buildings = [...world.buildings.values()].filter(b => b.hp > 0 && !damaged.has(b.id) && bodyInside(at, b.pos.x, b.pos.z, 0, BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius, from));
+  const buildings = [...world.buildings.values()].filter(b => b.hp > 0 && !damaged.has(b.id) && bodyInside(at, b.pos.x, b.pos.z, groundHeight(b.pos.x, b.pos.z, world.map.half), groundHeight(b.pos.x, b.pos.z, world.map.half) + BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius, from));
   // A destroyed storage structure spills recoverable Flags as well. Detach before
   // consumeBuilding's ordinary eating lifecycle would remove the held contents.
   for (const b of buildings) if (b.kind !== 'hearth' && b.hp <= BOSS_EYE_DAMAGE) {
-    for (const flag of world.flags.values()) if (flag.holder === b.id) hitFlags.set(flag.id, { ...b.pos, y: 0 });
+    for (const flag of world.flags.values()) if (flag.holder === b.id) hitFlags.set(flag.id, { ...b.pos, y: groundHeight(b.pos.x, b.pos.z, world.map.half) });
   }
   for (const [id, pos] of hitFlags) { dropLoose(world, id, pos); knocked.add(id); }
   for (const projectile of [...world.projectiles.values()]) if (hitFlags.has(projectile.flagId)) world.projectiles.delete(projectile.id);
@@ -171,7 +173,7 @@ export function blastBossEye(world: World, boss: BossState, at: V3, from: V3 | n
     damageEntity(world, a.id, BOSS_EYE_DAMAGE, boss.id);
   }
   for (const h of world.hippies.values()) {
-    const y = h.airborne?.y ?? 0;
+    const y = groundHeight(h.pos.x, h.pos.z, world.map.half) + (h.airborne?.y ?? 0);
     if (h.status !== 'ko' && !damaged.has(h.id) && bodyInside(at, h.pos.x, h.pos.z, y, y + BOSS_EYE_HIPPIE_HEIGHT, HIPPIE.radius, from)) { damaged.add(h.id); damageEntity(world, h.id, BOSS_EYE_DAMAGE, boss.id); }
   }
   for (const building of buildings) {
@@ -180,7 +182,7 @@ export function blastBossEye(world: World, boss: BossState, at: V3, from: V3 | n
     // Other buildings are permanently removed only when this 1,000-damage hit is lethal.
     building.hp = Math.max(building.kind === 'hearth' ? 1 : 0, building.hp - BOSS_EYE_DAMAGE);
     world.emit({ t: 'hit', target: building.id, by: boss.id, amount: BOSS_EYE_DAMAGE,
-      pos: { ...building.pos, y: BUILDING_HEIGHT[building.kind] / 2 } });
+      pos: { ...building.pos, y: groundHeight(building.pos.x, building.pos.z, world.map.half) + BUILDING_HEIGHT[building.kind] / 2 } });
     if (building.hp <= 0) consumeBuilding(world, building, true);
   }
   const reach = { x: 0, z: 0, dist: 0 };
@@ -188,7 +190,8 @@ export function blastBossEye(world: World, boss: BossState, at: V3, from: V3 | n
     if (damaged.has(piece.id)) continue;
     const distance = sweptBodyDistanceSquared(from, at, (x, y, z) => {
       pieceClosest(world, piece, x, z, reach);
-      const dy = Math.max(pieceBottom(piece.kind, piece.level) - y, 0, y - (piece.level + 1) * LEVEL_HEIGHT);
+      const ground = pieceGroundHeight(world, piece);
+      const dy = Math.max(ground + pieceBottom(piece.kind, piece.level) - y, 0, y - ground - (piece.level + 1) * LEVEL_HEIGHT);
       return reach.dist ** 2 + dy ** 2;
     });
     if (distance <= radius2 + 1e-9) { damaged.add(piece.id); damageEntity(world, piece.id, BOSS_EYE_DAMAGE, boss.id); }

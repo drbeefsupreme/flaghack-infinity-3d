@@ -1,6 +1,7 @@
+import { groundHeight } from '../sim/terrain';
 import { describe, expect, it } from 'vitest';
 import { bossFixture } from '../../tests/bossFixture';
-import { AVATAR, SIM_DT } from '../sim/constants';
+import { AVATAR, MAP_HALF, SIM_DT } from '../sim/constants';
 import { spawnHippie } from '../sim/factory';
 import { normalizeMatch } from '../sim/matchSettings';
 import { CollisionWorld } from '../sim/physics/collision';
@@ -23,10 +24,10 @@ function fixture(crouched = false) {
     retaliateId: null, retaliateUntil: 0, objectiveAltarId: world.hearthOf(0)!.id });
   world.boss.eye.nextFireAt = Infinity;
   // The real command, throw and projectile pipeline, with scenery controlled per scenario.
-  world.collision = new CollisionWorld();
+  world.collision = new CollisionWorld(MAP_HALF, true);
   world.hippies.clear();
   const av = world.avatarOf(1);
-  av.pos = { x: 5, y: 0, z: 24 }; av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
+  av.pos = grounded({ x: 5, y: 0, z: 24 }); av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
   world.drainEvents();
   return { world, av, boss: world.boss, ai: createAi(world, [1]), sim: new Simulation(world) };
 }
@@ -78,6 +79,7 @@ describe('rival AI throws real Flags at the cooperative boss', () => {
       f.boss.yaw = .65;
       f.av.pos.x = f.boss.pos.x + Math.sin(angle) * distance;
       f.av.pos.z = f.boss.pos.z + Math.cos(angle) * distance;
+      f.av.pos.y = groundHeight(f.av.pos.x, f.av.pos.z, MAP_HALF);
       const { events } = shootOnce(f);
       expect(events.filter(e => e.t === 'bossImpact')).toHaveLength(1);
     }
@@ -140,7 +142,7 @@ describe('rival AI throws real Flags at the cooperative boss', () => {
     ai.update(); applyCommands(world);
     expect(world.projectiles.size).toBe(0);
     expect(Math.hypot(av.input.moveX, av.input.moveZ)).toBeGreaterThan(0);
-    av.pos = { x: boss.pos.x, y: 0, z: boss.pos.z + 6 };
+    av.pos = grounded({ x: boss.pos.x, y: 0, z: boss.pos.z + 6 });
     const ally = world.avatarOf(0); ally.pos = { x: av.pos.x, y: 0, z: av.pos.z - 1 };
     const hp = boss.hp, allyHp = ally.hp;
     ai.update(); sim.step();
@@ -204,3 +206,5 @@ describe('rival AI throws real Flags at the cooperative boss', () => {
     expect(f.ai.inspect(1)!.view.at).toBe(f.world.time);
   });
 });
+
+function grounded(p: { x: number; y: number; z: number }) { return { ...p, y: p.y + groundHeight(p.x, p.z, MAP_HALF) }; }

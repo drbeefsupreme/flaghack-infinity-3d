@@ -1,3 +1,5 @@
+import { groundHeight } from '../../../../sim/terrain';
+import { MAP_HALF } from '../../../../sim/constants';
 import * as fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -293,12 +295,12 @@ describe('approved-rig combat presentation', () => {
         quality: 'low', renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280,720) }, camera: { fov: 60 } }, uniforms: { uFogColor: { value: new THREE.Color() } } } as unknown as EnvContext;
     const r = new BossReveal(e, model); await r.ready; expect(r.loadError).toBeNull(); r.update(102);
     const body = e.root.getObjectByName('boss-model-32m')!;
-    expect(body.position.toArray()).toEqual([12,0,-7]); expect(body.rotation.y).toBe(.7);
+    expect(body.position.toArray()).toEqual([12,groundHeight(12,-7,MAP_HALF),-7]); expect(body.rotation.y).toBe(.7);
     // No collision-flash history is needed while the footprint is adjacent to this loop.
     expect(b.barrier).toBeNull(); r.update(102);
     const shield = e.root.getObjectByName('boss-faction-forcefield') as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
     expect(shield.visible).toBe(true); expect(shield.material.uniforms.uColor.value.getHex()).toBe(0x12bd45);
-    expect(shield.position.y).toBeCloseTo(7.5 * BOSS_GAMEPLAY_SCALE);
+    expect(shield.position.y).toBeCloseTo(groundHeight(shield.position.x + e.ctx.world.map.effigy.x, shield.position.z + e.ctx.world.map.effigy.z, MAP_HALF) + 7.5 * BOSS_GAMEPLAY_SCALE);
     const plane = shield.geometry as THREE.PlaneGeometry;
     expect(plane.parameters.width).toBe(10 * BOSS_GAMEPLAY_SCALE); expect(plane.parameters.height).toBe(20 * BOSS_GAMEPLAY_SCALE);
     expect(e.root.getObjectByName('boss-death-crater')!.scale.x).toBeCloseTo(.65 * BOSS_GAMEPLAY_SCALE);

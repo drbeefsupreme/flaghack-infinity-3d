@@ -78,11 +78,15 @@ function doomed(world: World, p: Piece): boolean {
 }
 
 /** Collision and nav answers the client relies on, probed at one spot. */
-function probe(world: World, x: number, y: number, z: number): string {
+function probe(world: World, x: number, y: number, z: number) {
   const hit = world.collision.raycast(x, y + 6, z, 0, -1, 0, 12);
-  const hitText = hit ? `${hit.tag}@${hit.y.toFixed(4)}` : 'miss';
   const blocked = world.collision.blockedCircle(x, z, 0.3, Math.max(0, y - 0.5), y + 0.5);
-  return `${hitText} ${blocked} ${world.nav.isWalkable(x, z)}`;
+  return { tag: hit?.tag, y: hit?.y ?? 0, blocked, walkable: world.nav.isWalkable(x, z) };
+}
+
+/** Millimetre wire quantization in XZ perturbs a domed anchor height by <0.1 mm. */
+function sameProbe(a: ReturnType<typeof probe>, b: ReturnType<typeof probe>): boolean {
+  return a.tag === b.tag && Math.abs(a.y - b.y) < .001 && a.blocked === b.blocked && a.walkable === b.walkable;
 }
 
 /** Every replicated difference between the host world and a mirror (empty: equal). */
@@ -158,7 +162,7 @@ function differences(host: World, mirror: World, opts: { doomedPieces: boolean }
   for (const b of host.buildings.values()) {
     const a = probe(host, b.pos.x, 1, b.pos.z);
     const m = probe(mirror, b.pos.x, 1, b.pos.z);
-    if (a !== m) note(`building ${b.id} (${b.kind}) collision/nav: host ${a} mirror ${m}`);
+    if (!sameProbe(a, m)) note(`building ${b.id} (${b.kind}) collision/nav: host ${JSON.stringify(a)} mirror ${JSON.stringify(m)}`);
   }
   for (const p of host.pieces.values()) {
     if (!opts.doomedPieces && doomed(host, p)) continue;
@@ -167,7 +171,7 @@ function differences(host: World, mirror: World, opts: { doomedPieces: boolean }
     if (!at || !mp) continue;
     const a = probe(host, at.x, at.y, at.z);
     const m = probe(mirror, at.x, at.y, at.z);
-    if (a !== m) note(`piece ${p.id} (${p.kind} L${p.level}) collision/nav: host ${a} mirror ${m}`);
+    if (!sameProbe(a, m)) note(`piece ${p.id} (${p.kind} L${p.level}) collision/nav: host ${JSON.stringify(a)} mirror ${JSON.stringify(m)}`);
   }
   return out;
 }

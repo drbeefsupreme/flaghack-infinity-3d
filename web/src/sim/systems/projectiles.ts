@@ -55,10 +55,10 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
   let t = 1;
   let ground = false;
   if (hit) t = hit.dist / len;
-  else if (oy + dy <= 0) {
-    // Numerical graze past the ground plane: land where the segment crosses y = 0.
+  else if (oy + dy <= world.collision.groundHeight(ox + dx, oz + dz)) {
+    // Numerical graze past terrain: clamp to the local surface.
     ground = true;
-    t = dy < 0 ? clamp(oy / -dy, 0, 1) : 1;
+    t = dy < 0 ? clamp((oy - world.collision.groundHeight(ox + dx, oz + dz)) / -dy, 0, 1) : 1;
   }
   const impact = world.boss ? intersectBossRegions(world.boss, world.time,
     { x: ox, y: oy, z: oz }, { x: ox + dx, y: oy + dy, z: oz + dz }, t) : null;
@@ -97,7 +97,7 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
     return;
   }
   if (ground) {
-    land(world, p, ox + dx * t, 0, oz + dz * t);
+    land(world, p, ox + dx * t, world.collision.groundHeight(ox + dx * t, oz + dz * t), oz + dz * t);
     return;
   }
   p.pos.x = ox + dx;
@@ -145,7 +145,7 @@ function hippieOnSegment(
     const cx = ox + dx * t - hx;
     const cz = oz + dz * t - hz;
     if (cx * cx + cz * cz > r * r) continue;
-    const y = oy + dy * t;
+    const y = oy + dy * t - world.collision.groundHeight(hx, hz) - (h.airborne?.y ?? 0);
     if (y < 0 || y > PROJECTILE.hippieHitHeight || t >= bestT) continue;
     bestT = t;
     best = h;

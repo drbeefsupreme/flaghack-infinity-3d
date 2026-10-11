@@ -15,7 +15,7 @@ function cartFits(world: World, g: Building, x: number, z: number): boolean {
   const r = BUILDINGS.gcc.radius;
   const lim = MAP_HALF - r;
   if (Math.abs(x) > lim || Math.abs(z) > lim) return false;
-  return !world.collision.blockedCircle(x, z, r, CART_Y0, CART_Y1, g.id);
+  return !world.collision.blockedCircle(x, z, r, world.collision.groundHeight(x, z) + CART_Y0, world.collision.groundHeight(x, z) + CART_Y1, g.id);
 }
 
 /**

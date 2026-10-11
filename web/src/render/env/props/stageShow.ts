@@ -9,6 +9,7 @@
  */
 import * as THREE from 'three';
 import { hash01 } from '../../../sim/rng';
+import { terrainHeight } from '../terrain';
 import type { EnvContext } from '../envTypes';
 import type { StageRig } from './stages';
 
@@ -369,20 +370,20 @@ export class StageShow {
       const w = r.stage.hx + 16;
       const z0 = r.stage.hz + 0.15;
       const z1 = r.stage.hz + 27;
-      const corners = [
-        [-w, z0, 0, 0],
-        [w, z0, 1, 0],
-        [w, z1, 1, 1],
-        [-w, z1, 0, 1],
-      ];
-      const base = s * 4;
-      for (const [x, z, u, v] of corners) {
-        p.set(x, 0.05, z).applyMatrix4(r.stage.frame);
-        pos.push(p.x, p.y, p.z);
+      // Subdivision follows the curved meadow instead of cutting a flat light quad through it.
+      const steps = 12;
+      const base = pos.length / 3;
+      for (let j = 0; j <= steps; j++) for (let i = 0; i <= steps; i++) {
+        const u = i / steps, v = j / steps;
+        p.set(-w + 2 * w * u, 0, z0 + (z1 - z0) * v).applyMatrix4(r.stage.frame);
+        pos.push(p.x, terrainHeight(p.x, p.z, this.env.ctx.world.map.half) + 0.05, p.z);
         stage.push(s);
         local.push(u, v);
       }
-      index.push(base, base + 2, base + 1, base, base + 3, base + 2);
+      for (let j = 0; j < steps; j++) for (let i = 0; i < steps; i++) {
+        const a = base + j * (steps + 1) + i, b = a + steps + 1;
+        index.push(a, b, a + 1, a + 1, b, b + 1);
+      }
     });
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -444,7 +445,7 @@ export class StageShow {
         tmpDir.normalize();
         const o = st.fixtures[k];
         const i = r.first + k;
-        const len = tmpDir.y < -0.02 ? Math.min(MAX_LEN, (o.y - 0.05) / -tmpDir.y) : MAX_LEN;
+        const len = tmpDir.y < -0.02 ? Math.min(MAX_LEN, (o.y - terrainHeight(o.x, o.z, this.env.ctx.world.map.half) - 0.05) / -tmpDir.y) : MAX_LEN;
         this.pos[i * 4] = o.x;
         this.pos[i * 4 + 1] = o.y;
         this.pos[i * 4 + 2] = o.z;

@@ -55,7 +55,7 @@ void main() {
   p.xz = vec2(p.x * cs - p.z * sn, p.x * sn + p.z * cs);
   vec3 n = normal;
   n.xz = vec2(n.x * cs - n.z * sn, n.x * sn + n.z * cs);
-  vec3 wp = vec3(iA.x, 0.0, iA.y) + p;
+  vec3 wp = vec3(iA.x, fhGround(iA.xy), iA.y) + p;
   vec4 mv = viewMatrix * vec4(wp, 1.0);
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
@@ -143,6 +143,7 @@ void main() {
   n.xz = vec2(n.x * c1 - n.z * s1, n.x * s1 + n.z * c1);
   p.xy = vec2(p.x * c2 - p.y * s2, p.x * s2 + p.y * c2);
   n.xy = vec2(n.x * c2 - n.y * s2, n.x * s2 + n.y * c2);
+  c.y += fhGround(iA.xy);
   vec3 wp = c + p;
   vec4 mv = viewMatrix * vec4(wp, 1.0);
   gl_Position = projectionMatrix * mv;

@@ -1,6 +1,6 @@
 /**
  * Player-facing names, short rule summaries and icon choices for every game noun the UI
- * shows (chakras, drugs, tools, buildings, GCC actions, plan tools, jobs, hippie statuses,
+ * shows (chakras, drugs, tools, buildings, plan tools, jobs, hippie statuses,
  * Hearth stages, difficulty, keymap). Numbers come from sim/constants so tooltips never
  * drift from the rules; prose lives here so panels stay layout-only.
  */
@@ -18,7 +18,6 @@ import {
   DRUG_MAX,
   DRUM_RITUAL_PER_SEC,
   DRUMMERS_PER_CIRCLE,
-  GCC,
   HIPPIE,
   HIPPIE_AI,
   LIGHTNING_PULL_MULT,
@@ -38,14 +37,12 @@ import {
 import { ABILITY_NAMES, CHAKRA_NAMES } from '../sim/systems/abilities';
 import { BUILDING_NAMES } from '../sim/systems/buildings';
 import { DRUG_NAMES } from '../sim/systems/drugs';
-import { GCC_ACTION_NAMES } from '../sim/systems/gcc';
 import type {
   AbilityId,
   CaptureStage,
   ChakraId,
   Difficulty,
   DrugId,
-  GccAction,
   HippieStatus,
   JobKind,
 } from '../sim/types';
@@ -172,7 +169,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     key: '7',
     name: DRUG_NAMES.dust,
     duration: DRUG.duration.dust,
-    effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points, strain and enemy Simulacra. Your throws snap to nodes up to ${AVATAR.throwSnapRadiusDust} m away.`,
+    effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points and strain. Your throws snap to nodes up to ${AVATAR.throwSnapRadiusDust} m away.`,
     risk: `The screen distorts, the minimap fills with noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} False Flags appear that are not there.`,
     icon: 'dust',
     target: 'drug-7',
@@ -245,32 +242,6 @@ export const TOOL_INFO: readonly ToolInfo[] = [
   { tool: 'building', key: 'B', name: 'Camp building', cost: 0, icon: 'workshop', target: 'tool-building' },
 ];
 
-export interface GccInfo {
-  name: string;
-  cooldown: number;
-  effect: string;
-  icon: IconName;
-  /** Training Burn highlight id of its Command Table button. */
-  target: TutorialTarget;
-}
-
-export const GCC_INFO: Record<GccAction, GccInfo> = {
-  dialectics: {
-    name: GCC_ACTION_NAMES.dialectics,
-    cooldown: GCC.dialecticsCooldown,
-    effect: `At your cart: a ${GCC.dialecticsChannel} s debate converts up to ${GCC.dialecticsMax} enemy Signifiers within ${GCC.dialecticsRadius} m.`,
-    icon: 'dialectics',
-    target: 'gcc-dialectics',
-  },
-  simulacra: {
-    name: GCC_ACTION_NAMES.simulacra,
-    cooldown: GCC.simulacraCooldown,
-    effect: `At your cart: spend 1 Flag to plant it on two nodes at once. When an enemy comes within ${GCC.simulacraObserveRadius} m of either, it collapses onto one.`,
-    icon: 'simulacra',
-    target: 'gcc-simulacra',
-  },
-};
-
 export const RETRANSMIT_INFO = {
   name: 'TAKE A SHOT',
   cooldown: RETRANSMIT_COOLDOWN,
@@ -306,7 +277,7 @@ export const PLAN_TOOLS: readonly PlanToolInfo[] = [
     icon: 'pentacle',
     target: 'plan-pentacle',
   },
-  { tool: 'ring', key: 'R', name: 'Ring', hint: 'Plan a wider ring around your home Survey.', icon: 'ring', target: 'plan-ring' },
+  { tool: 'ring', key: 'R', name: 'Expand home', hint: 'Enclose: plan a wider ring around your home Survey.', icon: 'ring', target: 'plan-ring' },
   { tool: 'clear', key: '⌫', name: 'Clear', hint: 'Erase your whole Survey plan.', icon: 'clear' },
 ];
 
@@ -433,7 +404,7 @@ export const KEYMAP: readonly KeyGroup[] = [
       ['Q', 'Throw a Flag'],
       ['RMB hold', 'Aim a throw (LMB throws)'],
       ['E', 'Plant · hold to pull · tap a Beacon'],
-      ['E at GCC', 'Command Table (hold to push the cart)'],
+      ['Hold E at GCC', 'Push the cart'],
     ],
   },
   {
@@ -466,7 +437,7 @@ export const KEYMAP: readonly KeyGroup[] = [
       ['Wheel', 'Zoom'],
       ['LMB drag', 'Box-select Signifiers (Shift adds)'],
       ['RMB', 'Context order · Ctrl+RMB defend here'],
-      ['N E P R', 'Node · Enclose · Pentacle · Ring'],
+      ['N E P R', 'Node · Enclose · Pentacle · Expand home'],
       ['Backspace', 'Clear the Survey plan'],
       ['Esc', 'Select tool · back to action'],
     ],

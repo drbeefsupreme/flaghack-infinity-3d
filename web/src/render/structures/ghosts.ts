@@ -96,7 +96,7 @@ export class GhostRenderer {
     if (isPieceKind(ghost.kind)) {
       const ok = ghost.kind === 'wall' ? ghost.edge >= 0 && ghost.edge < lat.edges.length : ghost.facet >= 0 && ghost.facet < lat.facets.length;
       if (!ok) return;
-      const variant = pieceSlotMatrix(lat, ghost.kind, ghost.edge, ghost.facet, ghost.level, ghost.rampEdge, 1, this.m);
+      const variant = pieceSlotMatrix(lat, ghost.kind, ghost.edge, ghost.facet, ghost.level, ghost.rampEdge, 1, this.m, f.world.map.half);
       const model = ghost.kind === 'wall' ? this.models.wall : ghost.kind === 'floor' ? this.models.decks[variant] : this.models.ramps[variant];
       let i = 0;
       for (const geom of model.values()) {

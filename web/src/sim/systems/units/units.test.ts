@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR, HIPPIE, LEVEL_HEIGHT, SIM_DT } from '../../constants';
+import { AVATAR, HIPPIE, LEVEL_HEIGHT, MAP_HALF, SIM_DT } from '../../constants';
 import type { GameEvent } from '../../events';
 import { spawnFlag, spawnHippie, spawnZone } from '../../factory';
 import { planEnclosure } from '../../lattice/planner';
 import type { V3 } from '../../math';
+import { groundHeight } from '../../terrain';
 import { normalizeMatch } from '../../matchSettings';
 import { createMatch } from '../../setup';
 import { Simulation } from '../../simulation';
@@ -53,7 +54,7 @@ function onlyJob(m: Match, f: FactionId, job: JobKind): void {
 
 function placeAvatar(av: Avatar, x: number, z: number): void {
   av.pos.x = x;
-  av.pos.y = 0;
+  av.pos.y = groundHeight(x, z, MAP_HALF);
   av.pos.z = z;
   av.vel.x = 0;
   av.vel.y = 0;
@@ -81,8 +82,9 @@ function throwRange(av: Avatar, yaw: number, pitch: number): number {
   for (let i = 0; i < 600; i++) {
     v.y -= AVATAR.gravity * SIM_DT;
     const ny = p.y + v.y * SIM_DT;
-    if (ny <= 0) {
-      const t = p.y / (p.y - ny);
+    const ground = groundHeight(p.x + v.x * SIM_DT, p.z + v.z * SIM_DT, MAP_HALF);
+    if (ny <= ground) {
+      const t = (p.y - ground) / (p.y - ny);
       return Math.hypot(p.x + v.x * SIM_DT * t - av.pos.x, p.z + v.z * SIM_DT * t - av.pos.z);
     }
     p.x += v.x * SIM_DT;
@@ -190,10 +192,10 @@ describe('vexillomancer avatar', () => {
       stepAvatarMotion(m.world, av, cmd, SIM_DT);
       expect(av.vel.y).toBeCloseTo(AVATAR.jumpSpeed * Math.sqrt(jumpHeight) - AVATAR.gravity * SIM_DT);
       cmd.jump = false;
-      let peak = av.pos.y;
+      let peak = av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF);
       for (let i = 0; i < 120; i++) {
         stepAvatarMotion(m.world, av, cmd, SIM_DT);
-        peak = Math.max(peak, av.pos.y);
+        peak = Math.max(peak, av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF));
       }
       expect(av.onGround).toBe(true);
       peaks.push(peak);
@@ -215,7 +217,7 @@ describe('vexillomancer avatar', () => {
     input(m, 0, { moveX: -oz / ol, moveZ: ox / ol, yaw: Math.atan2(-oz, ox) });
     run(m, 1);
     expect(Math.hypot(av.pos.x - x0, av.pos.z - z0)).toBeGreaterThan(6);
-    expect(av.pos.y).toBe(0);
+    expect(av.pos.y).toBeCloseTo(groundHeight(av.pos.x, av.pos.z, MAP_HALF), 8);
 
     input(m, 0, { jump: true });
     run(m, SIM_DT);
@@ -223,7 +225,7 @@ describe('vexillomancer avatar', () => {
     let peak = 0;
     let airborne = false;
     run(m, 1.2, () => {
-      peak = Math.max(peak, av.pos.y);
+      peak = Math.max(peak, av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF));
       if (!av.onGround) airborne = true;
       return false;
     });
@@ -231,7 +233,7 @@ describe('vexillomancer avatar', () => {
     // v² / 2g = 7.5² / 48 ≈ 1.17 m
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThan(1.3);
-    expect(av.pos.y).toBe(0);
+    expect(av.pos.y).toBeCloseTo(groundHeight(av.pos.x, av.pos.z, MAP_HALF), 8);
     expect(av.onGround).toBe(true);
   });
 
@@ -400,9 +402,9 @@ describe('vexillomancer avatar', () => {
       copy.pushing = av.pushing;
       stepAvatarMotion(world, copy, inp, SIM_DT);
       expect({ tick: i, motion: motion(copy) }).toEqual({ tick: i, motion: motion(av) });
-      peak = Math.max(peak, av.pos.y);
+      peak = Math.max(peak, av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF));
       if (av.pos.y > 2.5 && !av.onGround) airborneHigh = true;
-      if (peak > 3 && av.pos.y === 0 && av.onGround) landedAfterDeck = true;
+      if (peak > 3 && Math.abs(av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF)) < 1e-8 && av.onGround) landedAfterDeck = true;
     };
 
     for (let i = 0; i < 300; i++) {

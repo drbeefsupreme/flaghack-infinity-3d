@@ -1,3 +1,4 @@
+import { groundHeight } from '../../terrain';
 import type { EntityId } from '../../types';
 import type { World } from '../../world';
 import { clearBossEyeCharge } from '../../boss';
@@ -10,7 +11,7 @@ export function damageBoss(world: World, amount: number, by: EntityId | -1): boo
   const boss = world.boss;
   if (!boss || boss.hp <= 0 || amount <= 0 || world.phase !== 'playing') return false;
   boss.hp = Math.max(0, boss.hp - amount);
-  world.emit({ t: 'hit', target: boss.id, by, amount, pos: { x: boss.pos.x, y: 4, z: boss.pos.z } });
+  world.emit({ t: 'hit', target: boss.id, by, amount, pos: { x: boss.pos.x, y: groundHeight(boss.pos.x, boss.pos.z, world.map.half) + 4, z: boss.pos.z } });
   const attacker = world.avatars.get(by);
   if (attacker && world.factions[attacker.faction].alive) {
     const next = typeof world.scratch.bossRetaliateAfter === 'number' ? world.scratch.bossRetaliateAfter : 0;

@@ -454,7 +454,7 @@ export class TableMap {
     g.fillStyle = INK;
     g.fillText('SURVEY OF THE BURN', S / 2, S * 0.09);
     g.font = `400 ${Math.round(10 * lw)}px "Cinzel"`;
-    g.fillText('Geomantic Command Center \u00b7 Flag Simulacra & Ley', S / 2, S * 0.09 + 17 * lw);
+    g.fillText('Geomantic Command Center \u00b7 Survey & Ley', S / 2, S * 0.09 + 17 * lw);
     this.compass(g, S / 2, S * 0.9, 20 * lw);
 
     // Burnt, darkened rim.

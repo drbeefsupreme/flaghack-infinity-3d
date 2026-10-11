@@ -117,7 +117,7 @@ describe('Effigy crater crystal', () => {
     const flag = [...w.flags.values()].find(f => f.owner === 1 && f.state === 'planted')!;
     const c = spawnCrystal(w, focus.id, 1, [flag.node]); c.growth = 1;
     const rate = defendedPullRate(w, flag, 0, true);
-    expect(w.drainEvents().find(e => e.t === 'crystalLightning')).toMatchObject({ from: { y: CRYSTAL_HEIGHT * 10 } });
+    expect(w.drainEvents().find(e => e.t === 'crystalLightning')).toMatchObject({ from: { y: w.collision.groundHeight(c.pos.x, c.pos.z) + CRYSTAL_HEIGHT * 10 } });
     c.scale = 1;
     expect(defendedPullRate(w, flag, 0, true)).toBe(rate);
   });

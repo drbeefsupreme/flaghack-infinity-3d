@@ -1,6 +1,7 @@
+import { groundHeight } from '../sim/terrain';
 import { describe, expect, it } from 'vitest';
 import { bossFixture } from '../../tests/bossFixture';
-import { AVATAR, SIM_DT } from '../sim/constants';
+import { AVATAR, MAP_HALF, SIM_DT } from '../sim/constants';
 import { normalizeMatch } from '../sim/matchSettings';
 import { CollisionWorld } from '../sim/physics/collision';
 import { createMatch } from '../sim/setup';
@@ -15,9 +16,9 @@ const input = { moveX: 1, moveZ: 0, yaw: Math.PI / 2, pitch: 0, sprint: true, ju
 function setup() {
   const w = createMatch({ seed: 'boss-player-net', difficulty: 'normal', humans: [0, 1], mode: 'standard',
     match: normalizeMatch({ maxSignifiers: 0 }) });
-  w.time = 100; w.effigyRevealedAt = 90; w.collision = new CollisionWorld();
+  w.time = 100; w.effigyRevealedAt = 90; w.collision = new CollisionWorld(MAP_HALF, true);
   w.boss = bossFixture(); Object.assign(w.boss, { pos: { x: 0, z: 0 }, yaw: 0, crouched: false, action: 'idle', actionAt: 95 });
-  const avatar = w.avatarOf(0); avatar.pos = { x: -8, y: 0, z: 0 }; avatar.vel = { x: 0, y: 0, z: 0 };
+  const avatar = w.avatarOf(0); avatar.pos = grounded({ x: -8, y: 0, z: 0 }); avatar.vel = { x: 0, y: 0, z: 0 };
   avatar.onGround = true;
   return w;
 }
@@ -29,7 +30,7 @@ describe('network boss player collision', () => {
       const enc = new SnapshotEncoder(host), avatar = host.avatarOf(0);
       const peers = [0, 1].map(() => {
         const mirror = NetMirror.create(host.options, wire(enc.full()));
-        mirror.world.collision = new CollisionWorld();
+        mirror.world.collision = new CollisionWorld(MAP_HALF, true);
         mirror.setPredicted(avatar.id);
         const predict = new AvatarPredictor(mirror.world, avatar.id, 'player');
         predict.frame(mirror, 0, 1);
@@ -46,7 +47,7 @@ describe('network boss player collision', () => {
       expect(avatar.pos.x).toBeCloseTo(-BOSS_PLAYER_RADIUS - AVATAR.radius);
       expect(avatar.pos.x).toBeCloseTo(-5.65);
       enc.delta([]); // encoder snapshots reflect its most recently captured tick
-      const late = NetMirror.create(host.options, wire(enc.full())); late.world.collision = new CollisionWorld();
+      const late = NetMirror.create(host.options, wire(enc.full())); late.world.collision = new CollisionWorld(MAP_HALF, true);
       const joined = late.world.avatarOf(0);
       stepAvatarMotion(late.world, joined, input, SIM_DT);
       expect(joined.pos.x).toBeCloseTo(avatar.pos.x);
@@ -56,7 +57,7 @@ describe('network boss player collision', () => {
 
   it('uses latest authoritative boss contact while render playback lags, and removes it on newest death/removal', () => {
     const host = setup(), avatar = host.avatarOf(0), enc = new SnapshotEncoder(host);
-    const mirror = NetMirror.create(host.options, wire(enc.full())); mirror.world.collision = new CollisionWorld();
+    const mirror = NetMirror.create(host.options, wire(enc.full())); mirror.world.collision = new CollisionWorld(MAP_HALF, true);
     const predictor = new AvatarPredictor(mirror.world, avatar.id, 'player');
     predictor.frame(mirror, 0, 1);
     // Rendering owns a separate delayed/interpolated pose; prediction must never
@@ -85,3 +86,5 @@ describe('network boss player collision', () => {
     expect(late.latestBoss()).toBeNull(); expect(bossPlayerHull(late.world.boss, late.world.time)).toBeNull();
   });
 });
+
+function grounded(p: { x: number; y: number; z: number }) { return { ...p, y: p.y + groundHeight(p.x, p.z, MAP_HALF) }; }

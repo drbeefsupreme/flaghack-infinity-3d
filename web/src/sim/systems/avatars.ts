@@ -134,7 +134,7 @@ export function cmdPlant(world: World, c: CommandOf<'plant'>): void {
   const n = lat.nodes[c.node];
   const dx = n.x - av.pos.x;
   const dz = n.z - av.pos.z;
-  if (dx * dx + dz * dz + av.pos.y * av.pos.y > AVATAR.plantReach * AVATAR.plantReach) {
+  if (dx * dx + dz * dz + (av.pos.y - world.collision.groundHeight(n.x, n.z)) ** 2 > AVATAR.plantReach * AVATAR.plantReach) {
     reject(world, c.faction, 'That Ley Node is out of reach.');
     return;
   }
@@ -196,7 +196,7 @@ function inPullReach(world: World, av: Avatar, fl: Flag, reach: number): boolean
   const alt = world.lattice.nodes[fl.altNode];
   const ax = alt.x - av.pos.x;
   const az = alt.z - av.pos.z;
-  return ax * ax + az * az + av.pos.y * av.pos.y <= r2;
+  return ax * ax + az * az + (av.pos.y - world.collision.groundHeight(alt.x, alt.z)) ** 2 <= r2;
 }
 
 export function cmdPull(world: World, c: CommandOf<'pull'>): void {
@@ -251,7 +251,7 @@ export function cmdPushGcc(world: World, c: CommandOf<'pushGcc'>): void {
     return;
   }
   const edge = Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) - BUILDINGS.gcc.radius;
-  if (edge > AVATAR.gccPushReach || av.pos.y > 1) {
+  if (edge > AVATAR.gccPushReach || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > 1) {
     reject(world, c.faction, 'Get your hands on the Command Center to push it.');
     return;
   }
@@ -366,7 +366,7 @@ export function stepAvatarMotion(world: World, av: AvatarMotionState, input: Ava
   // The pushed cart leads its pusher; a client's copy of it lags, so it never blocks the pusher.
   const ignore = av.pushing >= 0 ? av.pushing : undefined;
   const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight,
-    ignore, bossPlayerHull(world.boss, world.time));
+    ignore, bossPlayerHull(world.boss, world.time, world.map.half));
   av.onGround = res.onGround;
   const lim = MAP_HALF - AVATAR.radius;
   if (av.pos.x > lim || av.pos.x < -lim) {
@@ -445,7 +445,7 @@ function resolveSwing(world: World, av: Avatar): void {
   const ay = av.pos.y;
   const az = av.pos.z;
   const boss = world.boss;
-  if (boss && boss.hp > 0 && ay < (boss.crouched ? 12 : 20) &&
+  if (boss && boss.hp > 0 && ay - world.collision.groundHeight(boss.pos.x, boss.pos.z) < (boss.crouched ? 12 : 20) &&
       inCone(ax, az, fx, fz, cosHalf, boss.pos.x, boss.pos.z, reach + BOSS_RADIUS)) {
     damageMelee(world, boss.id, AVATAR.swingDamage, av.id);
   }
@@ -454,9 +454,9 @@ function resolveSwing(world: World, av: Avatar): void {
     if (!inCone(ax, az, fx, fz, cosHalf, o.pos.x, o.pos.z, reach + AVATAR.radius)) continue;
     if (damageMelee(world, o.id, AVATAR.swingDamage, av.id)) knockback(world, o.id, av.pos, AVATAR.swingKnockback);
   }
-  if (ay < UNIT_VERTICAL_REACH) {
+  {
     for (const h of world.hippies.values()) {
-      if (h.faction === av.faction || h.faction === NEUTRAL || h.status === 'ko') continue;
+      if (h.faction === av.faction || h.faction === NEUTRAL || h.status === 'ko' || Math.abs(ay - world.collision.groundHeight(h.pos.x, h.pos.z) - (h.airborne?.y ?? 0)) > UNIT_VERTICAL_REACH) continue;
       if (!inCone(ax, az, fx, fz, cosHalf, h.pos.x, h.pos.z, reach + HIPPIE.radius)) continue;
       if (damageMelee(world, h.id, AVATAR.swingDamage, av.id)) knockback(world, h.id, av.pos, AVATAR.swingKnockback);
     }
@@ -482,6 +482,8 @@ function resolveSwing(world: World, av: Avatar): void {
     }
     if ((cx - ax) * (cx - ax) + (cz - az) * (cz - az) > coarse * coarse) continue;
     pieceSpan(p, span);
+    const base = world.collision.groundHeight(cx, cz);
+    span.y0 += base; span.y1 += base;
     if (span.y1 < ay || span.y0 > top) continue;
     pieceClosest(world, p, ax, az, reachPt);
     if (reachPt.dist > reach || reachPt.dist >= bestD) continue;
@@ -489,9 +491,9 @@ function resolveSwing(world: World, av: Avatar): void {
     target = p.id;
     bestD = reachPt.dist;
   }
-  if (ay < BUILDING_HEIGHT) {
+  {
     for (const b of world.buildings.values()) {
-      if (b.faction === av.faction) continue;
+      if (b.faction === av.faction || ay - world.collision.groundHeight(b.pos.x, b.pos.z) >= BUILDING_HEIGHT) continue;
       buildingClosest(b, ax, az, reachPt);
       if (reachPt.dist > reach || reachPt.dist >= bestD) continue;
       if (!inCone(ax, az, fx, fz, cosHalf, reachPt.x, reachPt.z, Infinity)) continue;
@@ -501,11 +503,11 @@ function resolveSwing(world: World, av: Avatar): void {
   }
   if (target >= 0) damageMelee(world, target, AVATAR.swingPieceDamage, av.id);
 
-  if (ay >= UNIT_VERTICAL_REACH) return;
+
   let pile: Pile | null = null;
   let pileD = Infinity;
   for (const p of world.piles.values()) {
-    if (p.lumber <= 0) continue;
+    if (p.lumber <= 0 || Math.abs(ay - world.collision.groundHeight(p.pos.x, p.pos.z)) >= UNIT_VERTICAL_REACH) continue;
     const d2 = (p.pos.x - ax) * (p.pos.x - ax) + (p.pos.z - az) * (p.pos.z - az);
     if (d2 >= pileD || !inCone(ax, az, fx, fz, cosHalf, p.pos.x, p.pos.z, reach + PILE_RADIUS)) continue;
     pile = p;
@@ -529,7 +531,7 @@ function collectLooseFlags(world: World, av: Avatar): void {
 
 /** One Flag per restockInterval from own Hearth/Workshop stock within restockRadius of its edge. */
 function restock(world: World, av: Avatar, mind: AvatarMind): void {
-  if (av.carried.length >= AVATAR.quiver || world.time < mind.restockAt || av.pos.y > LEVEL_REACH) return;
+  if (av.carried.length >= AVATAR.quiver || world.time < mind.restockAt || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > LEVEL_REACH) return;
   for (const h of world.buildings.values()) {
     if (h.faction !== av.faction || (h.kind !== 'hearth' && h.kind !== 'workshop') || h.built < 1) continue;
     const hid = h.id;
@@ -593,13 +595,13 @@ function respawnAvatar(world: World, av: Avatar, mind: AvatarMind): void {
   const r = BUILDINGS.hearth.radius + RESPAWN_GAP;
   let x = hearth.pos.x + Math.sin(toCentre) * r;
   let z = hearth.pos.z + Math.cos(toCentre) * r;
-  for (let i = 1; i < 8 && world.collision.blockedCircle(x, z, AVATAR.radius, 0.05, AVATAR.height); i++) {
+  for (let i = 1; i < 8 && world.collision.blockedCircle(x, z, AVATAR.radius, world.collision.groundHeight(x, z) + 0.05, world.collision.groundHeight(x, z) + AVATAR.height); i++) {
     const a = toCentre + (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * (TAU / 8);
     x = hearth.pos.x + Math.sin(a) * r;
     z = hearth.pos.z + Math.cos(a) * r;
   }
   av.pos.x = x;
-  av.pos.y = 0;
+  av.pos.y = world.collision.groundHeight(x, z);
   av.pos.z = z;
   av.vel.x = 0;
   av.vel.y = 0;
@@ -612,5 +614,5 @@ function respawnAvatar(world: World, av: Avatar, mind: AvatarMind): void {
   av.effects.length = 0;
   av.throwReadyAt = 0;
   mind.restockAt = 0;
-  world.emit({ t: 'respawn', id: av.id, kind: 'avatar', faction: av.faction, pos: { x, y: 0, z } });
+  world.emit({ t: 'respawn', id: av.id, kind: 'avatar', faction: av.faction, pos: { x, y: world.collision.groundHeight(x, z), z } });
 }

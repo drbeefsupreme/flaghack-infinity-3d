@@ -3,6 +3,7 @@ import { AVATAR, GCC } from '../../constants';
 import { spawnProjectile } from '../../factory';
 import {
   canPlantAt,
+  collapseSimulacrum,
   craftFlag,
   depositToStock,
   dropLoose,
@@ -16,6 +17,18 @@ import {
 import { eventsOf, flagProblems, must, newMatch, runRules } from './testWorld';
 
 describe('Flag lifecycle bookkeeping', () => {
+  it('reanchors a collapsed alternate Flag to the retained node terrain height', () => {
+    const world = newMatch('simulacrum-terrain'), av = world.avatarOf(0);
+    const nodes = world.lattice.nodes.filter(n => canPlantAt(world, n.id, 0));
+    nodes.sort((a, b) => world.collision.groundHeight(a.x, a.z) - world.collision.groundHeight(b.x, b.z));
+    const low = nodes[0], high = nodes.at(-1)!;
+    const flag = world.flags.get(av.carried[0])!;
+    expect(plantSimulacrum(world, flag.id, low.id, high.id, 0, av.id)).toBe(true);
+    expect(flag.pos.y).toBe(world.collision.groundHeight(low.x, low.z));
+    collapseSimulacrum(world, flag, high.id);
+    expect(flag.pos).toEqual({ x: high.x, y: world.collision.groundHeight(high.x, high.z), z: high.z });
+    expect(flag.altNode).toBe(-1);
+  });
   it('conserves every Flag through plant, pull, steal, throw-land, stock and drop', () => {
     const world = newMatch('flags-a');
     const total = world.flags.size;

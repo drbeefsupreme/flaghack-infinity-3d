@@ -11,20 +11,23 @@ import { BossImpactFx } from './impactFx';
 import { BossEyeBeamFx } from './eyeBeamFx';
 import type { GameEvent } from '../../../../sim/events';
 import { EFFIGY_BOSS_REVEAL_AT } from '../../../../sim/effigyBurn';
+import { groundHeight, TERRAIN_GLSL } from '../../../../sim/terrain';
+import { MAP_HALF } from '../../../../sim/constants';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { applyBossChargeMaterial, bossCharge, bossEmergence, bossFlash, smooth } from './revealTimeline';
 
-function clipAtGround(material: THREE.Material): void {
+function clipAtGround(material: THREE.Material, half: number): void {
   const before = material.onBeforeCompile;
   const key = material.customProgramCacheKey();
   material.onBeforeCompile = (shader, renderer) => {
     before(shader, renderer);
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying float vBossWorldY;')
-      .replace('#include <skinning_vertex>', '#include <skinning_vertex>\nvBossWorldY = (modelMatrix * vec4(transformed, 1.0)).y;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vBossWorldY;')
-      .replace('void main() {', 'void main() {\nif (vBossWorldY < 0.028) discard;');
+    shader.uniforms.uBossTerrainHalf = { value: half };
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vBossWorldPosition;')
+      .replace('#include <skinning_vertex>', '#include <skinning_vertex>\nvBossWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vBossWorldPosition; uniform float uBossTerrainHalf;\n${TERRAIN_GLSL}`)
+      .replace('void main() {', 'void main() {\nif (vBossWorldPosition.y < groundHeight(vBossWorldPosition.xz, uBossTerrainHalf) + 0.028) discard;');
   };
-  material.customProgramCacheKey = () => key + '-boss-ground-clip-v1';
+  material.customProgramCacheKey = () => key + '-boss-ground-clip-v2';
 }
 
 export class BossReveal {
@@ -53,7 +56,7 @@ export class BossReveal {
     this.fx = new RevealFx(env);
     this.root.add(this.fx.group);
     this.impacts = new BossImpactFx(env); this.root.add(this.impacts.group);
-    clipAtGround(this.depth);
+    clipAtGround(this.depth, env.ctx.world.map.half ?? MAP_HALF);
     this.ready = loader().then(async (model) => {
       if (this.disposed) { disposeBossModel(model); return; }
       this.model = model;
@@ -68,7 +71,7 @@ export class BossReveal {
         o.customDepthMaterial = this.depth;
       });
       for (const material of materials) {
-        clipAtGround(material);
+        clipAtGround(material, env.ctx.world.map.half ?? MAP_HALF);
         applyBossDeathMaterial(material, combatFx.deathAge);
         // Shader override only: the original material parameters are never mutated.
         if (material instanceof THREE.MeshStandardMaterial) applyBossChargeMaterial(material, this.uWhite);
@@ -112,7 +115,8 @@ export class BossReveal {
     this.model.position.x = boss && this.age >= 0 ? boss.pos.x - world.map.effigy.x : 0;
     this.model.position.z = boss && this.age >= 0 ? boss.pos.z - world.map.effigy.z : 0;
     this.model.rotation.y = boss && this.age >= 0 ? boss.yaw : 0;
-    this.model.position.y = BOSS_HEIGHT * (emerged - 1);
+    const at = boss && this.age >= 0 ? boss.pos : world.map.effigy;
+    this.model.position.y = groundHeight(at.x, at.z, world.map.half ?? MAP_HALF) + BOSS_HEIGHT * (emerged - 1);
     this.model.updateMatrixWorld(true);
     // End screens freeze match time. Never leave a final killing beam stuck on screen.
     const eyeBoss = this.age >= 0 && world.phase !== 'ended' ? boss : null;
@@ -135,18 +139,18 @@ export class BossReveal {
       if (charge > 0) {
         light.color.lerp(new THREE.Color(1, 1, 1), charge);
         light.intensity += 180 * charge * charge;
-        light.position.y = 12 * BOSS_GAMEPLAY_SCALE;
+        light.position.y = groundHeight(world.map.effigy.x, world.map.effigy.z, world.map.half ?? MAP_HALF) + 12 * BOSS_GAMEPLAY_SCALE;
       }
       return;
     }
     const flash = bossFlash(this.age);
-    light.position.set(world.map.effigy.x, 9 * BOSS_GAMEPLAY_SCALE, world.map.effigy.z);
+    light.position.set(world.map.effigy.x, groundHeight(world.map.effigy.x, world.map.effigy.z, world.map.half ?? MAP_HALF) + 9 * BOSS_GAMEPLAY_SCALE, world.map.effigy.z);
     // The burst surrounds the boss, rather than re-whitening its just-restored materials.
     light.color.setRGB(1, 0.34, 0.08);
     light.intensity = flash * 45 + 24 * Math.exp(-this.age * 0.9);
     const death = this.combatFx?.deathAge.value ?? -1;
     if (death >= 0 && death < 12 && world.boss) {
-      light.position.set(world.boss.pos.x, 5 * BOSS_GAMEPLAY_SCALE, world.boss.pos.z);
+      light.position.set(world.boss.pos.x, groundHeight(world.boss.pos.x, world.boss.pos.z, world.map.half ?? MAP_HALF) + 5 * BOSS_GAMEPLAY_SCALE, world.boss.pos.z);
       light.intensity = 65 * smooth(0, 1.5, death) * (1 - smooth(8, 12, death));
     }
   }

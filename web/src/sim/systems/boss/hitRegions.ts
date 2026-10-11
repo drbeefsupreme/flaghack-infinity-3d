@@ -1,5 +1,7 @@
 /** Numeric-only projectile hit shapes baked from the exact dimension-scaled combat rig poses. */
 import { BOSS_ATTACK_CORD_ENVELOPES, BOSS_IDLE_MOTION_REGIONS, BOSS_IDLE_MOTION_REGION_INDICES, BOSS_EYE_REAR_DRAPE_DATA, BOSS_HEAD_REGION_COUNT, BOSS_HIT_POSE_DATA, BOSS_HIT_REGION_STRIDE } from '../../bossHitPoseData';
+import { MAP_HALF } from '../../constants';
+import { groundHeight } from '../../terrain';
 import type { BossState } from '../../boss';
 import type { V3 } from '../../math';
 import { BOSS_EYE_TIMING } from '../../boss';
@@ -34,7 +36,7 @@ export function sampleBossHeadPose(boss: BossState, now: number): { position: V3
 }
 
 /** Sample a clip from authoritative time/stride. Each 10-float region is center, radii, quaternion. */
-export function sampleBossHitRegions(boss: BossState, now: number): Float64Array {
+export function sampleBossHitRegions(boss: BossState, now: number, mapHalf = MAP_HALF): Float64Array {
   const { a, b, alpha } = poseFrames(boss, now);
   const out = new Float64Array(a.regions.length);
   for (let base = 0; base < out.length; base += BOSS_HIT_REGION_STRIDE) {
@@ -73,7 +75,7 @@ export function sampleBossHitRegions(boss: BossState, now: number): Float64Array
     const c = Math.cos(boss.yaw), s = Math.sin(boss.yaw), x = target.x - boss.pos.x, z = target.z - boss.pos.z;
     const t = Math.max(0, Math.min(1, (now - boss.eye.chargeAt) / BOSS_EYE_TIMING.charge));
     const blend = boss.eye.firedAt === null ? t * t * (3 - 2 * t) : 1;
-    const q = solveBossEyeAim(head.position, head.quaternion, { x: c * x - s * z, y: target.y, z: s * x + c * z }, blend).headQuaternion;
+    const q = solveBossEyeAim(head.position, head.quaternion, { x: c * x - s * z, y: target.y - groundHeight(boss.pos.x, boss.pos.z, mapHalf), z: s * x + c * z }, blend).headQuaternion;
     const delta = multiplyQuaternion(q, [-head.quaternion[0], -head.quaternion[1], -head.quaternion[2], head.quaternion[3]]);
     for (let region = 0; region < BOSS_HEAD_REGION_COUNT; region++) {
       // The rear drape mixes a head-fastened root with a coat-following lower panel.
@@ -170,10 +172,10 @@ function aimedRearDrape(boss: BossState, head: V3, aimedHead: BossEyeQuaternion,
 }
 
 /** Swept ellipsoid test, all roots considered; long/high-speed segments cannot tunnel. */
-export function intersectBossRegions(boss: BossState, now: number, from: V3, to: V3, maxT = 1): BossProjectileImpact | null {
+export function intersectBossRegions(boss: BossState, now: number, from: V3, to: V3, maxT = 1, mapHalf = MAP_HALF): BossProjectileImpact | null {
   if (boss.hp <= 0 || maxT < 0) return null;
-  const shapes = sampleBossHitRegions(boss, now), c = Math.cos(boss.yaw), s = Math.sin(boss.yaw);
-  const local = (p: V3): V3 => { const x = p.x - boss.pos.x, z = p.z - boss.pos.z; return { x: c * x - s * z, y: p.y, z: s * x + c * z }; };
+  const shapes = sampleBossHitRegions(boss, now, mapHalf), c = Math.cos(boss.yaw), s = Math.sin(boss.yaw);
+  const local = (p: V3): V3 => { const x = p.x - boss.pos.x, z = p.z - boss.pos.z; return { x: c * x - s * z, y: p.y - groundHeight(boss.pos.x, boss.pos.z, mapHalf), z: s * x + c * z }; };
   const start = local(from), end = local(to);
   let first = Infinity, region = -1;
   for (let base = 0; base < shapes.length; base += BOSS_HIT_REGION_STRIDE) {

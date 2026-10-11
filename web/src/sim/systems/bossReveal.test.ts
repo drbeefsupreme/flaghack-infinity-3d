@@ -26,7 +26,7 @@ describe('authoritative boss reveal', () => {
       world.time = at - 0.001;
       updateEffigy(world);
       expect(world.effigyRevealedAt).toBeNull();
-      expect(world.collision.supportHeight(0, 0, 40)).toBe(26);
+      expect(world.collision.supportHeight(0, 0, 40)).toBe(28);
       world.time = at + skip;
       updateEffigy(world);
       expect(world.effigyRevealedAt).toBe(at);
@@ -64,8 +64,8 @@ describe('authoritative boss reveal', () => {
     expect(world.nav).toBe(originalNav);
     expect(world.nav.version).toBeGreaterThan(version);
     expect(world.collision.blockedCircle(0, 0, 0.2, 10, 12)).toBe(false);
-    expect(world.collision.supportHeight(0, 0, 40)).toBe(0);
-    expect(world.collision.raycast(0, 40, 0, 0, -1, 0, 50)).toMatchObject({ tag: 0, y: 0 });
+    expect(world.collision.supportHeight(0, 0, 40)).toBe(2);
+    expect(world.collision.raycast(0, 40, 0, 0, -1, 0, 50)).toMatchObject({ tag: 0, y: 2 });
     expect(world.collision.raycast(2, 40, 0, 0, -1, 0, 50)).toMatchObject({ tag: 87651, y: 5 });
     expect(world.nav.isWalkable(2, 0)).toBe(false);
     expect(world.nav.isWalkable(0, -4)).toBe(false);
@@ -162,7 +162,7 @@ describe('authoritative boss reveal', () => {
       new Simulation(world).step();
       expect(world.suddenDeath).toBe(true);
       expect(world.effigyRevealedAt).toBe(bossRevealTime(world.options));
-      expect(world.collision.supportHeight(0, 0, 40)).toBe(0);
+      expect(world.collision.supportHeight(0, 0, 40)).toBe(2);
     }
   });
 

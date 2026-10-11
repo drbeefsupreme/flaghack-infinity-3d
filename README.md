@@ -46,13 +46,13 @@ cursor so you can click it. In a real burn, **Liber HH** (J) explains every rule
 |---|---|
 | WASD / Space / Shift / Mouse | Move, jump, sprint, look (click to lock the pointer) |
 | Q · RMB hold + LMB | Quick-throw a Flag · aimed throw (it plants on the node it lands near) |
-| E | Plant · hold to pull · at your GCC: Command Table (hold: push the cart) |
+| E | Plant · hold to pull · hold at your GCC to push the cart |
 | LMB | Swing your staff (harvest lumber, bonk rivals) or place the selected piece |
 | Z / X / C / V / B | Tarp Wall / Deck / Ramp / Demolish / camp building |
 | 1–5 | Chakra abilities: Priority Beacon, Forced March, Stabilize Zone, Phason Shift, Omega Pulse |
 | 6 / 7 / 8 | Saffron, Luminous Dust, Acid Cop Vision |
 | G / H / P / T | Rally Signifiers, send followers, D.E.G.E.N. ping, Retransmit "TAKE A SHOT" |
-| Tab | Command View: select and order Signifiers, plan Surveys (N/E/P/R = Node/Enclose/Pentacle/Ring), set camp priorities |
+| Tab | Command View: select and order Signifiers, plan Surveys (N/E/P/R = Node/Enclose/Pentacle/Expand home), set camp priorities |
 | K / J / F1 / L / Esc | Chakras, Liber HH, help, lattice overlay, pause |
 
 ## Hosting a multiplayer burn
@@ -158,9 +158,9 @@ join a local `npm run host`. `npx vitest run server` tests the host over real so
   **D.E.G.E.N. Beacon** mesh. They form one fixed world population: knockouts respawn
   neutral. Drum Circles and the GCC recruit nearby neutrals, and handing or throwing a Flag
   recruits them directly. Recruitment may exceed camp capacity; excess recruits lose attention.
-- **The Geomantic Command Center** is a pentagonal push-cart. Its live map tabletop is
-  your Command View. It also does Flag Repair, automatic neutral recruitment,
-  Flagellian Dialectics (convert rivals) and Flag Simulacra.
+- **The Geomantic Command Center** is a pentagonal push-cart. Its tabletop displays a live map;
+  open the Command View from anywhere with Tab. It also provides Flag Repair, automatic neutral recruitment,
+  lattice revelation and node observation.
 - **The Burn** comes at 14:00. The effigy burns and capture pressure escalates every two
   minutes. If more than one camp still stands at **Dawn** (30:00), the camp holding the most
   Hearths completes the Survey and wins.
@@ -178,8 +178,6 @@ join a local `npm run host`. `npx vitest run server` tests the host over real so
   tides. A Flag counts as observed when your vexillomancer, GCC, Hearth or Wards are
   near it, or when it has Ley Lines to two other Flags (Canon III). Finished loops are
   therefore tide-proof and half-built ones are not.
-- **Superposition.** A Flag Simulacrum stands on two nodes at once until a rival comes
-  close and collapses it to one.
 - **The implied Flag fractal.** A free node at the exact midpoint of two of your Flags
   holds an implied Flag. This holds at edge scale and at the φ-inflated scale, so
   implications cascade to third order.

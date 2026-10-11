@@ -1,11 +1,12 @@
 /**
- * Crosshair / cursor picking. A view ray is resolved against the collision world (falling back
- * to the ground plane y = 0), then the nearest relevant entity is chosen by 3D distance between
+ * Crosshair / cursor picking. A view ray is resolved against the collision world, including terrain, then the nearest relevant entity is chosen by 3D distance between
  * the ray segment and each entity's vertical extent, normalized by its pick radius: aim near a
  * Flag's cloth or a hippie's head and it counts, even though the ray hits the ground behind it.
  */
 import { BUILDINGS } from '../sim/constants';
 import type { V3 } from '../sim/math';
+import { bossEncounterActive } from '../sim/systems/boss/damage';
+import { bossPlayerHull } from '../sim/systems/boss/playerCollision';
 import { isCollapsed } from '../sim/systems/buildings';
 import type { EntityId, FactionId } from '../sim/types';
 import type { World } from '../sim/world';
@@ -56,14 +57,7 @@ export class Picker {
       this.tag = hit.tag;
       return true;
     }
-    if (dy >= -1e-6) return false;
-    const t = -oy / dy;
-    if (t > maxDist) return false;
-    this.point.x = ox + dx * t;
-    this.point.y = 0;
-    this.point.z = oz + dz * t;
-    this.dist = t;
-    return true;
+    return false;
   }
 
   /**
@@ -100,21 +94,36 @@ export class Picker {
       this.bestScore = DIRECT_HIT_SCORE;
       this.bestAlong = 1;
     }
+    // Command View targets the live physical body, with the same terrain/stance height as movement.
+    if (includeSelf && bossEncounterActive(world)) {
+      const hull = bossPlayerHull(world.boss, world.time, world.map.half);
+      if (hull) this.consider(hull.tag, hull.x, hull.z, hull.bottom, hull.top, hull.radius);
+    }
     for (const fl of world.flags.values()) {
       if (fl.state === 'planted') this.consider(fl.id, fl.pos.x, fl.pos.z, fl.pos.y, fl.pos.y + 2.7, R_FLAG);
       else if (fl.state === 'loose') this.consider(fl.id, fl.pos.x, fl.pos.z, fl.pos.y, fl.pos.y + 0.5, R_FLAG);
     }
-    for (const h of world.hippies.values()) this.consider(h.id, h.pos.x, h.pos.z, 0, 1.75, R_UNIT);
+    for (const h of world.hippies.values()) {
+      const y = (h.airborne?.y ?? 0) + world.collision.groundHeight(h.pos.x, h.pos.z);
+      this.consider(h.id, h.pos.x, h.pos.z, y, y + 1.75, R_UNIT);
+    }
     for (const av of world.avatars.values()) {
       if ((av.faction === f && !includeSelf) || av.koUntil > world.time) continue;
       this.consider(av.id, av.pos.x, av.pos.z, av.pos.y, av.pos.y + 1.9, R_UNIT);
     }
     for (const b of world.buildings.values()) {
       if (isCollapsed(b)) continue;
-      this.consider(b.id, b.pos.x, b.pos.z, 0, b.kind === 'hearth' ? 4 : 2.6, BUILDINGS[b.kind].radius);
+      const y = world.collision.groundHeight(b.pos.x, b.pos.z);
+      this.consider(b.id, b.pos.x, b.pos.z, y, y + (b.kind === 'hearth' ? 4 : 2.6), BUILDINGS[b.kind].radius);
     }
-    for (const p of world.piles.values()) if (p.lumber > 0) this.consider(p.id, p.pos.x, p.pos.z, 0, 1.6, R_PILE);
-    for (const bc of world.beacons.values()) this.consider(bc.id, bc.pos.x, bc.pos.z, 0, 0.6, R_BEACON);
+    for (const p of world.piles.values()) if (p.lumber > 0) {
+      const y = world.collision.groundHeight(p.pos.x, p.pos.z);
+      this.consider(p.id, p.pos.x, p.pos.z, y, y + 1.6, R_PILE);
+    }
+    for (const bc of world.beacons.values()) {
+      const y = world.collision.groundHeight(bc.pos.x, bc.pos.z);
+      this.consider(bc.id, bc.pos.x, bc.pos.z, y, y + 0.6, R_BEACON);
+    }
     return this.best;
   }
 

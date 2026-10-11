@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 import { describe, expect, it } from 'vitest';
 import { BOSS_TIMING } from '../boss';
 import { BOSS_GAIT, bossFootContacts } from '../bossGait';
@@ -15,10 +16,10 @@ const wire = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 function encounter(crouched = false) {
   const w = createMatch({ seed: 'boss-feet', difficulty: 'normal', humans: [0, 1], mode: 'standard', match: normalizeMatch({ maxSignifiers: 0 }) });
   w.time = 1000; w.effigyRevealedAt = 990; w.suddenDeath = true;
-  w.map.obstacles = []; w.collision = new CollisionWorld();
+  w.map.obstacles = []; w.collision = new CollisionWorld(w.map.half, true);
   w.survey.edgeLey.fill(-1); w.survey.version++;
   for (const h of w.hippies.values()) h.pos = { x: -100, z: -100 };
-  for (const a of w.avatars.values()) a.pos = { x: -100, y: 0, z: -100 };
+  for (const a of w.avatars.values()) a.pos = { x: -100, y: groundHeight(-100,-100,w.map.half), z: -100 };
   for (const s of w.buildings.values()) moveBuilding(w, s, -100, -100);
   const altar = w.hearthOf(3)!; moveBuilding(w, altar, 0, crouched ? 20 : 35); w.factions[3].stats.cmi = 100000;
   const b = spawnBoss(w)!; Object.assign(b, { pos: { x: 0, z: 0 }, yaw: 0, action: 'idle', crouched,
@@ -46,7 +47,8 @@ describe.each([false, true])('authoritative walking stomp, crouched=%s', crouche
   it('hits a player at the enlarged hull edge and a hippie for exactly140 on the actual contact', () => {
     const { w, b, gait } = encounter(crouched), foot = BOSS_GAIT[gait].feet[1];
     const av = w.avatarOf(0), length = Math.hypot(foot.x, foot.z);
-    av.pos = { x: foot.x / length * 5.66, y: 0, z: foot.z / length * 5.66 }; av.hp = 1000;
+    av.pos = { x: foot.x / length * 5.66, y: 0, z: foot.z / length * 5.66 };
+    av.pos.y = groundHeight(av.pos.x,av.pos.z,w.map.half); av.hp = 1000;
     const h = spawnHippie(w, 0, { x: foot.x, z: foot.z + .02 }); h.hp = 1000;
     const miss = spawnHippie(w, 0, { x: foot.x - BOSS_FOOTFALL_RADIUS - .1, z: foot.z }); miss.hp = 1000;
     const airborne = spawnHippie(w, 0, { x: foot.x, z: foot.z }); airborne.airborne = { y: 6, vy: 0 }; airborne.hp = 1000;

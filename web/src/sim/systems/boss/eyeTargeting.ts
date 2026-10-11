@@ -3,10 +3,11 @@ import { BOSS_EYE_BLAST_RADIUS, BOSS_EYE_MAX_RANGE, BOSS_RADIUS } from '../../bo
 import type { BossState } from '../../boss';
 import { BOSS_GAMEPLAY_SCALE } from '../../bossDimensions';
 import { AVATAR, BUILDINGS, BUILDING_HEIGHT, HIPPIE, LEVEL_HEIGHT } from '../../constants';
+import { groundHeight } from '../../terrain';
 import type { V3 } from '../../math';
 import { footprintDistance } from '../../map/mapgen';
 import type { World } from '../../world';
-import { pieceBottom } from '../econ/pieceGeometry';
+import { pieceBottom, pieceGroundHeight } from '../econ/pieceGeometry';
 import { piecePosition } from '../pieces';
 import { pieceClosest } from '../units/reach';
 import { crystalFlagTargets } from './crystalTargets';
@@ -50,7 +51,7 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
   }
   for (const hippie of world.hippies.values()) if (hippie.hp > 0 && hippie.status !== 'ko' &&
       (hippie.faction < 0 || world.factions[hippie.faction].alive)) {
-    unit(hippie.id, hippie.pos.x, hippie.pos.z, hippie.airborne?.y ?? 0, BOSS_EYE_HIPPIE_HEIGHT, HIPPIE.radius);
+    unit(hippie.id, hippie.pos.x, hippie.pos.z, groundHeight(hippie.pos.x, hippie.pos.z, world.map.half) + (hippie.airborne?.y ?? 0), BOSS_EYE_HIPPIE_HEIGHT, HIPPIE.radius);
   }
   // Include neighborhood centers so a real group spread around a five-meter circle
   // needn't have a unit standing exactly in its middle. Score only the bodies inside.
@@ -63,13 +64,13 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
     candidates.push(point);
   }
   const buildings = [...world.buildings.values()].filter(b => b.kind !== 'hearth' && b.hp > 0);
-  for (const b of buildings) candidates.push({ x: b.pos.x, y: BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z });
+  for (const b of buildings) candidates.push({ x: b.pos.x, y: groundHeight(b.pos.x, b.pos.z, world.map.half) + BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z });
   const pieces = [...world.pieces.values()].filter(p => p.hp > 0);
   for (const p of pieces) { const at = piecePosition(world, p); if (at) candidates.push({ ...at }); }
   const crystalTargets = crystalFlagTargets(world, boss), crystalAims = new Map(crystalTargets.map(t => [t.at, t.supports]));
   candidates.push(...crystalAims.keys());
   const bright = world.map.obstacles.filter(o => !world.destroyedScenery.has(o.id) && bossSceneryBrightness(o) > 0);
-  for (const o of bright) candidates.push({ x: o.x, y: o.height / 2, z: o.z });
+  for (const o of bright) candidates.push({ x: o.x, y: groundHeight(o.x, o.z, world.map.half) + o.height / 2, z: o.z });
   const ranked: RatedTarget[] = [];
   const reach = { x: 0, z: 0, dist: 0 };
   for (const at of candidates) {
@@ -79,19 +80,20 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
     // Crystal retaliation uses the exact future-idle pupil range, avoiding the ordinary
     // conservative origin envelope that would unnecessarily exclude a distant giant.
     if (crystal) {
-      if (crystalAimDistance(boss, at) > BOSS_EYE_MAX_RANGE) continue;
-    } else if (!farEnough(at.x, at.z) || Math.hypot(distance, at.y) > BOSS_EYE_MAX_RANGE - ORIGIN_ENVELOPE) continue;
+      if (crystalAimDistance(world, boss, at) > BOSS_EYE_MAX_RANGE) continue;
+    } else if (!farEnough(at.x, at.z) || Math.hypot(distance, at.y - groundHeight(boss.pos.x, boss.pos.z, world.map.half)) > BOSS_EYE_MAX_RANGE - ORIGIN_ENVELOPE) continue;
     let count = 0, aggression = 0, structure = 0;
     for (const u of units) if (bodyInside(at, u.x, u.z, u.y, u.y + u.height, u.radius)) { count++; aggression += u.threat; }
-    for (const b of buildings) if (bodyInside(at, b.pos.x, b.pos.z, 0, BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius)) structure += 7;
+    for (const b of buildings) if (bodyInside(at, b.pos.x, b.pos.z, groundHeight(b.pos.x, b.pos.z, world.map.half), groundHeight(b.pos.x, b.pos.z, world.map.half) + BUILDING_HEIGHT[b.kind], BUILDINGS[b.kind].radius)) structure += 7;
     for (const p of pieces) {
       pieceClosest(world, p, at.x, at.z, reach);
-      const dy = Math.max(pieceBottom(p.kind, p.level) - at.y, 0, at.y - (p.level + 1) * LEVEL_HEIGHT);
+      const ground = pieceGroundHeight(world, p);
+      const dy = Math.max(ground + pieceBottom(p.kind, p.level) - at.y, 0, at.y - ground - (p.level + 1) * LEVEL_HEIGHT);
       if (reach.dist ** 2 + dy ** 2 <= radius2 + 1e-9) structure += 4;
     }
     let brightness = crystal ? 4 : 0;
     for (const o of bright) {
-      const horizontal = footprintDistance(o, at.x, at.z), vertical = Math.max(-at.y, 0, at.y - o.height);
+      const horizontal = footprintDistance(o, at.x, at.z), vertical = Math.max(groundHeight(o.x, o.z, world.map.half) - at.y, 0, at.y - groundHeight(o.x, o.z, world.map.half) - o.height);
       if (horizontal ** 2 + vertical ** 2 <= radius2 + 1e-9) brightness = Math.max(brightness, bossSceneryBrightness(o));
     }
     if (count < BOSS_EYE_MIN_GROUP && !aggression && !structure && !brightness) continue;
@@ -134,10 +136,10 @@ export function planBossEyeSweep(world: World, boss: BossState, first: V3): V3[]
   return route;
 }
 
-function crystalAimDistance(boss: BossState, target: V3): number {
+function crystalAimDistance(world: World, boss: BossState, target: V3): number {
   const head = sampleBossHeadPose({ ...boss, action: 'idle', actionAt: boss.spawnedAt }, boss.spawnedAt);
   const c = Math.cos(boss.yaw), s = Math.sin(boss.yaw), sy = Math.sin(boss.yaw / 2), cy = Math.cos(boss.yaw / 2), q = head.quaternion;
-  const position = { x: boss.pos.x + c * head.position.x + s * head.position.z, y: head.position.y,
+  const position = { x: boss.pos.x + c * head.position.x + s * head.position.z, y: groundHeight(boss.pos.x, boss.pos.z, world.map.half) + head.position.y,
     z: boss.pos.z - s * head.position.x + c * head.position.z };
   const rotation: BossEyeQuaternion = [cy * q[0] + sy * q[2], cy * q[1] + sy * q[3], cy * q[2] - sy * q[0], cy * q[3] - sy * q[1]];
   const ray = solveBossEyeAim(position, rotation, target);

@@ -47,8 +47,8 @@ void main() {
     else if (uHover.w > 0.001 && (e == fhId(uHoverEdges.x) || e == fhId(uHoverEdges.y) || e == fhId(uHoverEdges.z) || e == fhId(uHoverEdges.w))) hot = 0.75 * uHover.w;
     else if (hn >= 0 && (a == hn || b == hn)) hot = 0.55;
   }
-  vec3 A = vec3(na.x, ${LIFT.line}, na.y);
-  vec3 B = vec3(nb.x, ${LIFT.line}, nb.y);
+  vec3 A = vec3(na.x, fhGround(na.xy) + ${LIFT.line}, na.y);
+  vec3 B = vec3(nb.x, fhGround(nb.xy) + ${LIFT.line}, nb.y);
   vec4 va = viewMatrix * vec4(A, 1.0);
   vec4 vb = viewMatrix * vec4(B, 1.0);
   // Trim the segment to the near plane so lines passing beside/behind the camera stay sane.
@@ -127,7 +127,7 @@ void main() {
   float pulse = fhCrystalPulse(p);
   float vis = hov ? 1.0 : max(max(fhLatticeReveal(p), min(1.0, pulse)), uTide.x * 0.45);
   if (vis < 0.01) FH_CULL
-  vec4 mv = viewMatrix * vec4(p.x, ${LIFT.marker}, p.y, 1.0);
+  vec4 mv = viewMatrix * vec4(p.x, fhGround(p) + ${LIFT.marker}, p.y, 1.0);
   vec4 c = projectionMatrix * mv;
   float r = hov ? 0.6 : (holder >= 0 ? 0.26 : 0.17);
   float minPx = hov ? 8.0 : (holder >= 0 ? 3.2 : 2.4);

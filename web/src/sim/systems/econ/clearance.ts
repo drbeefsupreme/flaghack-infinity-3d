@@ -129,7 +129,7 @@ export function segmentClearance(
   for (const o of map.obstacles) {
     if (world.destroyedScenery.has(o.id)) continue;
     if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
-    if (o.height <= y0) continue;
+    if (world.collision.groundHeight(o.x, o.z) + o.height <= world.collision.groundHeight(mx, mz) + y0) continue;
     const bound = obstacleBound(o) + reach;
     if ((o.x - mx) ** 2 + (o.z - mz) ** 2 > bound * bound) continue;
     if (o.shape === 'circle') {
@@ -174,7 +174,7 @@ export function polygonClearance(world: World, xs: number[], zs: number[], y0: n
   for (const o of map.obstacles) {
     if (world.destroyedScenery.has(o.id)) continue;
     if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
-    if (o.height <= y0) continue;
+    if (world.collision.groundHeight(o.x, o.z) + o.height <= world.collision.groundHeight(cx, cz) + y0) continue;
     const bound = obstacleBound(o) + reach;
     if ((o.x - cx) ** 2 + (o.z - cz) ** 2 > bound * bound) continue;
     if (o.shape === 'circle') {
@@ -198,7 +198,7 @@ export function polygonClearance(world: World, xs: number[], zs: number[], y0: n
 export function segmentHitsBuilding(world: World, ax: number, az: number, bx: number, bz: number, halfWidth: number, y0: number): boolean {
   for (const b of world.buildings.values()) {
     if (isCollapsed(b)) continue;
-    if (BUILDING_HEIGHT[b.kind] <= y0) continue;
+    if (world.collision.groundHeight(b.pos.x, b.pos.z) + BUILDING_HEIGHT[b.kind] <= world.collision.groundHeight((ax + bx) / 2, (az + bz) / 2) + y0) continue;
     if (distToSegment(b.pos.x, b.pos.z, ax, az, bx, bz) < BUILDINGS[b.kind].radius + halfWidth) return true;
   }
   return false;
@@ -208,7 +208,7 @@ export function segmentHitsBuilding(world: World, ax: number, az: number, bx: nu
 export function polygonHitsBuilding(world: World, xs: number[], zs: number[], y0: number): boolean {
   for (const b of world.buildings.values()) {
     if (isCollapsed(b)) continue;
-    if (BUILDING_HEIGHT[b.kind] <= y0) continue;
+    if (world.collision.groundHeight(b.pos.x, b.pos.z) + BUILDING_HEIGHT[b.kind] <= world.collision.groundHeight(xs.reduce((a, x) => a + x, 0) / xs.length, zs.reduce((a, z) => a + z, 0) / zs.length) + y0) continue;
     if (circleHitsPolygon(b.pos.x, b.pos.z, BUILDINGS[b.kind].radius, xs, zs)) return true;
   }
   return false;

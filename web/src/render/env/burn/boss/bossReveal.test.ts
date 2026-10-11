@@ -19,7 +19,7 @@ function env(bossMode = true, tutorial = false): EnvContext {
   return {
     ctx: {
       world: { options: { mode: tutorial ? 'tutorial' : 'standard', match: normalizeMatch({ bossMode }) }, time: 500, effigyRevealedAt: null,
-        map: { seed: 'boss-reveal-test', effigy: { x: 0, z: 0 } } }, quality: 'low', time: 0, session: { viewBlend: 0 }, camera: { fov: 60 },
+        map: { half: 150, seed: 'boss-reveal-test', effigy: { x: 0, z: 0 } } }, quality: 'low', time: 0, session: { viewBlend: 0 }, camera: { fov: 60 },
       renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280, 720) },
     } as unknown as EnvContext['ctx'],
     root: new THREE.Group(), day: createDayState(), burn: { active: true, startedAt: 500, elapsed: 0, progress: 0 },
@@ -92,7 +92,7 @@ describe('boss reveal presentation', () => {
     at(environment, effect, 91, null);
     expect(environment.root.getObjectByName('effigy')!.visible).toBe(true);
     expect(environment.root.getObjectByName('boss-model-32m')!.visible).toBe(true);
-    expect(environment.root.getObjectByName('boss-model-32m')!.position.y).toBe(0);
+    expect(environment.root.getObjectByName('boss-model-32m')!.position.y).toBe(2);
     expect(environment.ctx.world.effigyRevealedAt).toBeNull();
     at(environment, effect, 90);
     expect(environment.root.getObjectByName('effigy')!.visible).toBe(false);
@@ -100,7 +100,7 @@ describe('boss reveal presentation', () => {
     expect(environment.root.getObjectByName('boss-white-burst')!.visible).toBe(true);
     at(environment, effect, 94);
     const model = environment.root.getObjectByName('boss-model-32m')!;
-    expect(model.position.y).toBe(0);
+    expect(model.position.y).toBe(2);
     expect(model.scale.toArray()).toEqual([1, 1, 1]);
     expect(model.userData.height).toBe(32);
     expect(environment.root.getObjectByName('boss-reveal-fx')!.scale.toArray()).toEqual([BOSS_GAMEPLAY_SCALE, BOSS_GAMEPLAY_SCALE, BOSS_GAMEPLAY_SCALE]);
@@ -132,24 +132,24 @@ describe('boss reveal presentation', () => {
     });
     const model = environment.root.getObjectByName('boss-model-32m')!;
     at(environment, effect, 85);
-    expect(model.visible).toBe(false); expect(model.position.y).toBe(-BOSS_HEIGHT);
+    expect(model.visible).toBe(false); expect(model.position.y).toBe(2 - BOSS_HEIGHT);
     at(environment, effect, 87.5);
-    expect(model.visible).toBe(true); expect(model.position.y).toBe(-BOSS_HEIGHT / 2);
+    expect(model.visible).toBe(true); expect(model.position.y).toBe(2 - BOSS_HEIGHT / 2);
     expect(shaders.every((s) => s.uniforms.uBossCharge.value === 1)).toBe(true);
     expect(environment.ctx.world.effigyRevealedAt).toBeNull();
     expect(values()).toEqual(original);
     at(environment, effect, 89.999);
-    expect(model.position.y).toBeLessThan(0);
-    expect(model.position.y).toBeGreaterThan(-.00001);
+    expect(model.position.y).toBeLessThan(2);
+    expect(model.position.y).toBeGreaterThan(2 - .00001);
     expect(shaders.every((s) => s.uniforms.uBossCharge.value === 1)).toBe(true);
     at(environment, effect, 90);
-    expect(model.position.y).toBe(0);
+    expect(model.position.y).toBe(2);
     expect(shaders.every((s) => s.uniforms.uBossCharge.value === 0)).toBe(true);
     expect(values()).toEqual(original);
     expect((environment.root.getObjectByName('boss-white-burst') as THREE.Mesh).material).toMatchObject({ side: THREE.BackSide });
     for (const t of [90.05, 90.3, 91, 94, 100, 190]) {
       at(environment, effect, t);
-      expect(model.position.y).toBe(0);
+      expect(model.position.y).toBe(2);
       expect(shaders.every((s) => s.uniforms.uBossCharge.value === 0)).toBe(true);
       expect(values()).toEqual(original);
     }
@@ -162,7 +162,7 @@ describe('boss reveal presentation', () => {
     expect(shaders.every((s) => s.uniforms.uBossCharge.value === 1)).toBe(true);
     expect(environment.ctx.world.effigyRevealedAt).toBeNull();
     at(environment, effect, 190);
-    expect(model.position.y).toBe(0);
+    expect(model.position.y).toBe(2);
     expect(shaders.every((s) => s.uniforms.uBossCharge.value === 0)).toBe(true);
     effect.dispose();
   });

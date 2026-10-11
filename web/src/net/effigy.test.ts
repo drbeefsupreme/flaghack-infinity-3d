@@ -15,7 +15,7 @@ import { NetMirror } from './mirror';
 function collisionState(world: World) {
   return {
     pole: world.collision.blockedCircle(0, 0, 0.3, 10, 12),
-    plinth: world.collision.blockedCircle(2, 0, 0.3, 0.2, 2),
+    plinth: world.collision.blockedCircle(2, 0, 0.3, 2.2, 4),
     support: world.collision.supportHeight(0, 0, 40),
     ray: world.collision.raycast(0, 40, 0, 0, -1, 0, 50)?.y,
     map: world.map.isBlockedAt(0, 0),
@@ -47,7 +47,7 @@ describe('effigy pole collision replication', () => {
     const late = NetMirror.create(host.options, JSON.parse(JSON.stringify(encoder.full())));
     expect(collisionState(mirror.world)).toEqual(collisionState(host));
     expect(collisionState(late.world)).toEqual(collisionState(host));
-    expect(collisionState(late.world)).toMatchObject({ pole: false, plinth: true, support: 3, ray: 3, map: true, lattice: true });
+    expect(collisionState(late.world)).toMatchObject({ pole: false, plinth: true, support: 5, ray: 5, map: true, lattice: true });
     expect(late.world.drainEvents()).toEqual([]);
   });
 });
@@ -75,7 +75,7 @@ describe('boss reveal state replication', () => {
     for (const peer of [mirror, late]) {
       expect(peer.world.effigyRevealedAt).toBe(230);
       expect(collisionState(peer.world)).toEqual(collisionState(host));
-      expect(collisionState(peer.world)).toMatchObject({ pole: false, plinth: false, support: 0, ray: 0, map: false, lattice: false });
+      expect(collisionState(peer.world)).toMatchObject({ pole: false, plinth: false, support: 2, ray: 2, map: false, lattice: false });
       expect(peer.world.nav.isWalkable(0, 0)).toBe(true);
       expect(peer.world.drainEvents()).toEqual([]);
     }
@@ -106,7 +106,7 @@ describe('boss reveal state replication', () => {
     mirror.world.time += 1000;
     expect(mirror.world.effigyRevealedAt).toBeNull();
     expect(mirror.world.map.isBlockedAt(0, 0)).toBe(true);
-    expect(mirror.world.collision.supportHeight(0, 0, 40)).toBe(26);
+    expect(mirror.world.collision.supportHeight(0, 0, 40)).toBe(28);
   });
 
   it('retains replicated buildings and pieces overlapping the old footprint on live frames and late joins', () => {

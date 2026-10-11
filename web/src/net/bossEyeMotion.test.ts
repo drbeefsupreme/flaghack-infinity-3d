@@ -1,3 +1,4 @@
+import { groundHeight } from '../sim/terrain';
 import * as fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -160,7 +161,7 @@ describe('boss eye motion playback', () => {
             peer.world.time = motion.blend(peer.world, at + fraction / 30);
             const shown = peer.world.boss!, facts = JSON.stringify(shown);
             combat.sample(shown, shown.spawnedAt);
-            model.position.set(shown.pos.x - root.position.x, 0, shown.pos.z - root.position.z); model.rotation.y = shown.yaw;
+            model.position.set(shown.pos.x - root.position.x, groundHeight(shown.pos.x, shown.pos.z, host.map.half), shown.pos.z - root.position.z); model.rotation.y = shown.yaw;
             root.updateMatrixWorld(true); fx.aim(shown, peer.world.time); fx.update(shown, peer.world.time); root.updateMatrixWorld(true);
             const gaze = readBossEyeGaze(model.getObjectByName('head') as THREE.Bone), beam = fx.group.getObjectByName('boss-eye-beam')!;
             const start = beam.localToWorld(new THREE.Vector3()), end = beam.localToWorld(new THREE.Vector3(0, 0, 1));
@@ -208,7 +209,7 @@ describe('boss eye motion playback', () => {
           peer.world.time = motion.blend(peer.world, now);
           const shown = peer.world.boss!;
           combat.sample(shown, shown.spawnedAt);
-          model.position.set(shown.pos.x - root.position.x, 0, shown.pos.z - root.position.z); model.rotation.y = shown.yaw;
+          model.position.set(shown.pos.x - root.position.x, groundHeight(shown.pos.x, shown.pos.z, host.map.half), shown.pos.z - root.position.z); model.rotation.y = shown.yaw;
           root.updateMatrixWorld(true); fx.aim(shown, now); fx.update(shown, now); root.updateMatrixWorld(true);
           const gaze = readBossEyeGaze(model.getObjectByName('head') as THREE.Bone);
           const beam = fx.group.getObjectByName('boss-eye-beam')!, start = beam.localToWorld(new THREE.Vector3()), end = beam.localToWorld(new THREE.Vector3(0, 0, 1));

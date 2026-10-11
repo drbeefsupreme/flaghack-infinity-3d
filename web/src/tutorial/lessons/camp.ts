@@ -43,12 +43,12 @@ export const command: LessonScript = {
   id: 'command',
   briefing: [
     saint(
-      'You are not alone. Your camp\'s hippies, the **Signifiers**, do most of the work, and you command them from the **Command Table**: {key:Tab} anywhere, or tap {key:E} at your Command Center.',
+      'You are not alone. Your camp\'s hippies, the **Signifiers**, do most of the work, and you command them from the **Command Table**: {key:Tab} anywhere.',
     ),
     saint('There you set **Camp Priorities** and draw your **Survey Pattern**: ghost Flags your Signifiers fetch from the Hearth and plant for real.'),
   ],
   objectives: [
-    { id: 'open', text: 'Open the Command View: {key:Tab}', hint: 'Tab works anywhere; E at your Command Center dives into its table. Tab again comes back.' },
+    { id: 'open', text: 'Open the Command View: {key:Tab}', hint: 'Tab works anywhere. Tab again comes back.' },
     {
       id: 'priority',
       text: 'Camp Priorities: raise **Survey** to 4',

@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 /** Host-only giant AI, movement and once-per-action impact windows. */
 import { BOSS_DEATH_DURATION, BOSS_RADIUS, BOSS_TIMING, createBossEyeState } from '../boss';
 import { BOSS_GAMEPLAY_SCALE as SIZE } from '../bossDimensions';
@@ -357,10 +358,10 @@ function attackReaches(world: World, b: BossState, pos: V2): boolean {
   return false;
 }
 function swipe(world: World, b: BossState): void {
-  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < HAND_HEIGHT && inSwipe(b, av.pos) && attackReaches(world, b, av.pos)) {
+  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < groundHeight(b.pos.x, b.pos.z, world.map.half) + HAND_HEIGHT && inSwipe(b, av.pos) && attackReaches(world, b, av.pos)) {
     damageEntity(world, av.id, SWIPE_DAMAGE, b.id); launch(world, b, av.id);
   }
-  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < HAND_HEIGHT && inSwipe(b, h.pos) && attackReaches(world, b, h.pos)) {
+  for (const h of world.hippies.values()) if (h.status !== 'ko' && groundHeight(h.pos.x, h.pos.z, world.map.half) + (h.airborne?.y ?? 0) < groundHeight(b.pos.x, b.pos.z, world.map.half) + HAND_HEIGHT && inSwipe(b, h.pos) && attackReaches(world, b, h.pos)) {
     damageEntity(world, h.id, SWIPE_DAMAGE, b.id); launch(world, b, h.id);
   }
   for (const s of [...world.buildings.values()]) if (inSwipe(b, s.pos) && attackReaches(world, b, s.pos)) {
@@ -376,8 +377,8 @@ function stomp(world: World, b: BossState): void {
 }
 function footImpact(world: World, b: BossState, at: V2, radius: number, heavy: boolean): void {
   world.emit({ t: 'bossFootfall', bossId: b.id, pos: { ...at }, heavy });
-  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < 2.8 * SIZE && distance(av.pos, at) <= radius && attackReaches(world, b, av.pos)) damageEntity(world, av.id, STOMP_DAMAGE, b.id);
-  for (const h of world.hippies.values()) if (h.status !== 'ko' && (h.airborne?.y ?? 0) < 2.8 * SIZE && distance(h.pos, at) <= radius && attackReaches(world, b, h.pos)) damageEntity(world, h.id, STOMP_DAMAGE, b.id);
+  for (const av of world.avatars.values()) if (!av.koUntil && av.pos.y < groundHeight(at.x, at.z, world.map.half) + 2.8 * SIZE && distance(av.pos, at) <= radius && attackReaches(world, b, av.pos)) damageEntity(world, av.id, STOMP_DAMAGE, b.id);
+  for (const h of world.hippies.values()) if (h.status !== 'ko' && groundHeight(h.pos.x, h.pos.z, world.map.half) + (h.airborne?.y ?? 0) < groundHeight(at.x, at.z, world.map.half) + 2.8 * SIZE && distance(h.pos, at) <= radius && attackReaches(world, b, h.pos)) damageEntity(world, h.id, STOMP_DAMAGE, b.id);
   crushObjects(world, b, at, radius, heavy);
 }
 function crushObjects(world: World, b: BossState, at: V2, radius: number, heavy: boolean): void {

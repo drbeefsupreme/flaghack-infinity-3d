@@ -1,23 +1,20 @@
 /**
- * Command View panels (the GCC table): Survey plan tools (+ Flag Simulacra targeting state),
+ * Command View panels (the GCC table): Survey plan tools,
  * Camp Priorities, the selection panel with orders, the camp build menu with live placement
- * reasons, Drug Lab brewing and the Geomantic Command Center actions. Every change goes through
+ * reasons, Drug Lab brewing and the Geomantic Command Center status. Every change goes through
  * session fields or app.submit(Command); nothing here mutates the World.
  */
 import type { PlanTool } from '../game/session';
 import { BREW_COST, BREW_TIME, BUILDINGS, GCC, RECRUIT_RADIUS, RECRUIT_INTERVAL } from '../sim/constants';
 import { BUILDING_NAMES, canPlaceBuilding, isCollapsed } from '../sim/systems/buildings';
-import { gccBlocker } from '../sim/systems/gcc';
-import { handFlagBlocker } from '../sim/systems/recruitment';
 import { brewBlocker } from '../sim/systems/drugs';
 import { DRUGS, JOBS } from '../sim/types';
-import type { Building, DrugId, EntityId, FactionState, GccAction, Hippie, JobKind } from '../sim/types';
+import type { Building, DrugId, EntityId, FactionState, Hippie, JobKind } from '../sim/types';
 import type { World } from '../sim/world';
 import {
   BUILD_INFO,
   CAMP_BUILDINGS,
   DRUG_INFO,
-  GCC_INFO,
   JOB_INFO,
   PLAN_TOOLS,
   STATUS_INFO,
@@ -29,7 +26,6 @@ import { button, el, escapeHtml, fmtCountdown, html, kbd, setAttr, setClass, set
 import { iconSvg } from './icons';
 
 const MAX_CHIPS = 16;
-const GCC_ACTIONS: readonly GccAction[] = ['dialectics', 'simulacra'];
 
 interface JobRow {
   job: JobKind;
@@ -53,10 +49,10 @@ export class CommandPanels implements UiPart {
   private deck: HTMLElement;
   // Plan
   private planButtons = new Map<PlanTool | 'clear', HTMLButtonElement>();
+  private encloseOptions: HTMLElement;
+  private encloseTarget: HTMLButtonElement;
   private planHint: HTMLElement;
   private planCount: HTMLElement;
-  private simBox: HTMLElement;
-  private simText: HTMLElement;
   // Priorities
   private jobs: JobRow[] = [];
   // Selection
@@ -65,7 +61,6 @@ export class CommandPanels implements UiPart {
   private selChips: HTMLElement;
   private selSig = '';
   private selOrders: HTMLElement;
-  private selHandFlag: HTMLButtonElement;
   private selInfo: HTMLElement;
   private selInfoKey = '';
   // Build
@@ -77,10 +72,6 @@ export class CommandPanels implements UiPart {
   private labs = new Map<EntityId, LabRow>();
   // GCC
   private gccStatus: HTMLElement;
-  private gccButtons: Record<GccAction, HTMLButtonElement>;
-  private gccCd: Record<GccAction, HTMLElement>;
-  private gccHint: HTMLElement;
-  private gccBlocker: (action: GccAction) => string;
 
   constructor(host: UiHost, layout: UiLayout) {
     this.host = host;
@@ -93,6 +84,7 @@ export class CommandPanels implements UiPart {
     const tools = el('div', 'plan-tools', plan);
     tutorialTarget(tools, 'plan-tools');
     for (const info of PLAN_TOOLS) {
+      if (info.tool === 'ring') continue; // Expand home lives inside Enclose.
       const b = button(
         'plan-btn',
         tools,
@@ -104,7 +96,7 @@ export class CommandPanels implements UiPart {
             ss.planPreview = [];
           } else {
             ss.planTool = info.tool;
-            if (info.tool !== 'simulacra') ss.planPreview = [];
+            ss.planPreview = [];
           }
         },
         // Clear is an action on the plan; the rest pick a tool.
@@ -114,22 +106,20 @@ export class CommandPanels implements UiPart {
       if (info.target) tutorialTarget(b, info.target);
       this.planButtons.set(info.tool, b);
     }
+    this.encloseOptions = el('div', 'enclose-options plan-tools is-off', plan);
+    this.encloseTarget = button('plan-btn', this.encloseOptions, `<span class="pb-name">At target</span>${kbd('E')}`, () => {
+      this.host.app.session.planTool = 'enclose';
+      this.host.app.session.planPreview = [];
+    }, 'pick');
+    const expand = button('plan-btn', this.encloseOptions, `<span class="pb-name">Expand home</span>${kbd('R')}`, () => {
+      this.host.app.session.planTool = 'ring';
+      this.host.app.session.planPreview = [];
+    }, 'pick');
+    expand.title = 'Enclose a wider ring around your home Survey.';
+    tutorialTarget(expand, 'plan-ring');
+    this.planButtons.set('ring', expand);
     this.planHint = el('div', 'panel-hint', plan, '');
     this.planCount = el('div', 'panel-meta', plan, '');
-    this.simBox = el('div', 'sim-target is-off', plan);
-    html('span', 'sim-ic', iconSvg('simulacra'), this.simBox);
-    this.simText = el('span', 'sim-text', this.simBox, '');
-    button(
-      'btn btn-tiny',
-      this.simBox,
-      'Cancel',
-      () => {
-        const ss = this.host.app.session;
-        ss.planTool = 'select';
-        ss.planPreview = [];
-      },
-      'back',
-    );
 
     // ── Camp priorities ──
     const prio = this.panel(this.right, 'Camp priorities', 'prio');
@@ -167,54 +157,10 @@ export class CommandPanels implements UiPart {
     html(
       'div',
       'gcc-banner',
-      '<span class="gb-main">GEOMANTIC COMMAND CENTER</span><span class="gb-sub">FLAG REPAIR · RECRUITMENT · GEOMANTIC ADVICE · FLAGELLIAN DIALECTICS</span>',
+      '<span class="gb-main">GEOMANTIC COMMAND CENTER</span><span class="gb-sub">FLAG REPAIR · RECRUITMENT · GEOMANTIC ADVICE</span>',
       gcc,
     );
     this.gccStatus = el('div', 'panel-meta gcc-status', gcc, '');
-    const gccRow = el('div', 'gcc-actions', gcc);
-    const mkGcc = (action: GccAction, onClick: () => void): HTMLButtonElement => {
-      const info = GCC_INFO[action];
-      const b = button(
-        'gcc-btn',
-        gccRow,
-        `<span class="gcc-ic">${iconSvg(info.icon)}</span><span class="gcc-name">${info.name}</span><span class="slot-sweep"></span>`,
-        onClick,
-        'confirm',
-      );
-      b.title = info.effect;
-      tutorialTarget(b, info.target);
-      return b;
-    };
-    /** Table actions share the simulation's reach, cooldown and collapse rules. */
-    const blockerFor = (action: GccAction): string => {
-      const w = this.host.app.world;
-      if (!w) return 'No burn in progress.';
-      return gccBlocker(w, this.host.app.session.playerFaction, action);
-    };
-    this.gccButtons = {
-      dialectics: mkGcc('dialectics', () => {
-        const ss = this.host.app.session;
-        const blocker = blockerFor('dialectics');
-        if (blocker) this.host.blocked(blocker);
-        else this.host.app.submit({ t: 'gcc', faction: ss.playerFaction, action: 'dialectics', target: -1, nodes: [] });
-      }),
-      simulacra: mkGcc('simulacra', () => {
-        const ss = this.host.app.session;
-        const blocker = blockerFor('simulacra');
-        if (blocker) {
-          this.host.blocked(blocker);
-          return;
-        }
-        ss.planTool = 'simulacra';
-        ss.planPreview = [];
-      }),
-    };
-    this.gccCd = {
-      dialectics: el('span', 'gcc-cd num', this.gccButtons.dialectics),
-      simulacra: el('span', 'gcc-cd num', this.gccButtons.simulacra),
-    };
-    this.gccBlocker = blockerFor;
-    this.gccHint = el('div', 'panel-hint gcc-hint is-off', gcc, '');
 
     // ── Deck: selection ──
     this.sel = this.panel(this.deck, 'Selection', 'sel');
@@ -222,19 +168,8 @@ export class CommandPanels implements UiPart {
     this.selChips = el('div', 'chips', this.sel);
     this.selInfo = el('div', 'sel-info', this.sel);
     this.selOrders = el('div', 'sel-orders', this.sel);
-    button('btn btn-small', this.selOrders, `${iconSvg('follow')}Follow me`, () => this.order('follow'));
-    button('btn btn-small', this.selOrders, `${iconSvg('defend')}Defend here`, () => this.order('defend'));
+    button('btn btn-small', this.selOrders, `${iconSvg('defend')}Hold position`, () => this.order('defend'));
     button('btn btn-small', this.selOrders, `${iconSvg('close')}Clear orders`, () => this.order('clear'));
-    this.selHandFlag = button('btn btn-small btn-gold', this.selOrders, 'Hand Flag', () => {
-      const w = this.host.app.world;
-      if (!w) return;
-      const target = this.handTarget(w);
-      const f = this.host.app.session.playerFaction;
-      const why = target ? handFlagBlocker(w, f, target.id) : 'Select a neutral Signifier.';
-      if (why || !target) this.host.blocked(why);
-      else this.host.app.submit({ t: 'handFlag', faction: f, hippieId: target.id });
-    }, 'confirm');
-    tutorialTarget(this.selHandFlag, 'hand-flag');
 
     // ── Deck: build menu ──
     const build = this.panel(this.deck, 'Camp buildings', 'build');
@@ -282,25 +217,14 @@ export class CommandPanels implements UiPart {
     return out;
   }
 
-  private handTarget(world: World): Hippie | null {
-    for (const id of this.host.app.session.selection) {
-      const h = world.hippies.get(id);
-      if (h && h.faction === -1) return h;
-    }
-    return null;
-  }
-
-  private order(kind: 'follow' | 'defend' | 'clear'): void {
+  private order(kind: 'defend' | 'clear'): void {
     const w = this.host.app.world;
     const s = this.host.app.session;
     if (!w) return;
     const hs = this.ownSelected(w);
     if (hs.length === 0) return;
     const ids = hs.map((h) => h.id);
-    const fac = w.factions[s.playerFaction];
-    if (kind === 'follow' && fac) {
-      this.host.app.submit({ t: 'order', faction: s.playerFaction, hippies: ids, order: { kind: 'follow', avatarId: fac.avatarId } });
-    } else if (kind === 'defend') {
+    if (kind === 'defend') {
       let x = 0;
       let z = 0;
       for (const h of hs) {
@@ -337,17 +261,15 @@ export class CommandPanels implements UiPart {
 
   private updatePlan(world: World, fac: FactionState): void {
     const s = this.host.app.session;
-    for (const [tool, b] of this.planButtons) setClass(b, 'on', tool === s.planTool);
+    const enclosing = s.planTool === 'enclose' || s.planTool === 'ring';
+    show(this.encloseOptions, enclosing);
+    setClass(this.encloseTarget, 'on', s.planTool === 'enclose');
+    for (const [tool, b] of this.planButtons) setClass(b, 'on', tool === 'enclose' ? enclosing : tool === s.planTool);
     const info = PLAN_TOOLS.find((p) => p.tool === s.planTool);
     setText(this.planHint, info ? info.hint : '');
     let unfilled = 0;
     for (const n of fac.plan) if (world.survey.nodeFlagOwner[n] !== fac.id) unfilled++;
     setText(this.planCount, `Plan: ${fac.plan.size} nodes · ${unfilled} awaiting Flags`);
-    const sim = s.planTool === 'simulacra';
-    show(this.simBox, sim);
-    if (sim) {
-      setText(this.simText, `Flag Simulacra: click two distant nodes (${Math.min(2, s.planPreview.length)}/2). Right-click cancels.`);
-    }
   }
 
   private updateJobs(world: World, fac: FactionState): void {
@@ -368,29 +290,12 @@ export class CommandPanels implements UiPart {
     let status: string;
     if (!gcc?.gcc) status = 'No cart: your Geomantic Command Center is gone';
     else if (isCollapsed(gcc)) status = `Collapsed · rebuilt at the Hearth in ${fmtCountdown(gcc.gcc.destroyedUntil - t)}`;
-    else if (gcc.gcc.channelUntil > t) status = `Dialectics in session · ${fmtCountdown(gcc.gcc.channelUntil - t)}`;
     else {
       const advice = `Geomantic Advice ${GCC.adviceRadius} m`;
       status = gcc.gcc.pushedBy !== -1 ? `Rolling · ${advice}` : `Parked · ${advice} · Flag Repair ${GCC.repairRadius} m`;
     }
     if (gcc && !isCollapsed(gcc) && !gcc.disabled) status += ` · Recruits nearby neutrals (${RECRUIT_RADIUS} m / ${RECRUIT_INTERVAL} s)`;
     setText(this.gccStatus, status);
-    let hint = '';
-    for (const action of GCC_ACTIONS) {
-      const b = this.gccButtons[action];
-      const left = fac.cooldowns[action] - t;
-      setClass(b, 'cooling', left > 0);
-      setVar(b, '--p', left > 0 ? Math.min(1, left / GCC_INFO[action].cooldown).toFixed(3) : '0');
-      setText(this.gccCd[action], left > 0 ? String(Math.ceil(left)) : '');
-      const blocker = left > 0 ? '' : this.gccBlocker(action);
-      setClass(b, 'blocked', blocker !== '');
-      // Recharging or blocked: a click shows the reason (and sounds the error) instead of acting.
-      setDisabled(b, left > 0 || blocker !== '');
-      if (!hint) hint = blocker;
-      setClass(b, 'on', action === 'simulacra' && this.host.app.session.planTool === 'simulacra');
-    }
-    setText(this.gccHint, hint);
-    show(this.gccHint, hint !== '');
   }
 
   private updateSelection(world: World, fac: FactionState): void {
@@ -433,12 +338,7 @@ export class CommandPanels implements UiPart {
       this.selChips.innerHTML = markup;
     }
     show(this.selChips, own.length > 0);
-    show(this.selOrders, own.length > 0 || neutral > 0);
-    show(this.selHandFlag, neutral > 0);
-    const target = this.handTarget(world);
-    const why = target ? handFlagBlocker(world, this.host.app.session.playerFaction, target.id) : 'Select a neutral Signifier.';
-    setDisabled(this.selHandFlag, !!why);
-    this.selHandFlag.title = why || 'Hand one carried Flag to this nearby Signifier.';
+    show(this.selOrders, own.length > 0);
 
     let info = '';
     if (other) {

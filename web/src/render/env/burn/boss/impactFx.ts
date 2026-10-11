@@ -60,8 +60,7 @@ export class ImpactFireworks {
     const camera = this.ctx.camera.position;
     if (this.melee && (camera.x - e.pos.x) ** 2 + (camera.y - e.pos.y) ** 2 + (camera.z - e.pos.z) ** 2 > 160 * 160) return;
     const b = this.pool[this.cursor++ % this.pool.length], origin = this.origin;
-    const groundY = this.melee ? this.ctx.shared?.groundOffset?.(e.pos.x, e.pos.z) ?? 0 : 0;
-    b.points.position.set(e.pos.x - origin.x, e.pos.y + groundY, e.pos.z - origin.z);
+    b.points.position.set(e.pos.x - origin.x, e.pos.y, e.pos.z - origin.z);
     b.born = this.melee ? this.ctx.time : this.ctx.world.time; b.uAge.value = 0; b.uPower.value = e.t === 'meleeImpact' ? .38 : e.headshot ? 1.35 : 1;
     b.uColor.value.set(this.ctx.world.factions[e.faction]?.color ?? 0xffcc66); b.points.visible = true;
   }

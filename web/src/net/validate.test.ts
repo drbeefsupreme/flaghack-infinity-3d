@@ -42,7 +42,6 @@ const VALID: Command[] = [
   { t: 'align', faction: 0, chakra: 'canton' },
   { t: 'drug', faction: 0, drug: 'acidcop' },
   { t: 'brew', faction: 0, labId: 80, drug: 'dust' },
-  { t: 'gcc', faction: 0, action: 'simulacra', target: -1, nodes: [4, 9] },
   { t: 'handFlag', faction: 0, hippieId: 52 },
   { t: 'pushGcc', faction: 0, on: true },
   { t: 'ping', faction: 0, kind: 'sos', at: AT },
@@ -50,8 +49,8 @@ const VALID: Command[] = [
   { t: 'tapBeacon', faction: 0, beaconId: 66 },
 ];
 
-/** Compiler-checked list of every Command type, so a new variant cannot go untested. */
-const COMMAND_TYPES: Record<CommandType, true> = {
+/** Every supported Command type; the retired GCC discriminator is tested as invalid. */
+const COMMAND_TYPES: Record<Exclude<CommandType, 'gcc'>, true> = {
   avatarInput: true,
   plant: true,
   throw: true,
@@ -70,7 +69,6 @@ const COMMAND_TYPES: Record<CommandType, true> = {
   align: true,
   drug: true,
   brew: true,
-  gcc: true,
   pushGcc: true,
   ping: true,
   retransmit: true,
@@ -79,6 +77,8 @@ const COMMAND_TYPES: Record<CommandType, true> = {
 
 /** Wrong in exactly one way each. */
 const INVALID: [string, unknown][] = [
+  ['retired Dialectics', { t: 'gcc', faction: 0, action: 'dialectics', target: -1, nodes: [] }],
+  ['retired Simulacra', { t: 'gcc', faction: 0, action: 'simulacra', target: -1, nodes: [4, 9] }],
   ['not an object', 'plant'],
   ['an array', [{ t: 'throw', faction: 0 }]],
   ['unknown type', { t: 'teleport', faction: 0 }],

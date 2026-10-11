@@ -43,6 +43,8 @@ void main() {
   int nb = fhId(iAnchor.y);
   if (na >= 0) A.xz += fhNode(na).xy;
   if (nb >= 0) B.xz += fhNode(nb).xy;
+  A.y += fhGround(A.xz);
+  B.y += fhGround(B.xz);
   float t = aCorner.x;
   vec3 P = mix(A, B, t);
   vec3 axis = B - A;

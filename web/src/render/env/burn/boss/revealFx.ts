@@ -1,6 +1,9 @@
 /** One deterministic explosion, reconstructed from seconds since the authoritative reveal. */
 import * as THREE from 'three';
 import { CRATER_SEGMENTS, CRATER_OUTER_RADIUS, craterRimVariation } from '../../../../sim/effigyCrater';
+import { groundHeight } from '../../../../sim/terrain';
+import { MAP_HALF } from '../../../../sim/constants';
+import { groundBossGeometry } from './groundGeometry';
 import { Rng } from '../../../../sim/rng';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
@@ -149,15 +152,19 @@ export class RevealFx {
     craterMaterial.customProgramCacheKey = () => 'boss-crater-v1';
     this.crater = add(new THREE.Mesh(createCrater(rng), craterMaterial), 'boss-black-crater');
     this.crater.receiveShadow = true;
+    const at = env.ctx.world.map.effigy, half = env.ctx.world.map.half ?? MAP_HALF;
+    const ground = groundHeight(at.x, at.z, half) / BOSS_GAMEPLAY_SCALE;
+    groundBossGeometry(this.crater.geometry, at, BOSS_GAMEPLAY_SCALE, half);
     this.burst = add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), new THREE.ShaderMaterial({
       // The back shell is behind the depth-writing boss from every viewing angle:
       // the explosion halo stays visible, while the model appears immediately in front.
       ...ADDITIVE, side: THREE.BackSide, uniforms: { ...age, uNoise: { value: env.noise } }, vertexShader: BURST_VERTEX, fragmentShader: BURST_FRAGMENT,
     })), 'boss-white-burst', 5);
-    this.burst.position.y = 14;
-    this.shock = add(new THREE.Mesh(new THREE.CircleGeometry(50, 80).rotateX(-Math.PI / 2).translate(0, 0.15, 0), new THREE.ShaderMaterial({
+    this.burst.position.y = ground + 14;
+    this.shock = add(new THREE.Mesh(new THREE.RingGeometry(0, 50, 80, 24).rotateX(-Math.PI / 2).translate(0, 0.15, 0), new THREE.ShaderMaterial({
       ...ADDITIVE, uniforms: age, vertexShader: SHOCK_VERTEX, fragmentShader: SHOCK_FRAGMENT,
     })), 'boss-ground-shock', 2);
+    groundBossGeometry(this.shock.geometry, at, BOSS_GAMEPLAY_SCALE, half);
     const count = env.ctx.quality === 'low' ? 24 : 42;
     const smokeGeometry = new THREE.InstancedBufferGeometry();
     smokeGeometry.setAttribute('position', new THREE.Float32BufferAttribute([-0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0], 3));
@@ -211,6 +218,7 @@ export class RevealFx {
     };
     debrisMaterial.customProgramCacheKey = () => 'boss-charred-debris-v1';
     this.debris = add(new THREE.Mesh(debrisGeometry, debrisMaterial), 'boss-charred-timber');
+    for (const effect of [this.smoke, this.embers, this.debris]) effect.position.y = ground;
     this.group.visible = false;
   }
 

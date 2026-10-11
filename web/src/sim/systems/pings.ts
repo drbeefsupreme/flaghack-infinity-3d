@@ -92,7 +92,7 @@ export function cmdTapBeacon(world: World, c: CommandOf<'tapBeacon'>): void {
   const reach = AVATAR.beaconReach;
   const dx = av.pos.x - bc.pos.x;
   const dz = av.pos.z - bc.pos.z;
-  if (av.koUntil > 0 || dx * dx + dz * dz > reach * reach || av.pos.y > reach) {
+  if (av.koUntil > 0 || dx * dx + dz * dz > reach * reach || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > reach) {
     world.emit({ t: 'rejected', faction: c.faction, reason: 'Get closer to pick up that beacon.' });
     return;
   }

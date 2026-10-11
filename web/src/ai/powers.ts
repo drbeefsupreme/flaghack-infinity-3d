@@ -2,22 +2,19 @@
  * Powers: chakra alignment by temperament, abilities aimed at what actually decides fights
  * (Phason Shift on a flippable critical Flag, Priority Beacon on the Flag to pull, Stabilize
  * over our assault loop, Forced March into an assault, Omega Pulse into a crowd), drugs at
- * the moment they pay, Command Center actions and the TAKE A SHOT retransmit.
+ * the moment they pay, the TAKE A SHOT retransmit.
  * Every action is checked with the sim's own blockers first, so nothing is rejected.
  * Owner: AI agent.
  */
-import { ABILITY, ALIGN_COST, GCC_SIMULACRA_RANGE } from '../sim/constants';
+import { ABILITY, ALIGN_COST } from '../sim/constants';
 import { abilityBlocker, inStabilizeZone } from '../sim/systems/abilities';
 import { drugBlocker } from '../sim/systems/drugs';
-import { gccActive } from '../sim/systems/gcc';
-import { canPlantAt, isBuildingCorner } from '../sim/systems/flags';
+import { isBuildingCorner } from '../sim/systems/flags';
 import type { AbilityId, EntityId } from '../sim/types';
 import type { Brain } from './brain';
 
 /** Hippie attention below which the camp counts as flagging (TAKE A SHOT). */
 const LOW_ATTENTION = 25;
-/** The vexillomancer only walks to the Command Center for an action from this close. */
-const GCC_ERRAND = 45;
 /** A wall missing at most WALL_GAPS nodes gets the Beacon, when this many hands are in reach. */
 const WALL_GAPS = 3;
 const BEACON_HANDS = 3;
@@ -34,7 +31,6 @@ export function usePowers(b: Brain): void {
   planAlignment(b);
   if (b.world.rng.next() < b.skill.powers) castAbilities(b);
   takeDrugs(b);
-  planGcc(b);
   retransmit(b);
 }
 
@@ -173,35 +169,6 @@ function takeDrugs(b: Brain): void {
   }
   if (b.posture === 'expand' && b.pentacleFocus >= 0 && drugBlocker(world, b.f, 'dust') === '' && b.persona.crystals >= 1) {
     world.submit({ t: 'drug', faction: b.f, drug: 'dust' });
-  }
-}
-
-/** Command Center errands: convert rival crowds with Dialectics; neutral recruitment is passive. */
-function planGcc(b: Brain): void {
-  const world = b.world;
-  const v = b.view;
-  b.gccWanted = null;
-  if (!gccActive(world, b.f) || b.posture === 'attack') return;
-  const g = world.gccOf(b.f);
-  const av = world.avatarOf(b.f);
-  if (!g || (av.pos.x - g.pos.x) ** 2 + (av.pos.z - g.pos.z) ** 2 > GCC_ERRAND * GCC_ERRAND) return;
-  const fac = world.factions[b.f];
-  if (v.rivalsNearGcc >= 2 && fac.cooldowns.dialectics <= world.time) {
-    b.gccWanted = { action: 'dialectics', target: -1, nodes: [] };
-    return;
-  }
-  // Flag Simulacra: superpose one Flag over two unfilled plan nodes in the cart's reach.
-  if (fac.cooldowns.simulacra <= world.time && v.stock > 0) {
-    const lat = world.lattice;
-    const picks: number[] = [];
-    for (const n of fac.plan) {
-      const node = lat.nodes[n];
-      if ((node.x - g.pos.x) ** 2 + (node.z - g.pos.z) ** 2 > (GCC_SIMULACRA_RANGE - 2) ** 2) continue;
-      if (!canPlantAt(world, n, b.f)) continue;
-      picks.push(n);
-      if (picks.length === 2) break;
-    }
-    if (picks.length === 2) b.gccWanted = { action: 'simulacra', target: -1, nodes: picks };
   }
 }
 

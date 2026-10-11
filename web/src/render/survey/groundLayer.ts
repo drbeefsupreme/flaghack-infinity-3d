@@ -13,6 +13,7 @@ ${GLSL_VERT}
 varying vec2 vWorld;
 void main() {
   vec4 wp = modelMatrix * vec4(position, 1.0);
+  wp.y += fhGround(wp.xz);
   vWorld = wp.xz;
   vec4 mv = viewMatrix * wp;
   vFogDepth = -mv.z;
@@ -59,11 +60,12 @@ export class GroundLayer {
   constructor(scene: THREE.Scene, shared: SurveyUniforms, half: number) {
     this.scene = scene;
     this.shared = shared;
-    this.geo = new THREE.PlaneGeometry(half * 2, half * 2);
+    this.geo = new THREE.PlaneGeometry(half * 2, half * 2, 128, 128);
     this.geo.rotateX(-Math.PI / 2);
     this.geo.translate(0, LIFT.noise, 0);
     this.mat = surveyMaterial(shared, { vertexShader: VERT, fragmentShader: FRAG, uniforms: { uHalf: { value: half } }, hdrCap: 0.8 });
     this.mesh = new THREE.Mesh(this.geo, this.mat);
+    this.mesh.frustumCulled = false; // Vertex shader lifts the sheet above its flat CPU bounds.
     this.mesh.renderOrder = 1;
     this.mesh.visible = false;
     scene.add(this.mesh);

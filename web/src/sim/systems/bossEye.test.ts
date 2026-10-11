@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 import { describe, expect, it, vi } from 'vitest';
 import { BOSS_EYE_MAX_RANGE, BOSS_MAX_HP } from '../boss';
 import { AVATAR, BUILDINGS, BUILDING_HEIGHT, HIPPIE, LEVEL_HEIGHT, SIM_DT } from '../constants';
@@ -163,8 +164,8 @@ describe('single 1000-damage, 5-meter boss eye blast', () => {
   it('uses inclusive 3D body boundaries and never damages its own boss', () => {
     const { world, boss } = encounter(), inside = world.avatarOf(0), outside = world.avatarOf(1);
     inside.pos = { x: 5 + AVATAR.radius, y: 10, z: 0 }; outside.pos = { x: 5 + AVATAR.radius + .001, y: 10, z: 0 };
-    const highInside = spawnHippie(world, -1, { x: 0, z: 0 }); highInside.airborne = { y: 15.5, vy: 0 };
-    const highOutside = spawnHippie(world, -1, { x: 0, z: 0 }); highOutside.airborne = { y: 15.501, vy: 0 };
+    const highInside = spawnHippie(world, -1, { x: 0, z: 0 }); highInside.airborne = { y: 15.5 - groundHeight(0,0,world.map.half), vy: 0 };
+    const highOutside = spawnHippie(world, -1, { x: 0, z: 0 }); highOutside.airborne = { y: 15.501 - groundHeight(0,0,world.map.half), vy: 0 };
     blastBossEye(world, boss, { x: 0, y: 10.5, z: 0 });
     expect(inside.hp).toBe(0); expect(outside.hp).toBe(AVATAR.maxHp);
     expect(highInside.status).toBe('ko'); expect(highOutside.status).not.toBe('ko');
@@ -187,7 +188,7 @@ describe('single 1000-damage, 5-meter boss eye blast', () => {
     strong.pos = { x: 5 + BUILDINGS[kind].radius, z: 0 }; lethal.pos = { x: -5 - BUILDINGS[kind].radius, z: 0 };
     outside.pos = { x: 0, z: 5 + BUILDINGS[kind].radius + .001 };
     const outsideHp = outside.hp;
-    blastBossEye(world, boss, { x: 0, y: Math.min(1, BUILDING_HEIGHT[kind]), z: 0 });
+    blastBossEye(world, boss, { x: 0, y: groundHeight(strong.pos.x,strong.pos.z,world.map.half) + BUILDING_HEIGHT[kind] / 2, z: 0 });
     expect(world.buildings.has(strong.id)).toBe(true); expect(strong.hp).toBe(1500);
     expect(world.buildings.has(lethal.id)).toBe(kind === 'hearth'); expect(outside.hp).toBe(outsideHp);
     if (kind === 'hearth') expect(lethal.hp).toBe(1);

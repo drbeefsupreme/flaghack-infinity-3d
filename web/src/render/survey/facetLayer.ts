@@ -46,18 +46,18 @@ void main() {
   vec2 e3 = c3 - c0;
   float L = length(e1);
   float sinA = abs(e1.x * e3.y - e1.y * e3.x) / max(1e-4, L * length(e3));
-  vec4 mv = viewMatrix * vec4(P.x, ${LIFT.facet}, P.y, 1.0);
+  vec4 mv = viewMatrix * vec4(P.x, fhGround(P) + ${LIFT.facet}, P.y, 1.0);
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
   vUv = aCorner;
-  vWorld = vec3(P.x, ${LIFT.facet}, P.y);
+  vWorld = vec3(P.x, fhGround(P) + ${LIFT.facet}, P.y);
   vState = st;
   vGeom = vec3(L, sinA, float(f));
   vCentroid = (c0 + c1 + c2 + c3) * 0.25;
   // 1 while the camera is over this facet (inside its bounding circle, at avatar heights):
   // the whole facet then fades instead of reading as a slab under the camera.
   float over = length(cameraPosition.xz - vCentroid) - 0.95 * L;
-  vCamOver = (1.0 - smoothstep(0.0, 6.0, over)) * (1.0 - smoothstep(12.0, 30.0, cameraPosition.y));
+  vCamOver = (1.0 - smoothstep(0.0, 6.0, over)) * (1.0 - smoothstep(12.0, 30.0, cameraPosition.y - fhGround(vCentroid)));
 }
 `;
 

@@ -8,6 +8,7 @@
  * a backlit translucency glow that makes golden hour sing.
  */
 import * as THREE from 'three';
+import { TERRAIN_GLSL } from '../../sim/terrain';
 import type { EnvContext, EnvPart } from './envTypes';
 
 const GRID = 80;
@@ -72,6 +73,7 @@ function buildTuft(): THREE.BufferGeometry {
 }
 
 const VERT_PARS = /* glsl */ `
+${TERRAIN_GLSL}
 attribute vec2 aCell;
 attribute float aT;
 uniform vec2 uFocus;
@@ -103,7 +105,8 @@ vec2 world = cellW + (vec2(h1, h2) - 0.5) * CELL * 0.95;
 vec4 ty = textureLod(uType, (world + uHalf) / (2.0 * uHalf), 0.0);
 float inMap = step(abs(world.x), uHalf) * step(abs(world.y), uHalf);
 float bare = clamp(ty.r + ty.g + ty.b + ty.a, 0.0, 1.0) * inMap + (1.0 - inMap) * 0.35;
-float camDist = length(vec3(world.x, 0.0, world.y) - cameraPosition);
+float groundY = groundHeight(world, uHalf);
+float camDist = length(vec3(world.x, groundY, world.y) - cameraPosition);
 float fade = 1.0 - smoothstep(${FADE_NEAR.toFixed(1)}, ${FADE_FAR.toFixed(1)}, camDist);
 // Presence shrinks a tuft as a whole (footprint too): a tuft only flattened vertically would
 // leave star-shaped slivers z-fighting with roads and camp dirt.
@@ -138,6 +141,7 @@ vec2 bend = uWind * (0.3 + 0.7 * wave) * 0.32 + 0.05 * wlen * vec2(sin(uTime * 3
 transformed.xz += bend * aT * aT * hScale * 3.0;
 transformed.y -= dot(bend, bend) * aT * aT * hScale * 1.5;
 transformed.xz += world;
+transformed.y += groundY;
 `;
 
 const FRAG_PARS = /* glsl */ `
@@ -217,7 +221,7 @@ export class GrassField implements EnvPart {
         .replace('#include <map_fragment>', `#include <map_fragment>\n${FRAG_COLOR}`)
         .replace('#include <emissivemap_fragment>', FRAG_EMISSIVE);
     };
-    this.mat.customProgramCacheKey = () => 'env-grass-v1';
+    this.mat.customProgramCacheKey = () => 'env-grass-dome-v2';
 
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.name = 'grass';

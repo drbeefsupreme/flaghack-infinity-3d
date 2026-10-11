@@ -207,7 +207,7 @@ export function locomote(world: World, sys: UnitsState, h: Hippie, b: Brain, dt:
   }
   const avoid = SEPARATION + AVATAR.radius;
   for (const av of world.avatars.values()) {
-    if (av.koUntil > 0 || av.pos.y > 1.5) continue;
+    if (av.koUntil > 0 || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > 1.5) continue;
     const ox = h.pos.x - av.pos.x;
     const oz = h.pos.z - av.pos.z;
     const d2 = ox * ox + oz * oz;

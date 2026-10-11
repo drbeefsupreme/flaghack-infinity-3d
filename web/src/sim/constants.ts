@@ -275,18 +275,12 @@ export const GCC = {
   repairRadius: 20,
   repairInterval: 3,
   repairHps: 15,
-  dialecticsRadius: 14,
-  dialecticsCooldown: 40,
-  dialecticsChannel: 3,
-  dialecticsMax: 3,
-  simulacraCooldown: 20,
+  /** Legacy superposed Flags still collapse normally when observed. */
   simulacraObserveRadius: 10,
   rebuildTime: 45,
 } as const;
-/** The vexillomancer must stand within this of its GCC to work the Command Table. */
+/** Tutorial arrival distance from the GCC cart edge. */
 export const GCC_REACH = 6;
-/** Both simulacrum nodes must lie within this of the GCC. */
-export const GCC_SIMULACRA_RANGE = 60;
 /** Flag Repair re-plants a loose Flag onto a free node within this of where it lies. */
 export const GCC_REPAIR_SNAP = 6;
 

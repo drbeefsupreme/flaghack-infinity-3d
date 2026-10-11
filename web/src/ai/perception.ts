@@ -6,7 +6,7 @@
  * (see Scheduler), and cached between Survey changes.
  * Owner: AI agent.
  */
-import { ABILITY, CAPTURE, GCC, IMPLIED_MAX_ORDER, LIGHTNING_PULL_MULT, WARD_PULSE_RADIUS } from '../sim/constants';
+import { ABILITY, CAPTURE, IMPLIED_MAX_ORDER, LIGHTNING_PULL_MULT, WARD_PULSE_RADIUS } from '../sim/constants';
 import { criticalNodes } from '../sim/lattice/geometry';
 import { planEnclosure } from '../sim/lattice/planner';
 import type { NodeCost } from '../sim/lattice/planner';
@@ -172,7 +172,6 @@ function senseUnits(b: Brain, world: World, hearth: Building): void {
   v.intruders.length = 0;
   v.neutralsNearGcc.length = 0;
   v.visibleNeutrals.length = 0;
-  v.rivalsNearGcc = 0;
   v.rivalsNearAvatar = 0;
   for (const h of world.hippies.values()) {
     if (h.faction === f || h.koUntil > world.time) continue;
@@ -185,7 +184,6 @@ function senseUnits(b: Brain, world: World, hearth: Building): void {
     const dh2 = (h.pos.x - hearth.pos.x) ** 2 + (h.pos.z - hearth.pos.z) ** 2;
     const facet = world.lattice.facetAt(h.pos.x, h.pos.z);
     if (dh2 <= INTRUDER_RADIUS * INTRUDER_RADIUS || world.inSurvey(facet, f)) v.intruders.push(h.id);
-    if (gcc && (h.pos.x - gcc.pos.x) ** 2 + (h.pos.z - gcc.pos.z) ** 2 <= GCC.dialecticsRadius * GCC.dialecticsRadius) v.rivalsNearGcc++;
     if ((h.pos.x - av.pos.x) ** 2 + (h.pos.z - av.pos.z) ** 2 <= omegaR * omegaR) v.rivalsNearAvatar++;
   }
 }

@@ -318,7 +318,7 @@ export const graduation: LessonScript = {
       'Your D.E.G.E.N. beacon talks to every Signifier on your mesh: rally, attack, Flag-here, and an SOS they raise themselves when hurt. "Use the SOS responsibly."',
     ),
     saint(
-      'Your Command Center automatically recruits nearby neutral Signifiers, like a Drum Circle. Hand or throw a Flag to recruit a neutral yourself. The cart also converts rivals with **Flagellian Dialectics**, and plants **Flag Simulacra**: one Flag on two nodes at once, until an enemy looks.',
+      'Your Command Center automatically recruits nearby neutral Signifiers, like a Drum Circle. Hand or throw a Flag to recruit a neutral yourself. The cart also repairs nearby Flags and structures, reveals the lattice, and observes nearby nodes. Hold E at the cart to push it.',
     ),
   ],
   briefingHighlights: ['clock', 'minimap'],
@@ -326,14 +326,14 @@ export const graduation: LessonScript = {
     {
       id: 'ping',
       text: 'Ping the D.E.G.E.N. mesh: {key:P}',
-      hint: 'P pings where your crosshair points: an enemy means Attack, a Ley Node means Flag-here, anything else Rally.',
+      hint: 'P pings where your crosshair points: an enemy means Attack, a Ley Node means a Flag-here marker, anything else Rally. The marker does not order planting.',
       highlights: ['minimap'],
     },
     {
       id: 'gift',
       text: 'Go to your Command Center and recruit the lost Signifier',
       hint: 'Hand a Flag to the nearby neutral with E, throw one at them, or let the cart recruit them automatically.',
-      highlights: ['gcc-panel', 'hand-flag'],
+      highlights: ['gcc-panel'],
     },
     {
       id: 'saffron',

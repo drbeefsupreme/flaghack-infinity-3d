@@ -63,7 +63,7 @@ describe('zero-day hosted matches', () => {
       const world = c.mirror!.world;
       expect(world.effigyRevealedAt).toBe(90);
       expect(world.boss?.spawnedAt).toBe(90);
-      expect(world.collision.supportHeight(0, 0, 40)).toBe(0);
+      expect(world.collision.supportHeight(0, 0, 40)).toBe(2);
       expect(world.phase).toBe('playing');
     }
     expect(late.mirror!.world.drainEvents()).toEqual([]);

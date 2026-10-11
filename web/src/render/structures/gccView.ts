@@ -4,7 +4,7 @@
  * wheels whose spokes fly little yellow Flags, a push handle and the rolled Vexilloramanomicon
  * at the back, iron-strapped corners, two drum-top side tables with string-art pentagrams,
  * fairy lights under the table edge, two tall poles carrying the lettered yellow banner
- * (front: the four services; back: COMMAND CENTER / FLAG SIMULACRA), a faction pennant and a
+ * (front: the four services; back: COMMAND CENTER / GEOMANTIC ADVICE), a faction pennant and a
  * Flag on the pole tops, a lantern, and the live miniature map as its tabletop.
  *
  * States: parked (faces its Hearth), pushed (wheels roll by distance, cart bobs, banner
@@ -21,6 +21,7 @@ import type { ModelBuilder, ModelRecipe, StructureKit } from './kit';
 import { extrudeUp, flagCloth, pennantCloth, pentagon } from './shapes';
 import { GCC_TABLE_MAP_SIZE, GCC_TABLE_Y } from './tableMap';
 import { damp, easeOutBack } from './util';
+import { GccRecruitmentDome } from './gccRecruitmentDome';
 
 const TAU = Math.PI * 2;
 const BODY_R = 0.92;
@@ -237,6 +238,7 @@ function buildWheel(mb: ModelBuilder): void {
 export const GCC_MODEL: ModelRecipe = { name: 'gcc', build: buildCart };
 
 export class GccView extends BuildingView {
+  private readonly recruitmentDome: GccRecruitmentDome;
   private readonly tip = new THREE.Group();
   private readonly cart = new THREE.Group();
   private readonly mast = new THREE.Group();
@@ -265,6 +267,7 @@ export class GccView extends BuildingView {
 
   constructor(kit: StructureKit, b: Building) {
     super(kit, b, 3.4, 1.6);
+    this.recruitmentDome = new GccRecruitmentDome(this.root);
     this.tip.position.x = TIP_X;
     this.cart.position.x = -TIP_X;
     this.body.add(this.tip);
@@ -363,6 +366,7 @@ export class GccView extends BuildingView {
   }
 
   protected override animate(b: Building, f: FrameInfo, active: boolean): void {
+    this.recruitmentDome.update(b, f.world);
     const gcc = b.gcc;
     // Collapsed from the moment it falls until the sim actually rebuilds it (destroyedUntil reset to 0).
     const destroyed = !!gcc && gcc.destroyedUntil !== 0;
@@ -490,6 +494,7 @@ export class GccView extends BuildingView {
   }
 
   override dispose(): void {
+    this.recruitmentDome.dispose();
     this.poolMat.dispose();
     this.table.geometry.dispose();
     super.dispose();

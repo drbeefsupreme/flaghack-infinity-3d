@@ -23,6 +23,7 @@ import type { EnvContext, EnvPart } from '../envTypes';
 import { buildArt, createRotorTemplates } from './art';
 import type { Rotor, RotorTemplates } from './art';
 import { buildCars } from './cars';
+import { groundPropGeometry, propGroundHeights } from './grounding';
 import { buildDomes } from './domes';
 import { createBatches, createClutterKit, disposeClutterKit, ownProp } from './kit';
 import { buildPortas } from './portas';
@@ -79,6 +80,7 @@ export class PropField implements EnvPart {
   private show: StageShow | null = null;
   private signs: StageSigns | null = null;
   private sceneryCount = 0;
+  private groundHeights = new Map<number, number>();
   private readonly removed = new Set<number>();
   private readonly sceneryRanges = new Map<number, SceneryRange[]>();
   private readonly sceneryInstances = new Map<number, SceneryInstance[]>();
@@ -97,6 +99,7 @@ export class PropField implements EnvPart {
     this.group.name = 'props';
     const ctx = env.ctx;
     const map = ctx.world.map;
+    this.groundHeights = propGroundHeights(map.obstacles, map.half);
     const byKind: Record<ObstacleKind, Obstacle[]> = { tent: [], dome: [], art: [], porta: [], tree: [], rock: [], stage: [], shade: [], car: [], effigy: [] };
     // Always use the original obstacle layout, including on late joins. Shared strings and
     // row accessories must not relocate when a neighbouring prop has already been destroyed.
@@ -114,6 +117,19 @@ export class PropField implements EnvPart {
     const trees = buildTrees(byKind.tree, out);
     const stages = buildStages(byKind.stage, map.soundCamps, kit, out);
     disposeClutterKit(kit);
+    for (const it of [...trees.pines, ...trees.oaks, ...rotors.spiral, ...rotors.pinwheel]) {
+      it.matrix.elements[13] += this.groundHeights.get(it.obstacleId ?? -1) ?? 0;
+    }
+    for (const rig of stages.rigs) {
+      const height = this.groundHeights.get(rig.obstacleId) ?? 0;
+      rig.frame.elements[13] += height;
+      rig.front.y += height;
+      for (const fixture of rig.fixtures) fixture.y += height;
+    }
+    for (const sign of stages.signs) {
+      const height = this.groundHeights.get(sign.obstacleId) ?? 0;
+      for (const corner of sign.corners) corner.y += height;
+    }
 
     const u = env.uniforms;
     // Batched and instanced draws get separate material objects (same program): three keys
@@ -261,6 +277,7 @@ export class PropField implements EnvPart {
 
   /** World-space tile geometries (disposed here once copied) placed as-is in one BatchedMesh. */
   private addTiles(tiles: THREE.BufferGeometry[], mat: THREE.Material, name: string, cast: boolean, receive: boolean): void {
+    for (const tile of tiles) groundPropGeometry(tile, this.groundHeights, this.env.ctx.world.map.half);
     const items = tiles.map((_, i): Placed => ({ geometry: i, matrix: IDENTITY, color: null }));
     this.addBatched(tiles, items, mat, name, cast, receive);
     for (const g of tiles) g.dispose();

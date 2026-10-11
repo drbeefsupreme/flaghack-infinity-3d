@@ -84,10 +84,10 @@ export class ThrowPredictor {
         pos.x = snaps ? hit.x : hit.x + hit.nx * WALL_STANDOFF;
         pos.y = Math.max(0, hit.y);
         pos.z = snaps ? hit.z : hit.z + hit.nz * WALL_STANDOFF;
-      } else if (pos.y + dy <= 0) {
-        const t = dy < 0 ? Math.min(1, pos.y / -dy) : 1;
+      } else if (pos.y + dy <= col.groundHeight(pos.x + dx, pos.z + dz)) {
+        const t = dy < 0 ? Math.max(0, Math.min(1, (pos.y - col.groundHeight(pos.x + dx, pos.z + dz)) / -dy)) : 1;
         pos.x += dx * t;
-        pos.y = 0;
+        pos.y = col.groundHeight(pos.x, pos.z + dz * t);
         pos.z += dz * t;
         landed = true;
         snaps = true;

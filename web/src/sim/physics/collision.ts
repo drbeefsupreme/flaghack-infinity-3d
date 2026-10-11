@@ -1,6 +1,6 @@
 /**
  * 2.5D collision world for avatars, thrown Flags, pieces, buildings and static obstacles.
- * Ground is y = 0. Shapes are vertical extrusions (boxes/cylinders) or walkable slabs/ramps.
+ * Map terrain is domed; standalone worlds default to y = 0. Shapes are vertical extrusions (boxes/cylinders) or walkable slabs/ramps.
  *
  * - Boxes and cylinders span [y0, y1] and block a character whose body span
  *   [y + stepHeight, y + height] overlaps; their tops are walkable (cars, stages, roofs).
@@ -14,6 +14,7 @@
  *
  * Owner: MapPhysics agent. Consumers: avatars, projectiles, pieces, buildings, render (debug).
  */
+import { groundHeight as terrainHeight } from '../terrain';
 import { MAP_HALF } from '../constants';
 import type { V3 } from '../math';
 import type { MapLayout } from '../map/mapgen';
@@ -41,7 +42,7 @@ export interface MovementCylinder {
 export interface MoveResult {
   onGround: boolean;
   hitWall: boolean;
-  /** Height of the supporting surface under the character (0 = ground). */
+  /** Absolute height of the supporting terrain or structure. */
   groundY: number;
 }
 
@@ -130,7 +131,7 @@ export class CollisionWorld {
   private clipBX = new Float64Array(16);
   private clipBZ = new Float64Array(16);
 
-  constructor(half = MAP_HALF) {
+  constructor(half = MAP_HALF, private readonly domed = false) {
     this.half = half;
     this.dim = Math.ceil((2 * half) / CELL);
     for (let i = 0; i < this.dim * this.dim; i++) this.cells.push([]);
@@ -138,10 +139,11 @@ export class CollisionWorld {
 
   /** Registers every map obstacle with tag -1 - obstacleId (flat ones have nothing to hit). */
   static fromMap(map: MapLayout): CollisionWorld {
-    const w = new CollisionWorld(map.half);
+    const w = new CollisionWorld(map.half, true);
     for (const o of map.obstacles) {
       if (o.height < 0.05) continue;
       const tag = -1 - o.id;
+      const base = w.groundHeight(o.x, o.z);
       const c = Math.cos(o.yaw);
       const s = Math.sin(o.yaw);
       // Local (lx, lz) → world, three.js rotation.y = yaw.
@@ -160,21 +162,21 @@ export class CollisionWorld {
               [ix, iz],
               [-ix, iz],
             ]) {
-              w.addCylinder(wx(lx, lz), wz(lx, lz), 0.12, 0, o.height, tag);
+              w.addCylinder(wx(lx, lz), wz(lx, lz), 0.12, base, base + o.height, tag);
             }
           } else {
             // Jumpable deck, back wall, two front posts; the front (+z) faces the dance floor.
-            w.addBox(o.x, o.z, o.hx, o.hz, o.yaw, 0, STAGE_DECK_HEIGHT, tag);
-            w.addBox(wx(0, -o.hz + 0.2), wz(0, -o.hz + 0.2), o.hx, 0.2, o.yaw, 0, o.height, tag);
+            w.addBox(o.x, o.z, o.hx, o.hz, o.yaw, base, base + STAGE_DECK_HEIGHT, tag);
+            w.addBox(wx(0, -o.hz + 0.2), wz(0, -o.hz + 0.2), o.hx, 0.2, o.yaw, base, base + o.height, tag);
             for (const lx of [-(o.hx - 0.2), o.hx - 0.2]) {
-              w.addCylinder(wx(lx, o.hz - 0.2), wz(lx, o.hz - 0.2), 0.2, 0, o.height, tag);
+              w.addCylinder(wx(lx, o.hz - 0.2), wz(lx, o.hz - 0.2), 0.2, base, base + o.height, tag);
             }
           }
           // Canopy / roof over the whole footprint.
           w.addSlab(
             [wx(-o.hx, -o.hz), wx(o.hx, -o.hz), wx(o.hx, o.hz), wx(-o.hx, o.hz)],
             [wz(-o.hx, -o.hz), wz(o.hx, -o.hz), wz(o.hx, o.hz), wz(-o.hx, o.hz)],
-            o.height,
+            base + o.height,
             o.kind === 'shade' ? 0.2 : 0.3,
             tag,
           );
@@ -182,25 +184,30 @@ export class CollisionWorld {
         }
         case 'dome': {
           // Squashed hemisphere as three stacked drums.
-          w.addCylinder(o.x, o.z, o.radius, 0, o.height * 0.5, tag);
-          w.addCylinder(o.x, o.z, o.radius * 0.866, o.height * 0.5, o.height * 0.8, tag);
-          w.addCylinder(o.x, o.z, o.radius * 0.6, o.height * 0.8, o.height, tag);
+          w.addCylinder(o.x, o.z, o.radius, base, base + o.height * 0.5, tag);
+          w.addCylinder(o.x, o.z, o.radius * 0.866, base + o.height * 0.5, base + o.height * 0.8, tag);
+          w.addCylinder(o.x, o.z, o.radius * 0.6, base + o.height * 0.8, base + o.height, tag);
           break;
         }
         case 'effigy': {
           // Pedestal plus mast carrying The Flag.
-          w.effigyShapes.add(w.addCylinder(o.x, o.z, o.radius, 0, 3, tag));
-          const mast = w.addCylinder(o.x, o.z, 0.7, 0, o.height, tag);
+          w.effigyShapes.add(w.addCylinder(o.x, o.z, o.radius, base, base + 3, tag));
+          const mast = w.addCylinder(o.x, o.z, 0.7, base, base + o.height, tag);
           w.effigyMasts.add(mast);
           w.effigyShapes.add(mast);
           break;
         }
         default:
-          if (o.shape === 'circle') w.addCylinder(o.x, o.z, o.radius, 0, o.height, tag);
-          else w.addBox(o.x, o.z, o.hx, o.hz, o.yaw, 0, o.height, tag);
+          if (o.shape === 'circle') w.addCylinder(o.x, o.z, o.radius, base, base + o.height, tag);
+          else w.addBox(o.x, o.z, o.hx, o.hz, o.yaw, base, base + o.height, tag);
       }
     }
     return w;
+  }
+
+  /** Bare terrain elevation, excluding walkable structures. */
+  groundHeight(x: number, z: number): number {
+    return this.domed ? terrainHeight(x, z, this.half) : 0;
   }
 
   /** Vertical extrusion of an oriented rectangle (walls, buildings, tents). */
@@ -475,7 +482,7 @@ export class CollisionWorld {
     return res;
   }
 
-  /** Highest walkable surface at (x, z) whose top is ≤ maxY (0 if none). */
+  /** Highest eligible walkable surface, with bare terrain as the solid lower bound. */
   supportHeight(x: number, z: number, maxY: number): number {
     return this.supportAmong(x, z, maxY, this.gather(x, z, x, z));
   }
@@ -505,13 +512,46 @@ export class CollisionWorld {
     let nx = 0;
     let ny = 0;
     let nz = 0;
-    if (uy < -EPS && oy >= 0) {
-      const t = -oy / uy;
-      if (t <= best) {
-        best = t;
-        bestShape = GROUND_SHAPE;
-        ny = 1;
+    // Sample and bracket the first terrain crossing, including horizontal rays into slopes.
+    // Spatial steps are bounded independently of frame duration; refine contact by bisection.
+    if (!this.domed) {
+      if (uy < -EPS && oy >= 0 && -oy / uy <= best) {
+        best = -oy / uy; bestShape = GROUND_SHAPE; ny = 1;
       }
+    } else if (Math.abs(ux) < EPS && Math.abs(uz) < EPS) {
+      const ground = this.groundHeight(ox, oz);
+      if (oy < ground || (uy < -EPS && (ground - oy) / uy <= best)) {
+        best = oy < ground ? 0 : Math.max(0, (ground - oy) / uy); bestShape = GROUND_SHAPE;
+      }
+    } else if (Math.min(oy, oy + uy * best) <= 2) {
+      const clearance = (t: number): number => oy + uy * t - this.groundHeight(ox + ux * t, oz + uz * t);
+      let previous = clearance(0);
+      if (previous < -EPS || (previous <= EPS && clearance(Math.min(.001, best)) < previous)) {
+        best = 0; bestShape = GROUND_SHAPE;
+      } else {
+        const steps = Math.max(1, Math.ceil(best / .5));
+        let lo = 0;
+        for (let i = 1; i <= steps; i++) {
+          const hi = maxDist * i / steps;
+          const next = clearance(hi);
+          if (next <= 0 && previous >= 0 && (next < 0 || previous > EPS)) {
+            let left = lo, right = hi;
+            for (let j = 0; j < 36; j++) {
+              const mid = (left + right) / 2;
+              if (clearance(mid) > 0) left = mid; else right = mid;
+            }
+            best = (left + right) / 2; bestShape = GROUND_SHAPE; break;
+          }
+          lo = hi; previous = next;
+        }
+      }
+    }
+    if (bestShape === GROUND_SHAPE) {
+      const x = ox + ux * best, z = oz + uz * best, e = .01;
+      nx = (this.groundHeight(x - e, z) - this.groundHeight(x + e, z)) / (2 * e);
+      nz = (this.groundHeight(x, z - e) - this.groundHeight(x, z + e)) / (2 * e);
+      const normalLength = Math.hypot(nx, 1, nz);
+      nx /= normalLength; ny = 1 / normalLength; nz /= normalLength;
     }
     // Walk the broad-phase cells along the ray's ground projection (Amanatides-Woo).
     const stamp = ++this.stamp;
@@ -826,7 +866,7 @@ export class CollisionWorld {
 
   /** Highest walkable top at the point (x, z) that is ≤ maxY, among the gathered shapes. */
   private supportAmong(x: number, z: number, maxY: number, count: number): number {
-    let best = 0;
+    let best = this.groundHeight(x, z);
     for (let k = 0; k < count; k++) {
       const s = this.shapes[this.cand[k]];
       if (s.y1 <= best || x < s.minX || x > s.maxX || z < s.minZ || z > s.maxZ) continue;

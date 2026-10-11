@@ -33,11 +33,8 @@ export interface ObjectiveMarker {
 export type ViewMode = 'action' | 'command';
 /** Action-mode tool (what LMB / E do). */
 export type ToolKind = 'flag' | 'wall' | 'floor' | 'ramp' | 'demolish' | 'building';
-/**
- * Command View Survey planning tool. 'simulacra' = Flag Simulacra targeting: the next two
- * plan-node clicks become the superposed pair (UI arms it; controls collect + submit).
- */
-export type PlanTool = 'select' | 'node' | 'enclose' | 'pentacle' | 'ring' | 'simulacra';
+/** Command View Survey planning tool. */
+export type PlanTool = 'select' | 'node' | 'enclose' | 'pentacle' | 'ring';
 
 export interface AimInfo {
   /** Throw aim held (RMB) or quick-throw preview. */

@@ -222,27 +222,27 @@ export class VfxRenderer implements RenderModule {
     switch (e.t) {
       case 'flagPlanted': {
         if (!this.spend(1)) break;
-        fx.plant(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z, this.color(e.faction));
+        fx.plant(e.pos.x, e.pos.y, e.pos.z, this.color(e.faction));
         break;
       }
       case 'flagPulled': {
         if (!this.spend(1)) break;
-        fx.pull(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z, this.color(e.prevOwner));
+        fx.pull(e.pos.x, e.pos.y, e.pos.z, this.color(e.prevOwner));
         break;
       }
       case 'flagThrown': {
         if (!this.spend(1)) break;
-        fx.throwLaunch(e.from.x, e.from.y + this.groundY(e.from.x, e.from.z), e.from.z, e.vel.x, e.vel.y, e.vel.z);
+        fx.throwLaunch(e.from.x, e.from.y, e.from.z, e.vel.x, e.vel.y, e.vel.z);
         break;
       }
       case 'flagLanded': {
         if (!this.spend(1)) break;
-        fx.landed(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z);
+        fx.landed(e.pos.x, e.pos.y, e.pos.z);
         break;
       }
       case 'flagDecohered': {
         if (!this.spend(2)) break;
-        fx.glassGlitch(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1.2, e.pos.z, 1);
+        fx.glassGlitch(e.pos.x, e.pos.y + 1.2, e.pos.z, 1);
         break;
       }
       case 'simulacrumCollapsed': {
@@ -280,14 +280,14 @@ export class VfxRenderer implements RenderModule {
       }
       case 'crystalLightning':
       case 'wardLightning': {
-        const fy = e.from.y + this.groundY(e.from.x, e.from.z);
-        const ty = e.to.y + this.groundY(e.to.x, e.to.z);
+        const fy = e.from.y;
+        const ty = e.to.y;
         this.bolts.strike(this.ctx.time, e.from.x, fy, e.from.z, e.to.x, ty, e.to.z);
         break;
       }
       case 'discharge': {
-        const fy = e.from.y + this.groundY(e.from.x, e.from.z);
-        const ty = e.to.y + this.groundY(e.to.x, e.to.z);
+        const fy = e.from.y;
+        const ty = e.to.y;
         this.bolts.strike(this.ctx.time, e.from.x, fy, e.from.z, e.to.x, ty, e.to.z);
         fx.dischargeImpact(e.to.x, ty, e.to.z);
         this.shake(e.to.x, e.to.z, 0.35, 8, 45);
@@ -314,7 +314,7 @@ export class VfxRenderer implements RenderModule {
       }
       case 'burn': {
         const ef = w.map.effigy;
-        this.fireworks.start(this.ctx.time, ef.x, ef.z);
+        this.fireworks.start(this.ctx.time, ef.x, ef.z, this.lightningGroundY);
         fx.burnStart(ef.x, this.groundY(ef.x, ef.z), ef.z);
         this.shake(ef.x, ef.z, 0.6, 60, 260, 0.25);
         break;
@@ -325,7 +325,7 @@ export class VfxRenderer implements RenderModule {
         const c = av ? this.color(av.faction) : P.WARM_WHITE;
         // Alternate the tilt so consecutive swings sweep forehand / backhand.
         const tilt = this.swingCount++ % 2 === 0 ? 0.55 : -0.55;
-        this.arcs.spawn(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1.1, e.pos.z, e.yaw, tilt, 2.7, 0.28, c, 2.2);
+        this.arcs.spawn(e.pos.x, e.pos.y + 1.1, e.pos.z, e.yaw, tilt, 2.7, 0.28, c, 2.2);
         break;
       }
       case 'hit': {
@@ -334,14 +334,14 @@ export class VfxRenderer implements RenderModule {
         if (!toPlayer && !byPlayer && !this.spend(1)) break;
         // Boss hit facts use a bookkeeping point between its legs, not a surface contact.
         // Its meleeImpact/bossImpact events already render the actual contact fireworks.
-        if (e.target !== w.boss?.id) fx.hit(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1, e.pos.z, toPlayer);
+        if (e.target !== w.boss?.id) fx.hit(e.pos.x, e.pos.y + 1, e.pos.z, toPlayer);
         if (toPlayer) this.shake(e.pos.x, e.pos.z, 0.3 + Math.min(0.4, e.amount / 100), 1000, 2000);
         else if (byPlayer) this.shake(e.pos.x, e.pos.z, 0.12, 1000, 2000);
         break;
       }
       case 'ko': {
         if (!this.spend(2)) break;
-        const gy = e.pos.y + this.groundY(e.pos.x, e.pos.z);
+        const gy = e.pos.y;
         const anchor = this.ctx.shared.unitAnchors?.get(e.id);
         const headY = anchor ? anchor.y : gy + (e.kind === 'avatar' ? 1.85 : 1.6);
         fx.ko(e.pos.x, gy, e.pos.z, headY);
@@ -361,12 +361,12 @@ export class VfxRenderer implements RenderModule {
       }
       case 'pieceBuilt': {
         if (!this.spend(1)) break;
-        fx.dust(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z, 8, 1.2, 0.8);
+        fx.dust(e.pos.x, e.pos.y, e.pos.z, 8, 1.2, 0.8);
         break;
       }
       case 'pieceDestroyed': {
         if (!this.spend(2)) break;
-        const gy = e.pos.y + this.groundY(e.pos.x, e.pos.z);
+        const gy = e.pos.y;
         fx.splinters(e.pos.x, gy + 1, e.pos.z, 22);
         fx.dust(e.pos.x, gy, e.pos.z, 8, 1.4, 1);
         this.shake(e.pos.x, e.pos.z, 0.18, 6, 25);
@@ -406,14 +406,14 @@ export class VfxRenderer implements RenderModule {
       case 'meshTapped': {
         if (e.faction !== this.ctx.session.playerFaction) break;
         const av = w.avatars.get(w.factions[e.faction].avatarId);
-        if (av) fx.meshGlitch(av.pos.x, av.pos.y + this.groundY(av.pos.x, av.pos.z), av.pos.z);
+        if (av) fx.meshGlitch(av.pos.x, av.pos.y, av.pos.z);
         break;
       }
       case 'retransmit': {
         if (e.faction !== this.ctx.session.playerFaction) break;
         const av = w.avatars.get(w.factions[e.faction].avatarId);
         if (!av) break;
-        const gy = av.pos.y + this.groundY(av.pos.x, av.pos.z);
+        const gy = av.pos.y;
         fx.takeShot(av.pos.x, gy, av.pos.z);
         this.banner('takeShot', av.pos.x, gy + 3.2, av.pos.z, P.PING_COLORS.shot, 1.3, 30, 1.8, 3);
         w.hippies.forEach(this.wobbleIfMine);
@@ -477,7 +477,7 @@ export class VfxRenderer implements RenderModule {
 
   private readonly trailProjectile = (p: Projectile): void => {
     const x = p.pos.x;
-    const y = p.pos.y + this.groundY(p.pos.x, p.pos.z);
+    const y = p.pos.y;
     const z = p.pos.z;
     let slot = -1;
     for (let i = 0; i < TRAIL_SLOTS; i++) {

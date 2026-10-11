@@ -1,5 +1,5 @@
 /**
- * Ground: one large terrain mesh (flat inside the map, rolling hills beyond) with a
+ * Ground: one large terrain mesh (gently domed inside the map, rolling hills beyond) with a
  * MeshStandardMaterial extended in-shader:
  *   - surface types baked from map.groundAt into a blurred RGBA texture (dirt, road, mud,
  *     water weights; grass = the rest), edges frayed by noise so nothing looks gridded,
@@ -17,8 +17,9 @@ import { terrainHeight } from './terrain';
 
 /** Ground mesh half extent (m): reaches the fogged horizon in every direction. */
 const EXTENT = 900;
-/** Grid resolution: ~14 m quads, enough for the rolling hills (the map itself is flat). */
-const SEGMENTS = 128;
+/** Allocate half the segments to the playable square (~2.3 m quads), and the rest
+ * to the surrounding hills. The square boundary and summit are exact mesh vertices. */
+const SEGMENTS = 256;
 /** Max water bodies passed to the shader. */
 const MAX_WATER = 4;
 
@@ -293,7 +294,14 @@ export class Ground implements EnvPart {
     const geo = new THREE.PlaneGeometry(EXTENT * 2, EXTENT * 2, SEGMENTS, SEGMENTS);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.getAttribute('position');
-    for (let i = 0; i < pos.count; i++) pos.setY(i, terrainHeight(pos.getX(i), pos.getZ(i), map.half));
+    const coordinate = (v: number): number => {
+      const u = Math.abs(v) / EXTENT;
+      return Math.sign(v) * (u <= .5 ? u * 2 * map.half : map.half + (u - .5) * 2 * (EXTENT - map.half));
+    };
+    for (let i = 0; i < pos.count; i++) {
+      const x = coordinate(pos.getX(i)), z = coordinate(pos.getZ(i));
+      pos.setXYZ(i, x, terrainHeight(x, z, map.half), z);
+    }
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
 

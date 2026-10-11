@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 import { describe, expect, it } from 'vitest';
 import { spawnCrystal, spawnFlag } from '../factory';
 import { CollisionWorld } from '../physics/collision';
@@ -51,7 +52,7 @@ describe('crystal retaliation targets sustaining Flags', () => {
     const e = fixture(); e.world.map.obstacles = [{ ...e.rainbow, kind: 'art', variant: 1, x: 0, z: 40, height: 10 }];
     const normal = e.crystal(25, 20), far = e.crystal(0, 60), growing = e.crystal(0, 10); growing.c.growth = .99;
     expect(chooseBossEyeTarget(e.world, e.boss)).toEqual({ ...normal.flags[0].pos });
-    e.world.crystals.delete(normal.c.id); expect(chooseBossEyeTarget(e.world, e.boss)).toEqual({ x: 0, y: 5, z: 40 });
+    e.world.crystals.delete(normal.c.id); expect(chooseBossEyeTarget(e.world, e.boss)).toEqual({ x: 0, y: groundHeight(0,40,e.world.map.half) + 5, z: 40 });
     expect(activeBossCrystals(e.world, e.boss)).not.toContain(far.c);
   });
   it.each([1, 10])('knocks down a scale-%s crystal’s real pentacle and ends its lightning via normal rules', scale => {

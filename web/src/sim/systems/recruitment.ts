@@ -58,10 +58,11 @@ export function handFlagBlocker(world: World, f: FactionId, target: number): str
   if (!h || !canRecruit(h)) return 'Choose an awake neutral Signifier.';
   if (h.carryingFlag !== -1 || h.carryingLumber > 0) return 'That Signifier has its hands full.';
   if (!av.carried.length) return 'Your quiver is empty.';
-  if (Math.hypot(h.pos.x - av.pos.x, av.pos.y, h.pos.z - av.pos.z) > AVATAR.pullReach) return 'Move closer to hand over a Flag.';
+  const dy = world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0) - av.pos.y;
+  if (Math.hypot(h.pos.x - av.pos.x, dy, h.pos.z - av.pos.z) > AVATAR.pullReach) return 'Move closer to hand over a Flag.';
   const dx = h.pos.x - av.pos.x, dz = h.pos.z - av.pos.z;
-  const distance = Math.hypot(dx, av.pos.y, dz);
-  if (distance > 0 && world.collision.raycast(av.pos.x, av.pos.y + 1, av.pos.z, dx, -av.pos.y, dz, distance)) return 'Something blocks the handoff.';
+  const distance = Math.hypot(dx, dy, dz);
+  if (distance > 0 && world.collision.raycast(av.pos.x, av.pos.y + 1, av.pos.z, dx, dy, dz, distance)) return 'Something blocks the handoff.';
   return '';
 }
 

@@ -3,6 +3,7 @@ import { BOSS_TIMING } from '../../boss';
 import type { BossState } from '../../boss';
 import { BOSS_GAMEPLAY_SCALE, BOSS_HEIGHT } from '../../bossDimensions';
 import { AVATAR, MAP_HALF } from '../../constants';
+import { groundHeight, TERRAIN_DOME_HEIGHT } from '../../terrain';
 import { clamp } from '../../math';
 import type { V2, V3 } from '../../math';
 import type { MovementCylinder } from '../../physics/collision';
@@ -18,7 +19,7 @@ const PUSH_STEP = .2;
 const SKIN = 1e-5;
 
 /** Constant ground footprint prevents feet/coat gaps and sideways stance-change shoves. */
-export function bossPlayerHull(boss: BossState | null, now: number): MovementCylinder | null {
+export function bossPlayerHull(boss: BossState | null, now: number, mapHalf = MAP_HALF): MovementCylinder | null {
   if (!boss || boss.hp <= 0 || boss.action === 'death' || boss.action === 'dead') return null;
   let crouch = boss.crouched || boss.action === 'swipe' || boss.action === 'grab' ? 1 : 0;
   if (boss.action === 'crouch' || boss.action === 'rise') {
@@ -26,8 +27,9 @@ export function bossPlayerHull(boss: BossState | null, now: number): MovementCyl
     const smooth = t * t * (3 - 2 * t);
     crouch = boss.action === 'crouch' ? smooth : 1 - smooth;
   }
-  return { x: boss.pos.x, z: boss.pos.z, radius: BOSS_PLAYER_RADIUS, bottom: 0,
-    top: BOSS_PLAYER_STANDING_HEIGHT + (BOSS_PLAYER_CROUCHED_HEIGHT - BOSS_PLAYER_STANDING_HEIGHT) * crouch,
+  const ground = groundHeight(boss.pos.x, boss.pos.z, mapHalf);
+  return { x: boss.pos.x, z: boss.pos.z, radius: BOSS_PLAYER_RADIUS, bottom: ground,
+    top: ground + BOSS_PLAYER_STANDING_HEIGHT + (BOSS_PLAYER_CROUCHED_HEIGHT - BOSS_PLAYER_STANDING_HEIGHT) * crouch,
     tag: boss.id };
 }
 
@@ -38,13 +40,15 @@ export function bossPlayerHull(boss: BossState | null, now: number): MovementCyl
  * Does not inject knockback, advance gravity, move KO'd avatars or mutate boss.pos.
  */
 export function moveBossWithPlayerCollision(world: World, boss: BossState, from: V2, to: V2): V2 {
-  const hull = bossPlayerHull(boss, world.time);
+  const hull = bossPlayerHull(boss, world.time, world.map.half);
   if (!hull) return { ...to };
   const dx = to.x - from.x, dz = to.z - from.z, length = Math.hypot(dx, dz);
   if (length < 1e-9) return { ...from };
   const r = BOSS_PLAYER_RADIUS + AVATAR.radius;
+  const minGround = Math.min(groundHeight(from.x, from.z, world.map.half), groundHeight(to.x, to.z, world.map.half));
+  const height = hull.top - hull.bottom;
   const players = [...world.avatars.values()].filter(av => av.koUntil <= 0 && world.factions[av.faction].alive &&
-    av.pos.y < hull.top && av.pos.y + AVATAR.height > hull.bottom &&
+    av.pos.y < TERRAIN_DOME_HEIGHT + height && av.pos.y + AVATAR.height > minGround &&
     av.pos.x >= Math.min(from.x, to.x) - r && av.pos.x <= Math.max(from.x, to.x) + r &&
     av.pos.z >= Math.min(from.z, to.z) - r && av.pos.z <= Math.max(from.z, to.z) + r);
   if (!players.length) return { ...to };
@@ -55,6 +59,8 @@ export function moveBossWithPlayerCollision(world: World, boss: BossState, from:
     const moved: { av: Avatar; pos: V3; vx: number; vz: number }[] = [];
     let blocked = false;
     for (const av of players) {
+      const ground = groundHeight(next.x, next.z, world.map.half);
+      if (av.pos.y >= ground + height || av.pos.y + AVATAR.height <= ground) continue;
       const ax = av.pos.x - next.x, az = av.pos.z - next.z, gap = Math.hypot(ax, az);
       if (gap >= r - SKIN) continue;
       const oldGap = Math.hypot(av.pos.x - at.x, av.pos.z - at.z);

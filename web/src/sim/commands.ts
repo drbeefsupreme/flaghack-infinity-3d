@@ -50,7 +50,7 @@ export type Command =
   | { t: 'align'; faction: FactionId; chakra: ChakraId }
   | { t: 'drug'; faction: FactionId; drug: DrugId }
   | { t: 'brew'; faction: FactionId; labId: EntityId; drug: DrugId }
-  /** GCC actions. simulacra: nodes [a, b]; dialectics: none. */
+  /** Retired GCC actions, retained only to reject legacy/replayed commands safely. */
   | { t: 'gcc'; faction: FactionId; action: GccAction; target: EntityId | -1; nodes: number[] }
   /** Start/stop pushing the own GCC (avatar must be within 3 m). */
   | { t: 'pushGcc'; faction: FactionId; on: boolean }

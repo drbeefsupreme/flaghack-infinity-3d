@@ -346,7 +346,7 @@ export class HudPart implements UiPart {
 }
 
 /**
- * Prompt strings from controls look like "E  Plant Flag" or "E  Command Table   Hold E  Push":
+ * Prompt strings from controls look like "E  Plant Flag" or "Hold E  Push":
  * runs of 2+ spaces separate key / label pairs. Keys become keycaps; a leading "Hold" stays text.
  */
 export function renderPrompt(text: string): string {

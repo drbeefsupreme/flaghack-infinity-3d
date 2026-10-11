@@ -72,7 +72,7 @@ describe('cooperative encounter audit', () => {
     expect(w.flags.get(id)?.state).toBe('loose');
   });
 
-  it('Priority Beacon targets the boss and never asks units to attack allied camps; Dialectics refuses allies', () => {
+  it('Priority Beacon targets the boss and never asks units to attack allied camps; retired Dialectics cannot convert allies', () => {
     const w = world();
     w.time = 245; w.effigyRevealedAt = 230; w.boss = bossFixture();
     w.boss.pos = { x: 0, z: 80 };
@@ -92,7 +92,7 @@ describe('cooperative encounter audit', () => {
     w.avatarOf(0).pos = { ...gcc.pos, y: 0 };
     cmdGcc(w, { t: 'gcc', faction: 0, action: 'dialectics', target: -1, nodes: [] });
     expect(w.avatarOf(0).action.kind).not.toBe('channel');
-    expect(w.drainEvents().some((e) => e.t === 'rejected' && e.reason.includes('allied'))).toBe(true);
+    expect(w.drainEvents().some((e) => e.t === 'rejected' && e.reason.includes('no longer has active abilities'))).toBe(true);
     expect(allied.faction).toBe(1);
   });
 

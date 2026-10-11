@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR, HIPPIE, SIM_DT } from '../constants';
+import { AVATAR, HIPPIE, LEVEL_HEIGHT, SIM_DT } from '../constants';
 import { createMatch } from '../setup';
 import { normalizeMatch } from '../matchSettings';
 import { spawnBuilding, spawnHippie, spawnPile, spawnPiece } from '../factory';
@@ -8,6 +8,7 @@ import { cmdSwing, updateAvatars } from './avatars';
 import { damageMelee, meleeContact } from './meleeImpact';
 import { damageEntity } from './combat';
 import { updateHippies } from './hippies';
+import { pieceGroundHeight } from './econ/pieceGeometry';
 import { BOSS_RADIUS } from '../boss';
 const setup = () => createMatch({ seed: 'melee-impact', difficulty: 'normal', mode: 'standard', humans: [0, 1], match: normalizeMatch({ maxSignifiers: 0 }) });
 function swing(w: ReturnType<typeof setup>) {
@@ -17,6 +18,21 @@ function swing(w: ReturnType<typeof setup>) {
 }
 const impacts = (w: ReturnType<typeof setup>) => w.drainEvents().filter(e => e.t === 'meleeImpact');
 describe('authoritative melee contact fireworks', () => {
+  it('grounds pile, airborne NPC, building and raised-piece contacts exactly once', () => {
+    const w = setup(), a = w.avatarOf(0);
+    const ground = (x: number, z: number) => w.collision.groundHeight(x, z);
+    a.pos = { x: 0, y: ground(0, 60), z: 60 };
+    const pile = spawnPile(w, 'lumber', { x: 0, z: 62 }, 20);
+    expect(meleeContact(w, pile.id, a.id)?.y).toBe(ground(0, 62) + .6);
+    const h = spawnHippie(w, 0, { x: 2, z: 60 }); h.airborne = { y: 1, vy: 0 };
+    const target = w.avatarOf(1); target.pos = { x: 3, y: ground(3, 60), z: 60 };
+    expect(meleeContact(w, target.id, h.id)?.y).toBeCloseTo(ground(2, 60) + 2.1, 10);
+    const building = spawnBuilding(w, 'workshop', 1, 0, 1);
+    a.pos.y = 0;
+    expect(meleeContact(w, building.id, a.id)!.y).toBeGreaterThanOrEqual(ground(building.pos.x, building.pos.z));
+    const piece = spawnPiece(w, 'wall', 1, 0, -1, 1, 0);
+    expect(meleeContact(w, piece.id, a.id)?.y).toBe(pieceGroundHeight(w, piece) + LEVEL_HEIGHT);
+  });
   it('emits one contact per actual unit and harvested pile, and never repeats per frame', () => {
     const w = setup(), a = w.avatarOf(0), rival = w.avatarOf(1);
     a.pos = { x: 0, y: 0, z: 60 }; a.yaw = a.input.yaw = 0;

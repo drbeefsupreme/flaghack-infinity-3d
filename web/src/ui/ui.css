@@ -1510,7 +1510,7 @@
 }
 .plan-tools {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
 }
 .plan-btn {
@@ -4148,3 +4148,6 @@
 .control-table td, .control-table th { padding: 5px; text-align: left; }
 .control-table .field-in { width: 120px; font-size: 11px; }
 .control-settings { overflow-x: auto; margin-top: 15px; }
+
+/* Enclose keeps its home-expansion preset together with target enclosure. */
+.enclose-options { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 6px; padding-left: 8px; border-left: 2px solid rgba(255, 226, 122, .35); }

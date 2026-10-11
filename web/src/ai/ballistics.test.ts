@@ -73,7 +73,7 @@ describe('throw solver', () => {
         const t = lat.nodes[m];
         const d = Math.hypot(t.x - n.x, t.z - n.z);
         if (d < 12 || !canPlantAt(world, m, f) || !world.nav.lineOfSight(n.x, n.z, t.x, t.z)) continue;
-        if (world.collision.raycast(n.x, 1, n.z, t.x - n.x, 0, t.z - n.z, d)) continue;
+        if (world.collision.raycast(n.x, world.collision.groundHeight(n.x, n.z) + 1, n.z, t.x - n.x, world.collision.groundHeight(t.x, t.z) - world.collision.groundHeight(n.x, n.z), t.z - n.z, d)) continue;
         from = n.id;
         to = m;
         break;
@@ -83,11 +83,11 @@ describe('throw solver', () => {
     expect(to).toBeGreaterThanOrEqual(0);
     av.pos.x = lat.nodes[from].x;
     av.pos.z = lat.nodes[from].z;
-    av.pos.y = 0;
+    av.pos.y = world.collision.groundHeight(av.pos.x, av.pos.z);
     av.vel.x = av.vel.z = av.vel.y = 0;
     const target = lat.nodes[to];
     const aim: ThrowAim = { yaw: 0, pitch: 0, flight: 0 };
-    expect(solveThrow(av.pos, target.x, 0, target.z, false, aim)).toBe(true);
+    expect(solveThrow(av.pos, target.x, world.collision.groundHeight(target.x, target.z), target.z, false, aim)).toBe(true);
     const flagId = av.carried[av.carried.length - 1];
     world.submit({ t: 'avatarInput', faction: f, input: { moveX: 0, moveZ: 0, jump: false, sprint: false, yaw: aim.yaw, pitch: aim.pitch } });
     world.submit({ t: 'throw', faction: f });

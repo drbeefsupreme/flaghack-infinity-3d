@@ -30,11 +30,8 @@ import { Picker } from './picking';
 import type { GhostInfo, Screen, Session, ToolKind, ViewMode } from './session';
 
 const DEG = Math.PI / 180;
-/** View blend durations (s): the Tab swoop and the slower GCC Command Table dive. */
+/** View blend duration (s) for the global Command View toggle. */
 const BLEND_TIME = 0.6;
-const DIVE_TIME = 1.35;
-/** Command View height when arriving through the table. */
-const DIVE_CMD_HEIGHT = 150;
 /** Hold E this long at your GCC to start pushing it. */
 const GCC_HOLD = 0.4;
 /** Mouse-look radians per pixel at sensitivity 1, and the precision factor while aiming. */
@@ -153,7 +150,7 @@ const CONTEXT_PROMPT: Record<Exclude<ContextKind, 'pull'>, string> = {
   none: '',
   plant: 'E  Plant Flag',
   beacon: 'E  Tap the D.E.G.E.N. Beacon',
-  gcc: 'E  Command Table   Hold E  Push',
+  gcc: 'Hold E  Push',
   release: 'E  Release the Command Center',
 };
 
@@ -188,8 +185,6 @@ export class Controls {
   private view: ViewMode = 'action';
   /** New world not yet set up for play (camera, tools). */
   private freshWorld = false;
-  /** GCC whose tabletop the Command View was entered through (the dive), else null. */
-  private dive: Building | null = null;
 
   // Aim: written per frame, read per tick.
   private aimYaw = 0;
@@ -210,7 +205,6 @@ export class Controls {
   private eMode: 'none' | 'pull' | 'gcc' = 'none';
   private eHeld = 0;
   private gccFired = false;
-  private eGcc: Building | null = null;
   private lastPullAt = -Infinity;
   private lastSwingAt = -Infinity;
   private qHeld = 0;
@@ -291,7 +285,7 @@ export class Controls {
     if (inPlay && av) {
       this.toggles(world, s, av, watcher);
       if (s.view !== this.view) {
-        if (s.view === 'command') this.enterCommand(s, watcher ? null : av.pos, null);
+        if (s.view === 'command') this.enterCommand(s, watcher ? null : av.pos);
         else this.exitCommand(s);
       }
       if ((s.view === 'command' || watcher || typing || this.cursorWanted(s)) && this.input.locked) this.input.exitLock();
@@ -374,7 +368,6 @@ export class Controls {
     this.queue.length = 0;
     this.throwQueued = false;
     this.jumpLatch = false;
-    this.dive = null;
     // A fresh burn always opens in the action view (quitting from the table must not leave
     // the title screen tinted as the Command View).
     s.view = 'action';
@@ -453,7 +446,7 @@ export class Controls {
       cam.pitch += (START_PITCH - cam.pitch) * k;
     } else if (s.spectator) {
       // Nobody left to stand behind: back over the table.
-      this.enterCommand(s, null, null);
+      this.enterCommand(s, null);
     }
     s.selection.clear();
     if (s.planPreview.length > 0) s.planPreview = [];
@@ -518,7 +511,6 @@ export class Controls {
     this.eMode = 'none';
     this.eHeld = 0;
     this.gccFired = false;
-    this.eGcc = null;
     this.qHeld = 0;
     this.slotKind = '';
     this.lastDemolish = -1;
@@ -542,7 +534,7 @@ export class Controls {
     if (inp.wasPressed('Tab')) {
       if (s.view === 'action') {
         const target = watcher ? this.followed(world, s) : av;
-        this.enterCommand(s, target ? target.pos : null, null);
+        this.enterCommand(s, target ? target.pos : null);
       } else {
         // A spectator's chase cam needs someone to chase.
         if (s.spectator && s.followFaction === null) this.cycleFollow(world, s, 1);
@@ -551,18 +543,16 @@ export class Controls {
     }
   }
 
-  /** Enter the Command View centred on `at` (null keeps the table where it was) or dive through a GCC. */
-  private enterCommand(s: Session, at: { x: number; z: number } | null, gcc: Building | null): void {
+  /** Enter the Command View centred on `at` (null keeps the table where it was). */
+  private enterCommand(s: Session, at: { x: number; z: number } | null): void {
     this.view = 'command';
     s.view = 'command';
-    this.dive = gcc;
     const cam = s.camera;
-    const centre = gcc ? gcc.pos : at;
+    const centre = at;
     if (centre) {
       cam.cmdX = centre.x;
       cam.cmdZ = centre.z;
     }
-    if (gcc) cam.cmdHeight = DIVE_CMD_HEIGHT;
     this.rig.snapCommand(cam);
     this.input.exitLock();
     this.releaseHolds();
@@ -576,9 +566,6 @@ export class Controls {
   private exitCommand(s: Session): void {
     this.view = 'action';
     s.view = 'action';
-    // Leaving mid-dive: glide from wherever the dive got to.
-    if (this.dive && s.viewBlend < 1) this.rig.startTransition(0.45);
-    this.dive = null;
     this.command.reset(s);
     s.planTool = 'select';
     s.planPreview = [];
@@ -599,7 +586,7 @@ export class Controls {
 
   private animateBlend(s: Session, dt: number): void {
     const target = s.view === 'command' ? 1 : 0;
-    const step = dt / (this.dive ? DIVE_TIME : BLEND_TIME);
+    const step = dt / BLEND_TIME;
     s.viewBlend = target > s.viewBlend ? Math.min(target, s.viewBlend + step) : Math.max(target, s.viewBlend - step);
   }
 
@@ -617,7 +604,7 @@ export class Controls {
       // Watchers ride along with whoever they follow; a fallen camp otherwise orbits its own body.
       const subject = (watcher ? this.followed(world, s) : null) ?? av;
       const sprinting = Math.hypot(subject.vel.x, subject.vel.z) > AVATAR.runSpeed + 0.5;
-      rig.updatePlay(world, subject, subject.faction, s.camera, s.viewBlend, this.dive, s.aim.active && !watcher, sprinting, dt);
+      rig.updatePlay(world, subject, subject.faction, s.camera, s.viewBlend, null, s.aim.active && !watcher, sprinting, dt);
     }
     // Camera trauma: VFX adds it, the camera spends it (muted over the tactical table).
     const shared = this.app.renderer.ctx?.shared;
@@ -884,9 +871,9 @@ export class Controls {
     return (fl.state === 'planted' || fl.state === 'loose') && !isFlagProtected(world, fl);
   }
 
-  private gccInReach(av: Avatar, g: Building): boolean {
+  private gccInReach(world: World, av: Avatar, g: Building): boolean {
     if (isCollapsed(g)) return false;
-    return Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) - BUILDINGS.gcc.radius <= AVATAR.gccPushReach && av.pos.y <= 1;
+    return Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) - BUILDINGS.gcc.radius <= AVATAR.gccPushReach && av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) <= 1;
   }
 
   /**
@@ -927,7 +914,7 @@ export class Controls {
         return;
       }
       const b = world.buildings.get(he);
-      if (b && b.kind === 'gcc' && b.faction === f && this.gccInReach(av, b)) {
+      if (b && b.kind === 'gcc' && b.faction === f && this.gccInReach(world, av, b)) {
         this.ctxKind = 'gcc';
         this.ctxTarget = he;
         return;
@@ -969,7 +956,7 @@ export class Controls {
       }
     }
     const g = world.gccOf(f);
-    if (g && this.gccInReach(av, g)) {
+    if (g && this.gccInReach(world, av, g)) {
       this.ctxKind = 'gcc';
       this.ctxTarget = g.id;
     }
@@ -998,7 +985,6 @@ export class Controls {
           this.eMode = 'gcc';
           this.eHeld = 0;
           this.gccFired = false;
-          this.eGcc = world.buildings.get(this.ctxTarget) ?? null;
           break;
         case 'release':
           this.queue.push({ t: 'pushGcc', faction: f, on: false });
@@ -1023,11 +1009,7 @@ export class Controls {
     }
     if (inp.wasReleased('KeyE')) {
       if (this.eMode === 'pull' && av.action.kind === 'pull') this.queue.push({ t: 'pull', faction: f, flagId: -1 });
-      if (this.eMode === 'gcc' && !this.gccFired && this.eGcc && this.gccInReach(av, this.eGcc)) {
-        this.enterCommand(s, av.pos, this.eGcc);
-      }
       this.eMode = 'none';
-      this.eGcc = null;
     }
   }
 

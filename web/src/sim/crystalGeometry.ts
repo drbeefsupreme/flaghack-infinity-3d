@@ -1,5 +1,6 @@
 /** Authoritative dimensions of the displayed prism. Decorative orbiting shards are not targets. */
-import { CRYSTAL_HEIGHT } from './constants';
+import { groundHeight } from './terrain';
+import { CRYSTAL_HEIGHT, MAP_HALF } from './constants';
 import type { V3 } from './math';
 import type { Crystal } from './types';
 export const CRYSTAL_RADIUS = 1.05;
@@ -12,10 +13,10 @@ export function crystalDimensions(c: Crystal) {
 export function crystalRotation(c: Crystal, at: number): number { return (((c.id * .618034) % 1 + 1) % 1) * 6.283 + at * .12; }
 
 /** Two-sided ray/triangle intersection with the same five tapered sides and cap as the shader. */
-export function rayCrystal(c: Crystal, now: number, origin: V3, direction: V3, maxDistance: number): number | null {
+export function rayCrystal(c: Crystal, now: number, origin: V3, direction: V3, maxDistance: number, mapHalf = MAP_HALF): number | null {
   const { height, radius } = crystalDimensions(c), angle = crystalRotation(c, now), cs = Math.cos(angle), sn = Math.sin(angle);
   const ox = origin.x - c.pos.x, oz = origin.z - c.pos.z;
-  const o = { x: (ox * cs + oz * sn) / radius, y: origin.y / height, z: (-ox * sn + oz * cs) / radius };
+  const o = { x: (ox * cs + oz * sn) / radius, y: (origin.y - groundHeight(c.pos.x, c.pos.z, mapHalf)) / height, z: (-ox * sn + oz * cs) / radius };
   const d = { x: (direction.x * cs + direction.z * sn) / radius, y: direction.y / height, z: (-direction.x * sn + direction.z * cs) / radius };
   let best = maxDistance, found = false;
   const triangle = (a: V3, b: V3, c: V3) => {

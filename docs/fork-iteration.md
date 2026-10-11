@@ -77,11 +77,11 @@ is shared with simulation through `sim/effigyBurn.ts`.
 
 Maximum Signifiers is the fixed population for the whole map, including all camps, neutrals and knocked-out hippies. Starting workers come from this pool; the remainder starts neutral. A knockout drops carried items, clears orders and returns the same hippie to a neutral spawn after 14 seconds. Recruitment changes allegiance without creating new hippies.
 
-Working Drum Circles and Geomantic Command Centers each recruit one nearby neutral within 15 metres every 14 seconds, without a Flag or lumber cost. Neutrals within 60 metres drift toward the nearest working recruiter. A recruiter with nobody nearby waits until a neutral arrives. The GCC's former Gift action is removed; its other powers remain available.
+Working Drum Circles and Geomantic Command Centers each recruit one nearby neutral within 15 metres every 14 seconds, without a Flag or lumber cost. Neutrals within 60 metres drift toward the nearest working recruiter. A recruiter with nobody nearby waits until a neutral arrives. The GCC has no active powers; its recruitment, repair and advice are passive.
 
-Aim at an awake, empty-handed neutral within 3 metres and press Interact (E by default) to hand them a carried Flag. Command View also offers **Hand Flag** for a selected neutral within reach. Throwing a Flag directly into a neutral recruits them immediately without damage. Both transfers give them the actual Flag. Rival hippies still take damage from thrown Flags; a knockout makes them neutral when they respawn.
+Aim at an awake, empty-handed neutral within 3 metres and press Interact (E by default) to hand them a carried Flag. Throwing a Flag directly into a neutral recruits them immediately without damage. Both transfers give them the actual Flag. Rival hippies still take damage from thrown Flags; a knockout makes them neutral when they respawn.
 
-Camp capacity is a soft attention limit: 12 plus 6 per working Drum Circle, with no fixed ceiling. Flags, buildings and Dialectics can recruit beyond it, including beyond 40 in a camp. The newest recruits above capacity lose an additional 2 attention per second, including while idle, and cannot recover by resting at home. At zero they take the normal distraction break. Increasing capacity or losing members removes the excess penalty from hippies who now fit within capacity. The HUD shows recruited population / attention capacity, with excess count in its tooltip. The separate Maximum Signifiers setting controls the whole world's population and must be raised above its default of 40 for a match with more than 40 hippies total.
+Camp capacity is a soft attention limit: 12 plus 6 per working Drum Circle, with no fixed ceiling. Flags and buildings can recruit beyond it, including beyond 40 in a camp. The newest recruits above capacity lose an additional 2 attention per second, including while idle, and cannot recover by resting at home. At zero they take the normal distraction break. Increasing capacity or losing members removes the excess penalty from hippies who now fit within capacity. The HUD shows recruited population / attention capacity, with excess count in its tooltip. The separate Maximum Signifiers setting controls the whole world's population and must be raised above its default of 40 for a match with more than 40 hippies total.
 
 ## Controls
 
@@ -126,7 +126,7 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
 When the hidden, default-on encounter reaches its reveal, the giant becomes an authoritative
 encounter. The approved 85–90 second effigy reveal is unchanged. Before that moment camps
 remain rivals; afterward player-controlled and NPC camps are allies. Rival damage,
-knockback, Dialectics conversion and altar overwrites stop. Players can still pick up and
+knockback and altar overwrites stop. Players can still pick up and
 pull each other's Flags; ordinary pull timing, Ward/Crystal slowdown and Stabilize L3
 protection still apply. NPC vexillomancers
 and their Signifiers attack the giant. Priority Beacons can direct your Signifiers at it.
@@ -256,3 +256,14 @@ not a browser gameplay certification. A final interactive browser playtest is st
 before release. Publishing this branch does not deploy the game.
 Boss sound scheduling and synthesis have automated coverage; audible output still needs
 checking in a browser with Web Audio enabled.
+
+### Command View cleanup
+
+Enclose now contains **At target** (E) and **Expand home** (R). Expand home preserves the former Ring planner's wider home boundary; Node and Pentacle stay separate. Plans and direct unit orders remain different: Clear plan does not remove planted Flags, and Clear orders returns selected workers to automatic jobs.
+
+Right-click your avatar to make selected workers follow. **Hold position** guards the group's current center. Ctrl+right-click always defends the clicked position, overriding hovered nodes, entities and active tools. The revealed, living boss can be targeted directly with right-click Attack. Wall, Deck, Ramp and Demolish controls are shown in action view only; camp-building placement remains available on the map. Flag-here pings are markers, not planting orders.
+
+
+## Gentle gameplay terrain dome
+
+The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 11 rejects older flat-terrain clients with a reload hint.

@@ -52,7 +52,7 @@ describe('persistent boss forcefields within five metres', () => {
       for (const now of [100, 101, 130, 600]) {
         fx.update(boss, now); expect(shields()).toHaveLength(1);
         expect(shields()[0].material.uniforms.uTime.value).toBe(now);
-        expect(shields()[0].position.toArray()).toEqual([-4, 12, 8]);
+        expect(shields()[0].position.toArray()).toEqual([-4, 14, 8]);
       }
       expect(boss.barrier).toBeNull(); fx.dispose();
     });

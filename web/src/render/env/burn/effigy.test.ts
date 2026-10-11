@@ -14,7 +14,7 @@ function environment(tutorial = false): EnvContext {
   const day = createDayState();
   return {
     ctx: {
-      world: { options: { mode: tutorial ? 'tutorial' : 'skirmish', match: { bossMode: false } }, map: { seed: 'effigy-test', effigy: { x: 0, z: 0 } } },
+      world: { options: { mode: tutorial ? 'tutorial' : 'skirmish', match: { bossMode: false } }, map: { half: 150, seed: 'effigy-test', effigy: { x: 0, z: 0 } } },
       quality: 'low', time: 0, session: { viewBlend: 0 }, camera: { fov: 60 },
       renderer: { getDrawingBufferSize: (v: THREE.Vector2) => v.set(1280, 720) },
     } as unknown as EnvContext['ctx'],
@@ -155,7 +155,7 @@ describe('original scaffold with exposed shrinking Flag and pole', () => {
       expect(assembly.position.toArray()).toEqual([0, PLINTH_HEIGHT, 0]);
       expect(flag.scale.toArray()).toEqual([1, 1, 1]);
       expect(flag.position.toArray()).toEqual([0, FLAG_BOTTOM - PLINTH_HEIGHT, 0]);
-      expect(flag.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(flagBurnBottom(t, crown));
+      expect(flag.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(2 + flagBurnBottom(t, crown));
       for (const pole of [mast, finial]) {
         expect(pole.scale.toArray()).toEqual([1, 1, 1]);
         expect(pole.position.toArray()).toEqual([0, -PLINTH_HEIGHT, 0]);

@@ -33,6 +33,7 @@ export const JOBS: readonly JobKind[] = ['survey', 'gather', 'defend', 'raid', '
 
 export type BuildingKind = 'hearth' | 'workshop' | 'drumcircle' | 'ward' | 'druglab' | 'gcc';
 export type PieceKind = 'wall' | 'floor' | 'ramp';
+/** Retired actions: retained for legacy command/event and snapshot decoding only. */
 export type GccAction = 'dialectics' | 'simulacra';
 export type PingKind = 'rally' | 'attack' | 'flag' | 'sos' | 'shot';
 

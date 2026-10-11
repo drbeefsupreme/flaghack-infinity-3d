@@ -47,7 +47,7 @@ describe('small world-space melee fireworks', () => {
     expect(shown[0].frustumCulled).toBe(true); expect(shown[0].geometry.boundingSphere?.radius).toBe(7);
     e.ctx.shared = { groundOffset: () => .3 } as typeof e.ctx.shared;
     fx.onEvent({ ...hit, impactId: 200 });
-    expect(fx.group.children.filter(o => o.visible)[1].position.y).toBeCloseTo(1.4);
+    expect(fx.group.children.filter(o => o.visible)[1].position.y).toBeCloseTo(1.1);
     fx.onEvent({ ...hit, impactId: 2, pos: { x: 1000, y: 1, z: 0 } });
     expect(fx.group.children.filter(o => o.visible)).toHaveLength(2);
     for (let i = 3; i < 200; i++) fx.onEvent({ ...hit, impactId: i });

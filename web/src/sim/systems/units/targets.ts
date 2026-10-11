@@ -57,7 +57,7 @@ export function nearestLooseFlag(world: World, sys: UnitsState, h: Hippie, b: Br
   let best: Flag | null = null;
   let bestD = r * r;
   for (const fl of sys.looseFlags) {
-    if (fl.state !== 'loose' || (fl.owner !== f && fl.owner !== NEUTRAL) || fl.pos.y > HIPPIE_REACH_Y) continue;
+    if (fl.state !== 'loose' || (fl.owner !== f && fl.owner !== NEUTRAL) || fl.pos.y - world.collision.groundHeight(fl.pos.x, fl.pos.z) > HIPPIE_REACH_Y) continue;
     if (fl.id === b.avoidFlag && world.time < b.avoidUntil) continue;
     const claim = sys.flagClaims.get(fl.id);
     if (claim !== undefined && claim !== h.id) continue;
@@ -301,7 +301,7 @@ export function rivalUnitPos(world: World, f: FactionId, id: EntityId, out: V2):
     return true;
   }
   const av = world.avatars.get(id);
-  if (!av || av.faction === f || av.koUntil > 0 || av.pos.y > AVATAR_REACH_Y) return false;
+  if (!av || av.faction === f || av.koUntil > 0 || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > AVATAR_REACH_Y) return false;
   out.x = av.pos.x;
   out.z = av.pos.z;
   return true;
@@ -323,7 +323,7 @@ export function nearestRivalUnit(world: World, sys: UnitsState, f: FactionId, x:
     }
   }
   for (const av of world.avatars.values()) {
-    if (av.faction === f || av.koUntil > 0 || av.pos.y > AVATAR_REACH_Y) continue;
+    if (av.faction === f || av.koUntil > 0 || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > AVATAR_REACH_Y) continue;
     const d2 = (av.pos.x - x) * (av.pos.x - x) + (av.pos.z - z) * (av.pos.z - z);
     if (d2 < bestD) {
       bestD = d2;
@@ -359,7 +359,7 @@ export function findIntruder(world: World, sys: UnitsState, h: Hippie, f: Factio
     best = o.id;
   }
   for (const av of world.avatars.values()) {
-    if (av.faction === f || av.koUntil > 0 || av.pos.y > AVATAR_REACH_Y) continue;
+    if (av.faction === f || av.koUntil > 0 || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > AVATAR_REACH_Y) continue;
     const d2 = (av.pos.x - h.pos.x) * (av.pos.x - h.pos.x) + (av.pos.z - h.pos.z) * (av.pos.z - h.pos.z);
     if (d2 >= bestD || !guarded(world, f, av.pos.x, av.pos.z)) continue;
     bestD = d2;

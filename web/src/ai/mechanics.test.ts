@@ -12,6 +12,7 @@ import { Brain } from './brain';
 import { manageLabour } from './labour';
 import { assaultCost, claimable, perceive, Scheduler } from './perception';
 import { pilotTick } from './pilot';
+import { usePowers } from './powers';
 
 function fixture() {
   const world = createMatch({ seed: 'ai-mechanics', difficulty: 'normal', humans: [0], mode: 'standard', match: normalizeMatch() });
@@ -27,6 +28,22 @@ function enemyFlag(world: ReturnType<typeof createMatch>) {
 }
 
 describe('AI adapts to shared recruitment and lightning defenses', () => {
+  it('never requests retired GCC abilities even with rivals and open plan nodes nearby', () => {
+    const { world, b, av } = fixture();
+    const cart = world.gccOf(0)!;
+    av.pos = { ...cart.pos, y: 0 };
+    spawnHippie(world, 1, { x: cart.pos.x + 3, z: cart.pos.z });
+    spawnHippie(world, 2, { x: cart.pos.x - 3, z: cart.pos.z });
+    for (const n of world.lattice.nodes.filter((n) => canPlantAt(world, n.id, 0)).slice(0, 2)) {
+      world.factions[0].plan.add(n.id);
+    }
+    perceive(b, new Scheduler());
+    usePowers(b);
+    pilotTick(b);
+    expect(world.takeCommands().some((c) => c.t === 'gcc')).toBe(false);
+    expect(b.pilot.task.kind).not.toBe('gcc');
+  });
+
   it('actively hands a Flag to a visible neutral instead of waiting for camp respawns', () => {
     const { world, b, sim, av } = fixture();
     for (const h of [...world.hippies.values()]) if (h.faction === 0) world.hippies.delete(h.id);
@@ -156,3 +173,24 @@ describe('AI adapts to shared recruitment and lightning defenses', () => {
   });
 });
 
+
+
+describe('AI pilot on domed ground', () => {
+  it('plants a nearby planned node on the elevated interior instead of treating ground as airborne', () => {
+    const { world, b, av, sim } = fixture();
+    const node = world.lattice.nodes.find(n => Math.hypot(n.x, n.z) < 50 && canPlantAt(world, n.id, 0))!;
+    expect(node).toBeDefined();
+    av.pos = { x: node.x + .5, y: world.collision.groundHeight(node.x + .5, node.z), z: node.z };
+    expect(av.pos.y).toBeGreaterThan(1);
+    b.pilot.task = { kind: 'plant', node: node.id };
+    b.pilot.taskAt = world.time;
+    pilotTick(b);
+    const commands = world.takeCommands();
+    expect(commands.some(c => c.t === 'plant' && c.node === node.id)).toBe(true);
+    for (const c of commands) world.submit(c);
+    sim.step();
+    const planted = [...world.flags.values()].find(f => f.state === 'planted' && f.node === node.id)!;
+    expect(planted).toBeDefined();
+    expect(planted.pos.y).toBeCloseTo(world.collision.groundHeight(node.x, node.z), 8);
+  });
+});

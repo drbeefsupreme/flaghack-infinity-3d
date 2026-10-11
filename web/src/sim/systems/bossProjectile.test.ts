@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 import { describe, expect, it } from 'vitest';
 import { bossFixture } from '../../../tests/bossFixture';
 import type { BossAction } from '../boss';
@@ -42,7 +43,7 @@ function aim(w: ReturnType<typeof setup>, headshot: boolean, startRegion: number
   for (let region = startRegion; region < endRegion; region++) {
     const i = region * BOSS_HIT_REGION_STRIDE;
     const c = Math.cos(b.yaw), sin = Math.sin(b.yaw);
-    const center = { x: b.pos.x + c * shapes[i] + sin * shapes[i + 2], y: shapes[i + 1],
+    const center = { x: b.pos.x + c * shapes[i] + sin * shapes[i + 2], y: groundHeight(b.pos.x,b.pos.z,w.map.half) + shapes[i + 1],
       z: b.pos.z - sin * shapes[i] + c * shapes[i + 2] };
     for (const d of [{ x: 0, y: 0, z: 25 }, { x: 25, y: 0, z: 0 }, { x: -25, y: 0, z: 0 }, { x: 0, y: 0, z: -25 }, { x: 0, y: 25, z: 0 }]) {
       const from = { x: center.x + d.x, y: center.y + d.y, z: center.z + d.z };

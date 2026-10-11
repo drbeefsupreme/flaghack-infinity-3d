@@ -1,3 +1,4 @@
+import { groundHeight } from '../terrain';
 import { footprintDistance, makeIsBlockedAt } from '../map/mapgen';
 import type { Obstacle } from '../map/mapgen';
 import { distToSegment } from '../math';
@@ -109,12 +110,13 @@ export function destroySceneryBlast(world: World, at: V3, radius: number, from: 
   let count = 0;
   for (const obstacle of world.map.obstacles) {
     if (obstacle.kind === 'effigy' || world.destroyedScenery.has(obstacle.id)) continue;
+    const base = groundHeight(obstacle.x, obstacle.z, world.map.half);
     const r = obstacle.shape === 'circle' ? obstacle.radius : Math.hypot(obstacle.hx, obstacle.hz);
     if (obstacle.x + r + radius < Math.min(first.x, at.x) || obstacle.x - r - radius > Math.max(first.x, at.x) ||
         obstacle.z + r + radius < Math.min(first.z, at.z) || obstacle.z - r - radius > Math.max(first.z, at.z) ||
-        obstacle.height + radius < Math.min(first.y, at.y) || -radius > Math.max(first.y, at.y)) continue;
+        base + obstacle.height + radius < Math.min(first.y, at.y) || base - radius > Math.max(first.y, at.y)) continue;
     const distance = sweptBodyDistanceSquared(from, at, (x, y, z) => {
-      const dxz = footprintDistance(obstacle, x, z), dy = Math.max(-y, 0, y - obstacle.height);
+      const dxz = footprintDistance(obstacle, x, z), dy = Math.max(base - y, 0, y - base - obstacle.height);
       return dxz * dxz + dy * dy;
     });
     if (distance > radius2 + 1e-9) continue;

@@ -18,6 +18,7 @@ import type { BossModelLoader } from './boss/bossModel';
 import { applyBossChargeMaterial, bossCharge } from './boss/revealTimeline';
 import { createEnvMaterial, disposeEnvMaterial, swayDepthOf } from '../envMaterial';
 import type { EnvContext, EnvPart } from '../envTypes';
+import { terrainHeight } from '../terrain';
 import { BurnFx } from './burnFx';
 import type { BurnFxDrive } from './burnFx';
 import { FLAG_BOTTOM, PLINTH_HEIGHT, GUY_BURN_END, emberBed, emberRate, fireCeiling, fireFront, fireIntensity, flagBurnScale, flagIncandescence, guyLineBurn, guyLineFall, ignitionFlare, sampleFlagHeat, smokeAmount } from './burnTimeline';
@@ -96,7 +97,7 @@ export class Effigy implements EnvPart {
     this.env = env;
     const map = env.ctx.world.map;
     this.group.name = 'effigy';
-    this.group.position.set(map.effigy.x, 0, map.effigy.z);
+    this.group.position.set(map.effigy.x, terrainHeight(map.effigy.x, map.effigy.z, map.half), map.effigy.z);
     env.root.add(this.group);
 
     this.burnU = {

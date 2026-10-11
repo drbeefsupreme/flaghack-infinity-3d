@@ -34,10 +34,10 @@ describe('persistent boss defensive lightning presentation', () => {
     expect(JSON.stringify(e.boss)).toBe(before); expect(e.boss.hp).toBe(hp); expect(e.world.drainEvents()).toEqual([]);
     e.fx.dispose();
   });
-  it('adds the same visual ground offsets as the existing Ward/Crystal lightning style', () => {
+  it('preserves absolute endpoints without adding terrain a second time', () => {
     const e = fixture(); e.fx.update(e.world, 100, (x,z) => x * .1 + z * .01);
     const mesh = e.fx.group.children[1] as THREE.Mesh, p = mesh.geometry.getAttribute('position');
-    expect(p.getY(0)).toBe(103); expect(p.getY(48)).toBeCloseTo(25.12, 5); e.fx.dispose();
+    expect(p.getY(0)).toBe(75); expect(p.getY(48)).toBe(25); e.fx.dispose();
   });
   it('disposes ended links immediately and cancels all arcs on death, match end and absent boss', () => {
     const e = fixture(); e.fx.update(e.world, 100, flat);

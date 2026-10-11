@@ -192,7 +192,7 @@ function actFetchStock(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fa
 
 function actPickup(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: number): void {
   const fl = world.flags.get(b.flag);
-  if (!fl || fl.state !== 'loose' || fl.pos.y > HIPPIE_REACH_Y) {
+  if (!fl || fl.state !== 'loose' || fl.pos.y - world.collision.groundHeight(fl.pos.x, fl.pos.z) > HIPPIE_REACH_Y) {
     releaseTask(world, h, b);
     return;
   }

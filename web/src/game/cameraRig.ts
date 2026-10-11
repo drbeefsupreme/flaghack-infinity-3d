@@ -268,13 +268,13 @@ export class CameraRig {
 
     if (blend <= 0) copyPose(this.near, this.base);
     else {
-      this.commandPose(cam, dt, this.far);
+      this.commandPose(world, cam, dt, this.far);
       if (dive) {
         if (blend < DIVE_CUT) {
-          this.tablePose(dive, this.tmp);
+          this.tablePose(world, dive, this.tmp);
           blendPose(this.near, this.tmp, ease(blend / DIVE_CUT), this.base);
         } else {
-          this.tableWorldPose(this.tmp);
+          this.tableWorldPose(world, this.tmp);
           blendPose(this.tmp, this.far, ease((blend - DIVE_CUT) / (1 - DIVE_CUT)), this.base);
         }
       } else blendPose(this.near, this.far, ease(blend), this.base);
@@ -381,7 +381,7 @@ export class CameraRig {
     const hx = hearth ? hearth.pos.x : av.pos.x;
     const hz = hearth ? hearth.pos.z : av.pos.z;
     out.tx = av.pos.x + (hx - av.pos.x) * k;
-    out.ty = av.pos.y * (1 - k) + 1;
+    out.ty = av.pos.y * (1 - k) + world.collision.groundHeight(hx, hz) * k + 1;
     out.tz = av.pos.z + (hz - av.pos.z) * k;
     out.yaw = this.orbitYaw;
     out.pitch = -0.62;
@@ -389,14 +389,14 @@ export class CameraRig {
     out.fov = FOV_DEATH;
   }
 
-  private commandPose(cam: CameraState, dt: number, out: RigPose): void {
+  private commandPose(world: World, cam: CameraState, dt: number, out: RigPose): void {
     // Glide toward the session target so minimap jumps animate; wheel/pan stay responsive.
     const k = Math.min(1, dt * 12);
     this.cmdX += (cam.cmdX - this.cmdX) * k;
     this.cmdZ += (cam.cmdZ - this.cmdZ) * k;
     this.cmdH += (cam.cmdHeight - this.cmdH) * k;
     out.tx = this.cmdX;
-    out.ty = 0;
+    out.ty = world.collision.groundHeight(this.cmdX, this.cmdZ);
     out.tz = this.cmdZ;
     out.yaw = Math.PI;
     out.pitch = CMD_PITCH;
@@ -405,9 +405,9 @@ export class CameraRig {
   }
 
   /** Just above the GCC tabletop, looking straight down at the live map, north up. */
-  private tablePose(gcc: Building, out: RigPose): void {
+  private tablePose(world: World, gcc: Building, out: RigPose): void {
     out.tx = gcc.pos.x;
-    out.ty = GCC_TABLE_Y;
+    out.ty = GCC_TABLE_Y + world.collision.groundHeight(gcc.pos.x, gcc.pos.z);
     out.tz = gcc.pos.z;
     out.yaw = Math.PI + GCC_TABLE_MAP_YAW;
     out.pitch = DIVE_PITCH;
@@ -416,9 +416,9 @@ export class CameraRig {
   }
 
   /** The same framing at world scale: the tabletop map becomes the battlefield. */
-  private tableWorldPose(out: RigPose): void {
+  private tableWorldPose(world: World, out: RigPose): void {
     out.tx = 0;
-    out.ty = 0;
+    out.ty = world.collision.groundHeight(0, 0);
     out.tz = 0;
     out.yaw = Math.PI + GCC_TABLE_MAP_YAW;
     out.pitch = DIVE_PITCH;

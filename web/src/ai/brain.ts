@@ -5,7 +5,7 @@
  * Owner: AI agent.
  */
 import { FACTION_DEFS, SIM_HZ } from '../sim/constants';
-import type { CaptureStage, ChakraId, EntityId, FactionId, GccAction } from '../sim/types';
+import type { CaptureStage, ChakraId, EntityId, FactionId } from '../sim/types';
 import type { World } from '../sim/world';
 import type { ThrowAim } from './ballistics';
 import { PERSONAS, SKILLS } from './persona';
@@ -85,8 +85,7 @@ export interface View {
   popCap: number;
   /** Visible rival hippies inside our Survey or near our Hearth. */
   intruders: EntityId[];
-  /** Visible rival hippies around our Command Center, and neutral ones in recruitment range. */
-  rivalsNearGcc: number;
+  /** Neutral hippies in Command Center recruitment range. */
   neutralsNearGcc: EntityId[];
   visibleNeutrals: EntityId[];
   /** Visible rival hippies within the Omega Pulse reach of our vexillomancer. */
@@ -104,7 +103,6 @@ export type PilotTask =
   | { kind: 'restock'; hearthId: EntityId }
   | { kind: 'harvest'; pileId: EntityId }
   | { kind: 'align' }
-  | { kind: 'gcc' }
   | { kind: 'fight'; target: EntityId }
   | { kind: 'guard'; x: number; z: number };
 
@@ -199,9 +197,8 @@ export class Brain {
   needsRoom = false;
   /** Next time the assault may re-mark the target's home-ring Flags with attack pings. */
   nextPingAt = 0;
-  /** Chakra alignment wanted next (null = none), and the GCC action the pilot is walking to. */
+  /** Chakra alignment wanted next (null = none). */
   alignWanted: ChakraId | null = null;
-  gccWanted: { action: GccAction; target: EntityId | -1; nodes: number[] } | null = null;
 
   pilot: PilotState;
 
@@ -278,7 +275,6 @@ function emptyView(): View {
     population: 0,
     popCap: 0,
     intruders: [],
-    rivalsNearGcc: 0,
     neutralsNearGcc: [],
     visibleNeutrals: [],
     rivalsNearAvatar: 0,

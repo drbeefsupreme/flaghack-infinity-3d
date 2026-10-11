@@ -63,8 +63,8 @@ class Arc {
     this.mesh = new THREE.Mesh(geometry, material); this.mesh.name = `boss-defensive-lightning-${id}`;
     this.mesh.frustumCulled = false; this.mesh.renderOrder = order;
   }
-  update(link: BossLightning, sample: number, groundY: (x: number, z: number) => number): void {
-    const f = link.from, t = link.to, fy = f.y + groundY(f.x, f.z), ty = t.y + groundY(t.x, t.z);
+  update(link: BossLightning, sample: number, _groundY: (x: number, z: number) => number): void {
+    const f = link.from, t = link.to, fy = f.y, ty = t.y; // Authoritative absolute endpoints.
     const dx = t.x - f.x, dy = ty - fy, dz = t.z - f.z, length = Math.max(.001, Math.hypot(dx, dy, dz));
     const horizontal = Math.hypot(dx, dz), ux = horizontal > .001 ? -dz / horizontal : 1, uz = horizontal > .001 ? dx / horizontal : 0;
     const wx = dy / length * uz, wy = dz / length * ux - dx / length * uz, wz = -dy / length * ux;

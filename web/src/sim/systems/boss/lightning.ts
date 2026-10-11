@@ -2,7 +2,8 @@
 import { BOSS_TIMING } from '../../boss';
 import type { BossState } from '../../boss';
 import { BOSS_GAMEPLAY_SCALE } from '../../bossDimensions';
-import { BUILDING_HEIGHT, CRYSTAL_HEIGHT } from '../../constants';
+import { BUILDING_HEIGHT, CRYSTAL_HEIGHT, MAP_HALF } from '../../constants';
+import { groundHeight } from '../../terrain';
 import type { V2, V3 } from '../../math';
 import type { Building, Crystal, Flag } from '../../types';
 import type { World } from '../../world';
@@ -42,20 +43,20 @@ function defendingWards(world: World, boss: BossState): Building[] {
 }
 
 /** Actual posed head anchor of the 32 m rig, including crouch/attack offsets and yaw. */
-export function bossLightningTarget(boss: BossState, now: number): V3 {
+export function bossLightningTarget(boss: BossState, now: number, mapHalf = MAP_HALF): V3 {
   const { position: p } = sampleBossHeadPose(boss, now), c = Math.cos(boss.yaw), s = Math.sin(boss.yaw);
-  return { x: boss.pos.x + c * p.x + s * p.z, y: p.y, z: boss.pos.z - s * p.x + c * p.z };
+  return { x: boss.pos.x + c * p.x + s * p.z, y: groundHeight(boss.pos.x, boss.pos.z, mapHalf) + p.y, z: boss.pos.z - s * p.x + c * p.z };
 }
 
 /** Refresh after movement/consumption as well as damage so snapshots never retain ended links. */
 export function syncBossLightning(world: World, boss: BossState): void {
   if (!live(world, boss)) { boss.lightning = []; return; }
-  const to = bossLightningTarget(boss, world.time);
+  const to = bossLightningTarget(boss, world.time, world.map.half);
   boss.lightning = activeBossCrystals(world, boss).map(c => ({ kind: 'crystal' as const, id: c.id, faction: c.faction,
-    from: { x: c.pos.x, y: CRYSTAL_HEIGHT * c.scale, z: c.pos.z }, to: { ...to } }));
+    from: { x: c.pos.x, y: groundHeight(c.pos.x, c.pos.z, world.map.half) + CRYSTAL_HEIGHT * c.scale, z: c.pos.z }, to: { ...to } }));
   if (world.time >= boss.actionAt && world.time < boss.actionAt + BOSS_TIMING.consume) {
     for (const w of defendingWards(world, boss)) boss.lightning.push({ kind: 'ward', id: w.id, faction: w.faction as Crystal['faction'],
-      from: { x: w.pos.x, y: BUILDING_HEIGHT.ward, z: w.pos.z }, to: { ...to } });
+      from: { x: w.pos.x, y: groundHeight(w.pos.x, w.pos.z, world.map.half) + BUILDING_HEIGHT.ward, z: w.pos.z }, to: { ...to } });
   }
 }
 

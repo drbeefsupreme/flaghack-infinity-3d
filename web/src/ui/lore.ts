@@ -319,7 +319,7 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
       '**Plant on their implied node**: a real Flag overrides the implication.',
       '**Wall off** your own loop Flags with Tarp Walls.',
       `**Hold the Hearth**: stand within ${CAPTURE.holdRadius} m of your contained Hearth and pressure builds at ${HOLD_PCT}% while you are there.`,
-      '**Ward**, **Stabilize**, and **Dialectics** their defenders into your camp.',
+      'Use **Ward** and **Stabilize** to protect your camp.',
     ],
   },
   {
@@ -410,15 +410,6 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
     kind: 'p',
     text: 'A Crystal shatters when its pentacle breaks or its focus node flips. Pull one of the five and it is gone.',
   },
-  { kind: 'h', text: 'Flag Simulacra' },
-  {
-    kind: 'p',
-    text: `The GCC can plant one Flag on **two nodes at once**. The superposed Flag counts as real on both, until an enemy unit comes within ${GCC.simulacraObserveRadius} m of either: then it collapses, 50/50, onto one node and the other vanishes with a glitch.`,
-  },
-  {
-    kind: 'quote',
-    text: 'Proper casting involves placing the flags far enough apart that they cannot all be seen at once.',
-  },
   { kind: 'h', text: 'Interference' },
   {
     kind: 'p',
@@ -508,7 +499,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   { kind: 'h', text: 'The Geomantic Command Center' },
   {
     kind: 'p',
-    text: `A black pentagonal cart with Flag-spoked wheels and a tabletop map of the burn. Use the **Command Table** to dive into the Command View. Hold E at the cart to push it at ${GCC.pushSpeed} m/s. If it collapses it is rebuilt at your Hearth after ${GCC.rebuildTime} s.`,
+    text: `A black pentagonal cart with Flag-spoked wheels and a tabletop map of the burn. Press Tab anywhere to open the Command View. Hold E at the cart to push it at ${GCC.pushSpeed} m/s. If it collapses it is rebuilt at your Hearth after ${GCC.rebuildTime} s.`,
   },
   {
     kind: 'list',
@@ -516,8 +507,6 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
       `**Geomantic Advice**: reveals the lattice and focus points within ${GCC.adviceRadius} m and observes those nodes.`,
       `**Flag Repair**: every ${GCC.repairInterval} s re-plants one loose Flag of yours within ${GCC.repairRadius} m and mends your pieces and buildings there.`,
       `**Recruitment**: like a Drum Circle, automatically recruits one existing neutral within ${RECRUIT_RADIUS} m every ${RECRUIT_INTERVAL} s, without a Flag or lumber cost.`,
-      `**Flagellian Dialectics** (${GCC.dialecticsCooldown} s cooldown, ${GCC.dialecticsChannel} s channel at the cart): converts up to ${GCC.dialecticsMax} enemy hippies within ${GCC.dialecticsRadius} m.`,
-      `**Flag Simulacra** (${GCC.simulacraCooldown} s cooldown): one Flag on two nodes at once.`,
     ],
   },
   { kind: 'h', text: 'Drugs' },
@@ -532,7 +521,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
       ],
       [
         '**Luminous Dust**',
-        `${DRUG.duration.dust} s: the whole lattice, focus points, strain and enemy simulacra revealed; your throws snap within ${AVATAR.throwSnapRadiusDust} m.`,
+        `${DRUG.duration.dust} s: the whole lattice, focus points and strain revealed; your throws snap within ${AVATAR.throwSnapRadiusDust} m.`,
         `Screen distortion, minimap noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} hallucinated False Flags.`,
       ],
       [

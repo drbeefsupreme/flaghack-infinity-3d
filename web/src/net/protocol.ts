@@ -22,7 +22,8 @@ import type { GameEvent } from '../sim/events';
 import type { DeltaSnapshot, FullSnapshot } from './codec';
 
 /** Bump on any incompatible change; mismatched clients are denied with a reload hint. */
-export const PROTOCOL_VERSION = 10;
+// v11: entity/event Y is absolute on the shared gameplay dome; reject flat-world clients.
+export const PROTOCOL_VERSION = 11;
 export const DEFAULT_PORT = 8787;
 export const WS_PATH = '/ws';
 /** GET → HostInfo (JSON). Only a host server answers it: the client uses it to detect online mode. */

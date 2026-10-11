@@ -6,6 +6,8 @@
  * fragments write vec4(rgb * a, a * (1 - additive)).
  */
 import * as THREE from 'three';
+import { MAP_HALF } from '../../sim/constants';
+import { TERRAIN_GLSL } from '../../sim/terrain';
 
 /** Data textures are TEX_W texels wide; id → (id & 127, id >> 7). */
 export const TEX_W = 128;
@@ -14,7 +16,7 @@ export function texRows(count: number): number {
   return Math.max(1, Math.ceil(count / TEX_W));
 }
 
-/** Lattice overlay heights above the (flat) ground. */
+/** Lattice overlay heights above gameplay terrain. */
 export const LIFT = {
   noise: 0.03,
   facet: 0.05,
@@ -40,6 +42,7 @@ export interface Uniform<T> {
 export interface SurveyUniforms {
   [name: string]: Uniform<unknown>;
   uTime: Uniform<number>;
+  uMapHalf: Uniform<number>;
   uViewBlend: Uniform<number>;
   /** Drawing-buffer size in device pixels. */
   uResolution: Uniform<THREE.Vector2>;
@@ -92,11 +95,12 @@ export function createSurveyUniforms(textures: {
   aux: THREE.DataTexture;
   edge: THREE.DataTexture;
   facet: THREE.DataTexture;
-}): SurveyUniforms {
+}, half = MAP_HALF): SurveyUniforms {
   const flips: THREE.Vector4[] = [];
   for (let i = 0; i < FLIP_SLOTS; i++) flips.push(new THREE.Vector4(0, 0, -1e4, 0));
   return {
     uTime: { value: 0 },
+    uMapHalf: { value: half },
     uViewBlend: { value: 0 },
     uResolution: { value: new THREE.Vector2(1280, 720) },
     uPx: { value: 1 },
@@ -122,6 +126,9 @@ export function createSurveyUniforms(textures: {
 
 /** Uniform declarations + helpers shared by every survey shader (vertex and fragment). */
 export const GLSL_COMMON = /* glsl */ `
+uniform float uMapHalf;
+${TERRAIN_GLSL}
+float fhGround(vec2 p) { return groundHeight(p, uMapHalf); }
 uniform float uTime;
 uniform float uViewBlend;
 uniform vec2 uResolution;
@@ -304,4 +311,17 @@ export function cornerQuad(corners: readonly number[]): THREE.InstancedBufferGeo
   g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((corners.length / 2) * 3), 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
   return g;
+}
+
+/** Subdivided upward-facing decal sheet so broad rings follow the shared dome. */
+export function cornerGrid(segments: number): THREE.InstancedBufferGeometry {
+  const g = new THREE.InstancedBufferGeometry(), corners: number[] = [], indices: number[] = [];
+  for (let z = 0; z <= segments; z++) for (let x = 0; x <= segments; x++) corners.push(x / segments * 2 - 1, z / segments * 2 - 1);
+  for (let z = 0; z < segments; z++) for (let x = 0; x < segments; x++) {
+    const a = z * (segments + 1) + x, b = a + segments + 1;
+    indices.push(a, b, b + 1, a, b + 1, a + 1);
+  }
+  g.setAttribute('aCorner', new THREE.Float32BufferAttribute(corners, 2));
+  g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(corners.length / 2 * 3), 3));
+  g.setIndex(indices); return g;
 }

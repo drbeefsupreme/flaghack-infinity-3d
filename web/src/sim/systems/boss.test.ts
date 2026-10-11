@@ -175,7 +175,7 @@ describe('authoritative boss encounter', () => {
     const w = encounter(5000), b = w.boss!, a = w.avatarOf(0); b.pos = { x: 0, z: 3 }; a.pos = { x: 0, y: 0, z: 0 };
     a.yaw = 0; a.input.yaw = 0;
     // Continuous contact baseline excludes evasion, walking and boss damage, just like the approved diagnostic.
-    w.collision = { moveCharacter: () => ({ onGround: true }), supportHeight: () => 0 } as unknown as World['collision'];
+    w.collision = { moveCharacter: () => ({ onGround: true }), supportHeight: () => 2, groundHeight: () => 2 } as unknown as World['collision'];
     w.time = 0;
     while (w.time < 852.5) w.time += SIM_DT;
     let last = -Infinity, accumulator = 0, queued = false; const start = w.time;

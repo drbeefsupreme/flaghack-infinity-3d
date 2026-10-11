@@ -69,7 +69,7 @@ describe('pieces', () => {
     run(h, 1 / 60);
     expect(pieceAt(world, 'floor', -1, facet, 0)).toBeDefined();
     const fc = world.lattice.facets[facet];
-    expect(world.collision.supportHeight(fc.cx, fc.cz, 10)).toBeCloseTo(LEVEL_HEIGHT, 2);
+    expect(world.collision.supportHeight(fc.cx, fc.cz, 10) - world.collision.groundHeight(fc.cx, fc.cz)).toBeCloseTo(LEVEL_HEIGHT, 2);
     // Floors and ramps share the facet slot.
     expect(canBuildPiece(world, 0, 'ramp', -1, facet, 0, 0).ok).toBe(false);
   });
@@ -92,11 +92,11 @@ describe('pieces', () => {
       const mz = (a.z + b.z) / 2;
       return world.collision.supportHeight(mx + (fc.cx - mx) * 0.1, mz + (fc.cz - mz) * 0.1, 10);
     };
-    const low = at(1, 2);
-    const high = at(3, 0);
+    const low = at(1, 2) - world.collision.groundHeight(fc.cx, fc.cz);
+    const high = at(3, 0) - world.collision.groundHeight(fc.cx, fc.cz);
     expect(low).toBeLessThan(0.6);
     expect(high).toBeGreaterThan(LEVEL_HEIGHT - 0.6);
-    expect(world.collision.supportHeight(fc.cx, fc.cz, 10)).toBeCloseTo(LEVEL_HEIGHT / 2, 1);
+    expect(world.collision.supportHeight(fc.cx, fc.cz, 10) - world.collision.groundHeight(fc.cx, fc.cz)).toBeCloseTo(LEVEL_HEIGHT / 2, 1);
   });
 
   it('a level-1 deck needs support; destroying the support brings it down', () => {
@@ -118,14 +118,14 @@ describe('pieces', () => {
     const upper = pieceAt(world, 'floor', -1, facet, 1)!;
     expect(upper).toBeDefined();
     const fc = world.lattice.facets[facet];
-    expect(world.collision.supportHeight(fc.cx, fc.cz, 20)).toBeCloseTo(2 * LEVEL_HEIGHT, 2);
+    expect(world.collision.supportHeight(fc.cx, fc.cz, 20) - world.collision.groundHeight(fc.cx, fc.cz)).toBeCloseTo(2 * LEVEL_HEIGHT, 2);
 
     expect(damagePiece(world, lower, PIECE.hp, -1)).toBe(true);
     run(h, 1 / 60);
     expect(world.pieces.has(lower.id)).toBe(false);
     expect(world.pieces.has(upper.id)).toBe(false);
     expect(eventsOf(h, 'pieceDestroyed').map((e) => e.pieceId)).toEqual([lower.id, upper.id]);
-    expect(world.collision.supportHeight(fc.cx, fc.cz, 20)).toBe(0);
+    expect(world.collision.supportHeight(fc.cx, fc.cz, 20) - world.collision.groundHeight(fc.cx, fc.cz)).toBe(0);
   });
 
   it('a wall on a level-0 deck edge stands at level 1; demolishing refunds and cascades', () => {

@@ -56,11 +56,11 @@ export function defendedPullRate(world: World, fl: Flag, puller: FactionId, star
     if (defender.type === 'crystal') {
       const node = world.lattice.nodes[defender.pentacle.includes(fl.node) ? fl.node : fl.altNode];
       world.emit({ t: 'crystalLightning', crystalId: defender.id, flagId: fl.id, faction: defender.faction,
-        from: { x: defender.pos.x, y: CRYSTAL_HEIGHT * defender.scale, z: defender.pos.z },
-        to: { x: node.x, y: fl.pos.y + 2, z: node.z } });
+        from: { x: defender.pos.x, y: world.collision.groundHeight(defender.pos.x, defender.pos.z) + CRYSTAL_HEIGHT * defender.scale, z: defender.pos.z },
+        to: { x: node.x, y: world.collision.groundHeight(node.x, node.z) + 2, z: node.z } });
     } else {
       world.emit({ t: 'wardLightning', buildingId: defender.id, flagId: fl.id, faction: defender.faction,
-        from: { x: defender.pos.x, y: BUILDING_HEIGHT.ward, z: defender.pos.z },
+        from: { x: defender.pos.x, y: world.collision.groundHeight(defender.pos.x, defender.pos.z) + BUILDING_HEIGHT.ward, z: defender.pos.z },
         to: { x: fl.pos.x, y: fl.pos.y + 2, z: fl.pos.z } });
     }
   }
@@ -134,7 +134,7 @@ export function plantSimulacrum(
   world.factions[owner].stats.flagsPlanted++;
   const nb = world.lattice.nodes[b];
   world.emit({ t: 'flagPlanted', flagId, node: a, faction: owner, by, pos: { ...fl.pos } });
-  world.emit({ t: 'flagPlanted', flagId, node: b, faction: owner, by, pos: { x: nb.x, y: 0, z: nb.z } });
+  world.emit({ t: 'flagPlanted', flagId, node: b, faction: owner, by, pos: { x: nb.x, y: world.collision.groundHeight(nb.x, nb.z), z: nb.z } });
   markSurveyDirty(world);
   return true;
 }
@@ -152,6 +152,7 @@ export function collapseSimulacrum(world: World, fl: Flag, keep: number): void {
   fl.node = keep;
   fl.altNode = -1;
   fl.pos.x = n.x;
+  fl.pos.y = world.collision.groundHeight(n.x, n.z);
   fl.pos.z = n.z;
   record(world, fl, 'planted', -1);
   if (fl.owner !== NEUTRAL) {
@@ -264,7 +265,7 @@ export function depositToStock(world: World, flagId: EntityId, hearthId: EntityI
   fl.owner = hearth.faction;
   fl.holder = hearth.id;
   fl.pos.x = hearth.pos.x;
-  fl.pos.y = 0;
+  fl.pos.y = world.collision.groundHeight(fl.pos.x, hearth.pos.z);
   fl.pos.z = hearth.pos.z;
   fl.tilt = 0;
   record(world, fl, 'stock', by);
@@ -375,7 +376,7 @@ function attach(world: World, fl: Flag, c: Carrier, f: FactionId): void {
     fl.pos.y = c.pos.y;
   } else {
     c.carryingFlag = fl.id;
-    fl.pos.y = 0;
+    fl.pos.y = world.collision.groundHeight(c.pos.x, c.pos.z) + (c.airborne?.y ?? 0);
   }
   record(world, fl, 'carried', c.id);
 }
@@ -386,7 +387,7 @@ function settle(world: World, fl: Flag, node: number, owner: FactionId): void {
   fl.owner = owner;
   fl.node = node;
   fl.pos.x = n.x;
-  fl.pos.y = 0;
+  fl.pos.y = world.collision.groundHeight(n.x, n.z);
   fl.pos.z = n.z;
   fl.tilt = 0;
   fl.plantedAt = world.time;

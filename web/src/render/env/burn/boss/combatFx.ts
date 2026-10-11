@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import type { BossState } from '../../../../sim/boss';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
+import { groundHeight } from '../../../../sim/terrain';
+import { MAP_HALF } from '../../../../sim/constants';
+import { groundBossGeometry } from './groundGeometry';
 import { Rng } from '../../../../sim/rng';
 import { smooth } from './revealTimeline';
 import { createCrater } from './revealFx';
@@ -50,6 +53,7 @@ export class BossCombatFx {
   private readonly flames: { mesh: THREE.Mesh; bone: THREE.Bone }[] = [];
   private readonly fireUniforms: { uAge: { value: number }; uTime: { value: number }; uNoise: { value: THREE.Texture }; uBossFxScale: { value: number } };
   private readonly crater: THREE.Mesh;
+  private groundAt = { x: Infinity, z: Infinity };
   private readonly held = new THREE.Group();
   private readonly heldFlag = new THREE.Group();
   private readonly heldBuilding = new THREE.Group();
@@ -77,7 +81,7 @@ export class BossCombatFx {
         gl_FragColor=vec4(uColor*alpha*2.3,alpha);#include <colorspace_fragment>}`.replace(';#include', ';\n#include'),
     });
     this.geos.add(this.shieldGeometry); this.mats.add(this.shieldMaterial);
-    this.stomp = add(new THREE.Mesh(new THREE.CircleGeometry(6, 64).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    this.stomp = add(new THREE.Mesh(new THREE.RingGeometry(0, 6, 64, 8).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
       ...ADD, side: THREE.DoubleSide, uniforms: { uAge: this.stompAge },
       vertexShader: `varying vec3 vLocal;void main(){vLocal=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
       fragmentShader: `uniform float uAge;varying vec3 vLocal;void main(){float r=length(vLocal.xz);float band=exp(-pow((r-(.5+uAge*7.0))/.16,2.0));float a=band*(1.0-smoothstep(.25,.8,uAge));gl_FragColor=vec4(vec3(.72,.48,.23)*a*1.7,a);\n#include <colorspace_fragment>}`,
@@ -133,6 +137,12 @@ export class BossCombatFx {
     if (!boss) return;
     const origin = this.env.ctx.world.map.effigy;
     const x = boss.pos.x - origin.x, z = boss.pos.z - origin.z, death = this.deathAge.value;
+    if ((death >= 4 || boss.action === 'stomp') && (this.groundAt.x !== boss.pos.x || this.groundAt.z !== boss.pos.z)) {
+      this.groundAt = { ...boss.pos };
+      const half = this.env.ctx.world.map.half ?? MAP_HALF;
+      groundBossGeometry(this.crater.geometry, boss.pos, .65 * BOSS_GAMEPLAY_SCALE, half);
+      groundBossGeometry(this.stomp.geometry, boss.pos, BOSS_GAMEPLAY_SCALE, half);
+    }
     this.fireUniforms.uTime.value = now;
     for (const f of this.flames) {
       f.mesh.visible = death >= 0 && death < 12;
@@ -167,7 +177,7 @@ export class BossCombatFx {
         this.shields.set(contact.edge, mesh); this.mats.add(material); this.group.add(mesh);
       }
       mesh.material.uniforms.uColor.value.set(world.factions[contact.faction].color);
-      mesh.position.set(contact.x - origin.x, 7.5 * BOSS_GAMEPLAY_SCALE, contact.z - origin.z);
+      mesh.position.set(contact.x - origin.x, groundHeight(contact.x, contact.z, world.map.half ?? MAP_HALF) + 7.5 * BOSS_GAMEPLAY_SCALE, contact.z - origin.z);
       mesh.rotation.y = contact.yaw;
     }
   }

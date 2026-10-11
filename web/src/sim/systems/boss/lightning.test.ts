@@ -1,3 +1,4 @@
+import { groundHeight } from '../../terrain';
 import { describe, expect, it } from 'vitest';
 import { BOSS_TIMING } from '../../boss';
 import { BOSS_HEIGHT } from '../../bossDimensions';
@@ -79,7 +80,7 @@ describe('authoritative defensive boss lightning', () => {
   });
   it('uses only live Wards that protect the actual planted Flag under attack', () => {
     const e = wardEncounter(), start = e.boss.hp; e.step(1); expect(e.boss.hp).toBe(start - 25);
-    expect(e.boss.lightning).toMatchObject([{ kind: 'ward', id: e.ward.id, from: { y: BUILDING_HEIGHT.ward } }]);
+    expect(e.boss.lightning).toMatchObject([{ kind: 'ward', id: e.ward.id, from: { y: groundHeight(e.ward.pos.x,e.ward.pos.z,e.world.map.half) + BUILDING_HEIGHT.ward } }]);
     e.ward.pos.x += .0001; e.step(.1); expect(e.boss.hp).toBe(start - 25);
     e.ward.pos.x -= .0001; e.ward.faction = 1; e.step(.1); expect(e.boss.hp).toBe(start - 25);
     e.ward.faction = 0; e.ward.built = .99; e.step(.1); expect(e.boss.hp).toBe(start - 25);
@@ -110,7 +111,7 @@ describe('authoritative defensive boss lightning', () => {
   it('replicates exact scale-correct source tips and a posed boss endpoint', () => {
     const e = encounter(), c = e.crystal(0), large = e.crystal(500, 0, 10);
     e.boss.crouched = true; e.boss.action = 'grab'; e.boss.yaw = 1.4; syncBossLightning(e.world, e.boss);
-    expect(BOSS_HEIGHT).toBe(32); expect(e.boss.lightning.find(a => a.id === c.id)?.from.y).toBe(CRYSTAL_HEIGHT);
+    expect(BOSS_HEIGHT).toBe(32); expect(e.boss.lightning.find(a => a.id === c.id)?.from.y).toBe(2 + CRYSTAL_HEIGHT);
     expect(e.boss.lightning.find(a => a.id === large.id)?.from.y).toBe(75);
     for (const arc of e.boss.lightning) expect(arc.to).toEqual(bossLightningTarget(e.boss, e.world.time));
     expect(e.boss.lightning[0].to.y).toBeLessThan(BOSS_HEIGHT);

@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import type { Pile } from '../../../sim/types';
 import { createEnvMaterial, disposeEnvMaterial } from '../envMaterial';
 import type { EnvContext, EnvPart } from '../envTypes';
+import { terrainHeight } from '../terrain';
 import { buildPileLayout, moundHeight } from './pileLayout';
 import type { PileItem, PileLayout } from './pileLayout';
 import { buildPieceGeometry, PIECES } from './pileModels';
@@ -120,6 +121,7 @@ export class LumberPiles implements EnvPart {
     this.used++;
     // Pile yaw rotates local (x, z) like Object3D.rotation.y.
     this.pos.set(px + it.x * c + it.z * s, it.onMound ? it.y * sink : it.y, pz - it.x * s + it.z * c);
+    this.pos.y += terrainHeight(this.pos.x, this.pos.z, this.env.ctx.world.map.half);
     this.quat.setFromEuler(this.euler.set(it.rx, it.ry, it.rz)).premultiply(this.yawQ);
     if (it.piece === 'mound') this.scl.set(it.scale, it.scale * sink, it.scale);
     else this.scl.setScalar(it.scale);

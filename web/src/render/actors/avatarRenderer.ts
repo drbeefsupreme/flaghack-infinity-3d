@@ -743,9 +743,8 @@ export class AvatarRenderer {
   private place(v: AvatarVis, av: Avatar, acid: boolean, dt: number): void {
     const ctx = this.ctx;
     const t = ctx.time;
-    const groundAt = ctx.shared.groundOffset;
-    const lift = clamp01(1 - av.pos.y / 0.3);
-    const gy = groundAt ? groundAt(av.pos.x, av.pos.z) * lift : 0;
+    // Avatar simulation positions already include authoritative terrain height.
+    const gy = 0;
     const hidden = v.down && v.u.uDissolve.value >= 1;
     v.group.position.set(av.pos.x, av.pos.y + gy, av.pos.z);
     v.group.rotation.set(0, v.yaw, 0);

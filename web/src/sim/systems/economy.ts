@@ -214,7 +214,7 @@ function freePileSpot(world: World): V2 | undefined {
         break;
       }
     }
-    if (!taken && !world.collision.blockedCircle(s.x, s.z, 1, 0.1, 1.5)) free.push(s);
+    if (!taken && !world.collision.blockedCircle(s.x, s.z, 1, world.collision.groundHeight(s.x, s.z) + 0.1, world.collision.groundHeight(s.x, s.z) + 1.5)) free.push(s);
   }
   return free.length > 0 ? world.rng.pick(free) : undefined;
 }

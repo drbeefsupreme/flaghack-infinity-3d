@@ -1,3 +1,4 @@
+import { groundHeight } from '../../terrain';
 import { describe, expect, it } from 'vitest';
 import { bossFixture } from '../../../../tests/bossFixture';
 import { BOSS_RADIUS, BOSS_TIMING } from '../../boss';
@@ -13,11 +14,11 @@ const CONTACT = BOSS_PLAYER_RADIUS + AVATAR.radius;
 function setup(loops = false) {
   const w = createMatch({ seed: 'boss-player-collision', difficulty: 'normal', humans: [0, 1], mode: 'standard',
     match: normalizeMatch({ maxSignifiers: 0 }) });
-  w.time = 100; w.collision = new CollisionWorld();
+  w.time = 100; w.collision = new CollisionWorld(MAP_HALF, true);
   w.boss = bossFixture(); Object.assign(w.boss, { pos: { x: 0, z: 0 }, yaw: 0, action: 'idle',
     crouched: false, actionAt: w.time, spawnedAt: 90, deathAt: null, target: null, barrier: null });
   if (!loops) { w.survey.edgeLey.fill(-1); w.survey.version++; }
-  for (const av of w.avatars.values()) av.pos = { x: 80, y: 0, z: 80 };
+  for (const av of w.avatars.values()) av.pos = grounded({ x: 80, y: 0, z: 80 });
   return w;
 }
 
@@ -28,7 +29,7 @@ describe('solid boss player hull', () => {
       w.boss!.crouched = crouched; w.boss!.action = crouched ? 'crouchWalk' : 'walk';
       for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
         const x = Math.sin(angle), z = Math.cos(angle);
-        av.pos = { x: x * 9, y: 0, z: z * 9 }; av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
+        av.pos = grounded({ x: x * 9, y: 0, z: z * 9 }); av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
         for (let i = 0; i < 120; i++) {
           stepAvatarMotion(w, av, { moveX: -x, moveZ: -z, yaw: angle + Math.PI, pitch: 0, sprint, jump: jump && i % 45 === 0 }, SIM_DT);
           expect(Math.hypot(av.pos.x, av.pos.z)).toBeGreaterThanOrEqual(CONTACT - 1e-6);
@@ -44,7 +45,7 @@ describe('solid boss player hull', () => {
     for (const crouched of [false, true]) for (const y of (crouched ? [0, .9, 8, 18] : [0, .9, 8, 18, 25, 31])) for (const dt of [SIM_DT, .25, 1, 3]) {
       w.boss!.crouched = crouched;
       for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
-        const x = Math.sin(angle), z = Math.cos(angle), pos = { x: x * 12, y, z: z * 12 };
+        const x = Math.sin(angle), z = Math.cos(angle), pos = grounded({ x: x * 12, y, z: z * 12 });
         const vel = { x: -x * 60 / dt, y: 0, z: -z * 60 / dt };
         const result = w.collision.moveCharacter(pos, vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight,
           undefined, bossPlayerHull(w.boss, w.time));
@@ -57,13 +58,13 @@ describe('solid boss player hull', () => {
 
   it('slides tangentially and releases immediately when moving away', () => {
     const w = setup(), av = w.avatarOf(0);
-    av.pos = { x: CONTACT, y: 0, z: 0 }; av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
+    av.pos = grounded({ x: CONTACT, y: 0, z: 0 }); av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
     for (let i = 0; i < 60; i++) {
       stepAvatarMotion(w, av, { moveX: -.3, moveZ: 1, yaw: 0, pitch: 0, sprint: true, jump: false }, SIM_DT);
       expect(Math.hypot(av.pos.x, av.pos.z)).toBeGreaterThanOrEqual(CONTACT - 1e-6);
     }
     expect(av.pos.z).toBeGreaterThan(7);
-    av.pos = { x: CONTACT, y: 0, z: 0 }; av.vel = { x: 0, y: 0, z: 0 };
+    av.pos = grounded({ x: CONTACT, y: 0, z: 0 }); av.vel = { x: 0, y: 0, z: 0 };
     stepAvatarMotion(w, av, { moveX: 1, moveZ: 0, yaw: 0, pitch: 0, sprint: false, jump: false }, SIM_DT);
     expect(av.pos.x).toBeGreaterThan(CONTACT);
   });
@@ -74,13 +75,13 @@ describe('solid boss player hull', () => {
       b.action = action; b.actionAt = w.time;
       const heights = [0, .25, .5, .75, 1].map(t => bossPlayerHull(b, w.time + t * BOSS_TIMING.transition)!);
       expect(heights.map(h => h.radius)).toEqual([5.2, 5.2, 5.2, 5.2, 5.2]);
-      expect(heights.map(h => h.bottom)).toEqual([0, 0, 0, 0, 0]);
-      expect(heights[0].top).toBeCloseTo(action === 'crouch' ? 32 : 19.2);
-      expect(heights[2].top).toBeCloseTo(25.6);
-      expect(heights[4].top).toBeCloseTo(action === 'crouch' ? 19.2 : 32);
+      expect(heights.map(h => h.bottom)).toEqual([2, 2, 2, 2, 2]);
+      expect(heights[0].top).toBeCloseTo(2 + (action === 'crouch' ? 32 : 19.2));
+      expect(heights[2].top).toBeCloseTo(27.6);
+      expect(heights[4].top).toBeCloseTo(2 + (action === 'crouch' ? 19.2 : 32));
     }
     b.action = 'idle'; b.crouched = true;
-    const pos = { x: -8, y: 20.2, z: 0 };
+    const pos = grounded({ x: -8, y: 20.2, z: 0 });
     w.collision.moveCharacter(pos, { x: 16, y: 0, z: 0 }, 1, AVATAR.radius, AVATAR.height, AVATAR.stepHeight,
       undefined, bossPlayerHull(b, w.time));
     expect(pos.x).toBeCloseTo(8); // genuinely above the crouched body
@@ -88,13 +89,13 @@ describe('solid boss player hull', () => {
 
   it('gradually recovers a spawn overlap without a velocity boost and never leaves a raycast hull', () => {
     const w = setup(), av = w.avatarOf(0);
-    av.pos = { x: .1, y: 0, z: 0 }; av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
+    av.pos = grounded({ x: .1, y: 0, z: 0 }); av.vel = { x: 0, y: 0, z: 0 }; av.onGround = true;
     for (let i = 0; i < Math.ceil(CONTACT / .2) + 1; i++) {
       const previous = av.pos.x;
       stepAvatarMotion(w, av, { moveX: 0, moveZ: 0, yaw: 0, pitch: 0, sprint: false, jump: false }, SIM_DT);
       expect(av.pos.x - previous).toBeLessThanOrEqual(.200001);
       expect(av.vel.x).toBe(0); expect(av.vel.z).toBe(0);
-      expect(w.collision.raycast(-9, 1, 0, 1, 0, 0, 18)).toBeNull();
+      expect(w.collision.raycast(-9, 3, 0, 1, 0, 0, 18)).toBeNull();
       expect(w.collision.blockedCircle(0, 0, .45, .5, 2)).toBe(false);
     }
     expect(av.pos.x).toBeCloseTo(CONTACT);
@@ -125,7 +126,7 @@ describe('solid boss player hull', () => {
     expect(AVATAR.swingReach + BOSS_RADIUS - CONTACT).toBeCloseTo(.71);
     for (const crouched of [false, true]) for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
       b.crouched = crouched;
-      av.pos = { x: Math.sin(angle) * CONTACT, y: 0, z: Math.cos(angle) * CONTACT };
+      av.pos = grounded({ x: Math.sin(angle) * CONTACT, y: 0, z: Math.cos(angle) * CONTACT });
       av.vel = { x: 0, y: 0, z: 0 }; av.action = { kind: 'idle' };
       av.input = { moveX: 0, moveZ: 0, yaw: angle + Math.PI, pitch: 0, sprint: false, jump: false };
       const hp = b.hp;
@@ -140,7 +141,7 @@ describe('solid boss player hull', () => {
     const w = setup();
     for (const absent of [false, true]) {
       if (absent) w.boss = null; else w.boss!.hp = 0;
-      const av = w.avatarOf(0); av.pos = { x: -5, y: 0, z: 0 }; av.vel = { x: 11.5, y: 0, z: 0 };
+      const av = w.avatarOf(0); av.pos = grounded({ x: -5, y: 0, z: 0 }); av.vel = { x: 11.5, y: 0, z: 0 };
       stepAvatarMotion(w, av, { moveX: 1, moveZ: 0, yaw: 0, pitch: 0, sprint: true, jump: false }, 1);
       expect(av.pos.x).toBeGreaterThan(5);
     }
@@ -152,7 +153,7 @@ describe('boss driven contact', () => {
     const w = setup(), b = w.boss!, av = w.avatarOf(0);
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
       const x = Math.sin(angle), z = Math.cos(angle);
-      av.pos = { x: 0, y: 0, z: 0 }; av.vel = { x: 0, y: 0, z: 0 };
+      av.pos = grounded({ x: 0, y: 0, z: 0 }); av.vel = { x: 0, y: 0, z: 0 };
       const end = moveBossWithPlayerCollision(w, b, { x: -x * 10, z: -z * 10 }, { x: x * 10, z: z * 10 });
       expect(end.x).toBeCloseTo(x * 10); expect(end.z).toBeCloseTo(z * 10);
       expect(av.pos.x * x + av.pos.z * z).toBeCloseTo(10 + CONTACT, 3);
@@ -164,7 +165,7 @@ describe('boss driven contact', () => {
     const w = setup(), b = w.boss!, av = w.avatarOf(0);
     const wallZ = CONTACT + 3;
     w.collision.addBox(0, wallZ, 10, .1, 0, 0, 10, 999);
-    av.pos = { x: 0, y: 0, z: CONTACT + 1 }; av.vel = { x: 0, y: 0, z: 0 };
+    av.pos = grounded({ x: 0, y: 0, z: CONTACT + 1 }); av.vel = { x: 0, y: 0, z: 0 };
     const end = moveBossWithPlayerCollision(w, b, { x: 0, z: 0 }, { x: 0, z: 12 });
     expect(end.z).toBeLessThan(3); expect(av.pos.z).toBeLessThanOrEqual(wallZ - .1 - AVATAR.radius + .00001);
     expect(Math.hypot(av.pos.x - end.x, av.pos.z - end.z)).toBeGreaterThanOrEqual(CONTACT - .0001);
@@ -172,7 +173,7 @@ describe('boss driven contact', () => {
     for (let i = 0; i < 60; i++) stepAvatarMotion(w, av,
       { moveX: 1, moveZ: 0, yaw: 0, pitch: 0, sprint: true, jump: false }, SIM_DT);
     expect(av.pos.x).toBeGreaterThan(8);
-    av.pos = { x: MAP_HALF - AVATAR.radius, y: 0, z: 30 };
+    av.pos = grounded({ x: MAP_HALF - AVATAR.radius, y: 0, z: 30 });
     const edge = moveBossWithPlayerCollision(w, b, { x: MAP_HALF - CONTACT - 1, z: 30 }, { x: MAP_HALF, z: 30 });
     expect(edge.x).toBeLessThanOrEqual(MAP_HALF - AVATAR.radius - CONTACT + .001);
   });
@@ -183,7 +184,7 @@ describe('boss driven contact', () => {
     const edge = w.lattice.edges[id], a = w.lattice.nodes[edge.a], b = w.lattice.nodes[edge.b];
     const length = Math.hypot(b.x - a.x, b.z - a.z), nx = -(b.z - a.z) / length, nz = (b.x - a.x) / length;
     const midpoint = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
-    av.pos = { x: midpoint.x - nx * .5, y: 0, z: midpoint.z - nz * .5 };
+    av.pos = grounded({ x: midpoint.x - nx * .5, y: 0, z: midpoint.z - nz * .5 });
     const before = { ...av.pos }, from = { x: av.pos.x - nx * CONTACT, z: av.pos.z - nz * CONTACT };
     const result = moveBossWithPlayerCollision(w, boss, from, { x: from.x + nx * 2, z: from.z + nz * 2 });
     expect(result).toEqual(from); expect(av.pos).toEqual(before);
@@ -191,15 +192,17 @@ describe('boss driven contact', () => {
 
   it('does not let KO or eliminated players pin the boss, and never shoves another player on a rejected step', () => {
     const w = setup(), b = w.boss!, av = w.avatarOf(0), other = w.avatarOf(1);
-    av.pos = { x: 0, y: 0, z: 4 }; av.koUntil = w.time + 10;
+    av.pos = grounded({ x: 0, y: 0, z: 4 }); av.koUntil = w.time + 10;
     expect(moveBossWithPlayerCollision(w, b, { x: 0, z: 0 }, { x: 0, z: 8 }).z).toBe(8);
     expect(av.pos.z).toBe(4);
     av.koUntil = 0; w.factions[0].alive = false;
     expect(moveBossWithPlayerCollision(w, b, { x: 0, z: 0 }, { x: 0, z: 8 }).z).toBe(8);
-    w.factions[0].alive = true; av.pos = { x: 0, y: 0, z: CONTACT }; other.pos = { ...av.pos };
+    w.factions[0].alive = true; av.pos = grounded({ x: 0, y: 0, z: CONTACT }); other.pos = { ...av.pos };
     w.collision.addBox(0, CONTACT + AVATAR.radius + .1, 1, .1, 0, 0, 10, 999);
     const before = { ...av.pos };
     expect(moveBossWithPlayerCollision(w, b, { x: 0, z: 0 }, { x: 0, z: .2 })).toEqual({ x: 0, z: 0 });
     expect(av.pos).toEqual(before); expect(other.pos).toEqual(before);
   });
 });
+
+function grounded(p: { x: number; y: number; z: number }) { return { ...p, y: p.y + groundHeight(p.x, p.z, MAP_HALF) }; }

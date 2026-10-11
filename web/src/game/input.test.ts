@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Input } from './input';
+import { Controls } from './controls';
+import { Session } from './session';
+import type { AppApi } from './app';
+import { newMatch, placeAvatar } from '../sim/systems/econ/testkit';
 import { defaultControls } from './bindings';
 function setup() {
   const listeners = new Map<string, (e: any) => void>();
@@ -158,5 +162,87 @@ describe('mapped input and gamepad lifecycle', () => {
     input.pollGamepad(0.1, true, true);
     expect(input.mx).toBe(470);
     expect(input.dx).toBe(0);
+  });
+});
+
+// Exercise mapped device input through real controls handlers without a renderer loop.
+describe('Command View access and GCC interaction', () => {
+  function controlsSetup() {
+    const fixture = setup();
+    const session = new Session();
+    session.screen = 'playing';
+    const { world } = newMatch();
+    const controls = new Controls({ session, world } as AppApi, fixture.input.canvas);
+    const handlers = controls as any;
+    const input = handlers.input as Input;
+    const avatar = world.avatarOf(0);
+    const cart = world.gccOf(0)!;
+    placeAvatar(world, 0, cart.pos.x + 3, cart.pos.z);
+    session.hover.entity = cart.id;
+    const key = (type: string, code: string) => fixture.listeners.get(type)!({
+      code, target: null, preventDefault() {}, altKey: false, ctrlKey: false, metaKey: false, repeat: false,
+    });
+    return { ...fixture, session, world, handlers, input, avatar, cart, key };
+  }
+
+  it.each(['keyboard', 'gamepad'])('does not open the map when %s interact is tapped at the cart', (device) => {
+    const { session, world, handlers, input, avatar, pad, key } = controlsSetup();
+    handlers.resolveContext(world, session, avatar);
+    expect(handlers.ctxKind).toBe('gcc');
+    expect(handlers.actionPrompt(world, session, avatar, false)).toBe('Hold E  Push');
+    for (let tap = 0; tap < 2; tap++) {
+      if (device === 'keyboard') key('keydown', 'KeyE');
+      else { pad.buttons[2].pressed = true; input.pollGamepad(0.016, true, false); }
+      handlers.contextKey(world, session, avatar, 0.016);
+      input.endFrame();
+      if (device === 'keyboard') key('keyup', 'KeyE');
+      else { pad.buttons[2].pressed = false; input.pollGamepad(0.016, true, false); }
+      handlers.contextKey(world, session, avatar, 0.016);
+      input.endFrame();
+      expect(session.view).toBe('action');
+      expect(handlers.queue).toEqual([]);
+    }
+  });
+
+  it('preserves hold-to-push and tap-to-release at the cart', () => {
+    const { session, world, handlers, input, avatar, key } = controlsSetup();
+    handlers.resolveContext(world, session, avatar);
+    key('keydown', 'KeyE');
+    handlers.contextKey(world, session, avatar, 0);
+    input.endFrame();
+    handlers.contextKey(world, session, avatar, 0.41);
+    handlers.contextKey(world, session, avatar, 0.41);
+    expect(handlers.queue).toEqual([{ t: 'pushGcc', faction: 0, on: true }]);
+    key('keyup', 'KeyE');
+    handlers.contextKey(world, session, avatar, 0);
+    input.endFrame();
+    avatar.pushing = world.gccOf(0)!.id;
+    handlers.resolveContext(world, session, avatar);
+    expect(handlers.actionPrompt(world, session, avatar, false)).toBe('E  Release the Command Center');
+    key('keydown', 'KeyE');
+    handlers.contextKey(world, session, avatar, 0);
+    expect(handlers.queue.at(-1)).toEqual({ t: 'pushGcc', faction: 0, on: false });
+    expect(session.view).toBe('action');
+  });
+
+  it.each(['keyboard', 'gamepad', 'custom keyboard', 'custom gamepad'])('keeps %s map toggling global, including without a cart', (device) => {
+    const { session, world, handlers, input, avatar, cart, pad, key } = controlsSetup();
+    world.buildings.delete(cart.id);
+    const custom = device.startsWith('custom');
+    const gamepad = device.includes('gamepad');
+    const physical = custom ? (gamepad ? 'Pad3' : 'KeyM') : (gamepad ? 'Pad8' : 'Tab');
+    if (custom) input.controls.bindings.Tab = [physical];
+    for (const expected of ['command', 'action', 'command', 'action']) {
+      if (gamepad) { pad.buttons[Number(physical.slice(3))].pressed = true; input.pollGamepad(0.016, true, session.view === 'command'); }
+      else key('keydown', physical);
+      handlers.toggles(world, session, avatar, false);
+      expect(session.view).toBe(expected);
+      expect(session.camera.cmdX).toBe(avatar.pos.x);
+      expect(session.camera.cmdZ).toBe(avatar.pos.z);
+      input.endFrame();
+      if (gamepad) { pad.buttons[Number(physical.slice(3))].pressed = false; input.pollGamepad(0.016, true, session.view === 'command'); }
+      else key('keyup', physical);
+      input.endFrame();
+    }
   });
 });

@@ -99,7 +99,7 @@ export function canPlaceBuilding(world: World, f: FactionId, kind: BuildingKind,
     const p = pieceAt(world, 'floor', -1, facet, level);
     if (p && pieceBottom(p.kind, level) < height) return NO.pieces;
   }
-  if (world.map.isBlockedAt(fc.cx, fc.cz) || world.collision.blockedCircle(fc.cx, fc.cz, r, 0.2, height)) return NO.obstacle;
+  if (world.map.isBlockedAt(fc.cx, fc.cz) || world.collision.blockedCircle(fc.cx, fc.cz, r, world.collision.groundHeight(fc.cx, fc.cz) + 0.2, world.collision.groundHeight(fc.cx, fc.cz) + height)) return NO.obstacle;
   if (world.factions[f].lumber < BUILDINGS[kind].cost) return NO_LUMBER[kind];
   return OK;
 }
@@ -126,7 +126,7 @@ export function damageBuilding(world: World, b: Building, amount: number, by: En
   if (b.kind === 'hearth' && b.hp <= 1) return false;
   b.hp = b.kind === 'hearth' ? Math.max(1, b.hp - amount) : b.hp - amount;
   // Sub-1 ticks (continuous tearing) stay silent so the event stream is not flooded.
-  if (amount >= 1) world.emit({ t: 'hit', target: b.id, by, amount, pos: { x: b.pos.x, y: BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z } });
+  if (amount >= 1) world.emit({ t: 'hit', target: b.id, by, amount, pos: { x: b.pos.x, y: world.collision.groundHeight(b.pos.x, b.pos.z) + BUILDING_HEIGHT[b.kind] / 2, z: b.pos.z } });
   if (b.hp > 0) return true;
   b.hp = 0;
   if (b.kind === 'gcc') collapseGcc(world, b, world.time + GCC.rebuildTime);
@@ -183,7 +183,7 @@ export function registerBuildingShape(world: World, b: Building): void {
   if (world.buildings.get(b.id) !== b) { st.buildingShapes.delete(b.id); return; }
   if (isCollapsed(b)) return;
   const r = BUILDINGS[b.kind].radius;
-  ids.push(world.collision.addCylinder(b.pos.x, b.pos.z, r, 0, BUILDING_HEIGHT[b.kind], b.id));
+  ids.push(world.collision.addCylinder(b.pos.x, b.pos.z, r, world.collision.groundHeight(b.pos.x, b.pos.z), world.collision.groundHeight(b.pos.x, b.pos.z) + BUILDING_HEIGHT[b.kind], b.id));
   world.nav.blockCircle(b.pos.x, b.pos.z, r, b.id);
 }
 

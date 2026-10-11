@@ -118,7 +118,7 @@ describe('configurable matches', () => {
     expect(w.tide.nextAt).toBe(TIDE_INTERVAL_SUDDEN_DEATH);
     expect(w.effigyRevealedAt).toBeNull();
     expect(w.boss).toBeNull();
-    expect(w.collision.supportHeight(0, 0, 40)).toBe(26);
+    expect(w.collision.supportHeight(0, 0, 40)).toBe(28);
     expect(burnTime(w.options)).toBe(0);
     expect(bossRevealTime(w.options)).toBe(90);
     expect(dayClock(w.options, 0)).toBe(BURN_TIME);
@@ -133,7 +133,7 @@ describe('configurable matches', () => {
     new Simulation(w).step();
     expect(w.effigyRevealedAt).toBe(90);
     expect(w.boss?.spawnedAt).toBe(90);
-    expect(w.collision.supportHeight(0, 0, 40)).toBe(0);
+    expect(w.collision.supportHeight(0, 0, 40)).toBe(2);
     w.time = endTime(w.options);
     updateVictory(w, 0);
     expect(w.phase).toBe('playing');
@@ -166,7 +166,7 @@ describe('configurable matches', () => {
     expect(restarted.suddenDeath).toBe(true);
     expect(restarted.effigyRevealedAt).toBeNull();
     expect(restarted.boss).toBeNull();
-    expect(restarted.collision.supportHeight(0, 0, 40)).toBe(26);
+    expect(restarted.collision.supportHeight(0, 0, 40)).toBe(28);
     const defaults = createMatch(options(DEFAULT_MATCH));
     expect(defaults.time).toBe(0);
     expect(defaults.suddenDeath).toBe(false);

@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import { MAP_HALF } from '../../sim/constants';
-import { GLSL_COMMON, GLSL_FRAG, GLSL_VERT, GLSL_OUTPUT, LIFT, cornerQuad, surveyMaterial } from './glsl';
+import { GLSL_COMMON, GLSL_FRAG, GLSL_VERT, GLSL_OUTPUT, LIFT, cornerGrid, surveyMaterial } from './glsl';
 import type { SurveyUniforms } from './glsl';
 import { InstanceSet } from './instances';
 
@@ -52,7 +52,7 @@ void main() {
   float sn = sin(iA.w);
   vec2 q = aCorner;
   vec2 w = c + vec2(q.x * cs - q.y * sn, q.x * sn + q.y * cs) * iA.z;
-  vec4 mv = viewMatrix * vec4(w.x, ${LIFT.decal} + 0.004 * iParam.x, w.y, 1.0);
+  vec4 mv = viewMatrix * vec4(w.x, fhGround(w) + ${LIFT.decal} + 0.004 * iParam.x, w.y, 1.0);
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
   vQ = q;
@@ -256,12 +256,13 @@ export class DecalLayer {
   private readonly arrParam: Float32Array;
   private readonly arrAnchor: Float32Array;
   count = 0;
+  private readonly broad: DecalLayer | null;
 
-  constructor(scene: THREE.Scene, material: THREE.ShaderMaterial, capacity: number, renderOrder: number) {
+  constructor(scene: THREE.Scene, material: THREE.ShaderMaterial, capacity: number, renderOrder: number, segments = 2) {
     this.scene = scene;
     // Corners wound counter-clockwise seen from above (+y), so the front face points up and
     // FrontSide culling keeps the decals (the shader reads aCorner, not the order).
-    this.set = new InstanceSet(cornerQuad([-1, -1, -1, 1, 1, 1, 1, -1]), capacity);
+    this.set = new InstanceSet(cornerGrid(segments), capacity);
     this.arrA = this.set.add('iA', 4);
     this.arrColor = this.set.add('iColor', 4);
     this.arrColor2 = this.set.add('iColor2', 4);
@@ -271,10 +272,13 @@ export class DecalLayer {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = renderOrder;
     scene.add(this.mesh);
+    // Hundreds of tiny plan markers stay cheap; only broad halos/waves need dense sheets.
+    this.broad = segments === 2 ? new DecalLayer(scene, material, Math.min(capacity, 64), renderOrder, 24) : null;
   }
 
   reset(): void {
     this.count = 0;
+    this.broad?.reset();
   }
 
   /**
@@ -295,6 +299,10 @@ export class DecalLayer {
     p2 = 0,
     anchor = -1,
   ): number {
+    if (this.broad && radius > 12) {
+      const i = this.broad.push(shape, x, z, radius, rot, color, alpha, additive, p0, p1, p2, anchor);
+      return i < 0 ? -1 : this.set.capacity + i;
+    }
     if (this.count >= this.set.capacity) return -1;
     const i = this.count++;
     const o = i * STRIDE;
@@ -321,6 +329,7 @@ export class DecalLayer {
   /** Secondary colour (Hearth contested flicker). */
   setColor2(i: number, color: THREE.Color): void {
     if (i < 0) return;
+    if (this.broad && i >= this.set.capacity) { this.broad.setColor2(i - this.set.capacity, color); return; }
     const o = i * STRIDE;
     this.arrColor2[o] = color.r;
     this.arrColor2[o + 1] = color.g;
@@ -329,9 +338,11 @@ export class DecalLayer {
 
   commit(): void {
     this.set.commit(this.count);
+    this.broad?.commit();
   }
 
   dispose(): void {
+    this.broad?.dispose();
     this.scene.remove(this.mesh);
     this.set.geo.dispose();
   }

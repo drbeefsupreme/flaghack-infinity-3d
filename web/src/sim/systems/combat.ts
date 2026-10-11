@@ -67,7 +67,7 @@ function damageHippie(world: World, h: Hippie, amount: number, by: EntityId | -1
   b.lastHurtAt = world.time;
   b.lastHurtBy = by;
   b.hurt = true;
-  world.emit({ t: 'hit', target: h.id, by, amount, pos: { x: h.pos.x, y: 0, z: h.pos.z } });
+  world.emit({ t: 'hit', target: h.id, by, amount, pos: { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0), z: h.pos.z } });
   if (h.faction !== NEUTRAL) sosFrom(world, h);
   if (h.hp <= 0) koHippie(world, h, by);
   return true;
@@ -108,7 +108,7 @@ function koAvatar(world: World, av: Avatar, by: EntityId | -1): void {
  */
 function koHippie(world: World, h: Hippie, by: EntityId | -1): void {
   releaseTask(world, h, brainOf(h));
-  if (h.carryingFlag !== -1) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: 0, z: h.pos.z });
+  if (h.carryingFlag !== -1) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0), z: h.pos.z });
   h.carryingLumber = 0;
   // Knockouts break allegiance: no old camp orders survive the neutral respawn.
   h.order = null;
@@ -124,7 +124,7 @@ function koHippie(world: World, h: Hippie, by: EntityId | -1): void {
   h.vel.x = 0;
   h.vel.z = 0;
   h.effects.length = 0;
-  world.emit({ t: 'ko', id: h.id, kind: 'hippie', faction: h.faction, by, pos: { x: h.pos.x, y: 0, z: h.pos.z } });
+  world.emit({ t: 'ko', id: h.id, kind: 'hippie', faction: h.faction, by, pos: { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0), z: h.pos.z } });
 }
 
 /** Push a unit away from a point (adds 'knockback' effect and velocity). */

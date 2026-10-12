@@ -44,6 +44,7 @@ export class Client {
   /** Build a NetMirror from each matchStart (as the browser client does). */
   mirrored = false;
   mirror: NetMirror | null = null;
+  inputEpoch = 0;
   closeCode: number | null = null;
   /** Other messages not yet taken by next()/take(), in arrival order. */
   private readonly inbox: ServerMessage[] = [];
@@ -57,7 +58,10 @@ export class Client {
         this.mirror?.push(msg.frame);
         return;
       }
-      if (msg.t === 'matchStart' && this.mirrored) this.mirror = NetMirror.create(msg.options, msg.snapshot);
+      if (msg.t === 'matchStart') {
+        this.inputEpoch = msg.inputEpoch;
+        if (this.mirrored) this.mirror = NetMirror.create(msg.options, msg.snapshot);
+      }
       this.inbox.push(msg);
     });
     this.ws.on('close', (code) => {

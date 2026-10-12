@@ -276,9 +276,11 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
 - Losing an original altar does not eliminate a camp with another owned altar. Losing the
   final owned altar does. This rule applies in ordinary conquest and in the encounter.
 - At zero HP the giant catches fire, falls to its knees and burns away for 12 seconds. Only
-  then do the surviving camps win together. If every human camp is eliminated first, the
-  result is an explicit loss; an AI-only game instead waits for every active camp to fall.
-  Dawn and conquest do not end an active giant encounter.
+  then do the surviving camps win together. Losing every human camp no longer ends the
+  encounter while any active camp still has an altar. Eliminated humans can choose an
+  available surviving NPC camp and continue with its existing avatar and assets; camps
+  reserved for disconnected humans cannot be taken. The encounter is lost only when every
+  altar is gone. Dawn and conquest do not end an active giant encounter.
 
 Combat decisions, hits and outcomes run on the host's fixed simulation clock. Snapshots and
 state frames include movement, HP, action times, stance, held targets, barriers, airborne
@@ -311,4 +313,4 @@ Right-click your avatar to make selected workers follow. **Hold position** guard
 
 ## Gentle gameplay terrain dome
 
-The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 12 rejects older clients with a reload hint; terrain heights and shared giant interrupt state require the same version on every peer.
+The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 13 rejects older clients with a reload hint; terrain heights, shared encounter state and input ownership epochs require the same version on every peer.

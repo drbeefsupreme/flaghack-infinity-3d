@@ -246,3 +246,39 @@ describe('Command View access and GCC interaction', () => {
     }
   });
 });
+
+describe('confirmed camp control handoff', () => {
+  it('clears held controller actions and waits for neutral sticks before driving a new avatar', () => {
+    const { input, pad } = setup();
+    pad.buttons[0].pressed = true; pad.buttons[7].pressed = true; pad.axes[0] = 1;
+    input.pollGamepad(.016, true, false); input.resetForSeat();
+    input.pollGamepad(.016, true, false);
+    expect(input.wasPressed('Space')).toBe(false); expect(input.buttons[0]).toBe(false); expect(input.moveX).toBe(0);
+    pad.buttons[0].pressed = false; pad.buttons[7].pressed = false; pad.axes[0] = 0;
+    input.pollGamepad(.016, true, false); input.endFrame();
+    pad.buttons[0].pressed = true; pad.axes[0] = 1; input.pollGamepad(.016, true, false);
+    expect(input.wasPressed('Space')).toBe(true); expect(input.moveX).toBeGreaterThan(0);
+  });
+
+  it('resets queued commands, selection, drag, aim, follow camera and contextual actions', () => {
+    const fixture = setup(), session = new Session(), { world } = newMatch();
+    session.screen = 'playing'; session.playerFaction = 2;
+    const controls = new Controls({ session, world } as AppApi, fixture.input.canvas), internals = controls as any;
+    session.view = 'command'; session.viewBlend = 1; session.followFaction = 1;
+    session.selection.add(world.avatarOf(0).id); session.selectBox = { x0: 1, y0: 1, x1: 2, y1: 2 };
+    session.planPreview = [1, 2]; session.planTool = 'enclose'; session.tool = 'building';
+    session.aim = { active: true, node: 1, arc: [{ x: 1, y: 1, z: 1 }], landing: { x: 1, y: 1, z: 1 } };
+    session.orderMarker = { x: 0, z: 0, kind: 'plan', at: 0 };
+    internals.queue.push({ t: 'plant', faction: 0, node: 1 });
+    internals.throwQueued = true; internals.jumpLatch = true; internals.eMode = 'gcc'; internals.gccFired = true;
+    controls.resetForSeat();
+    expect(internals.queue).toEqual([]); expect(internals.throwQueued).toBe(false); expect(internals.jumpLatch).toBe(false);
+    expect(internals.eMode).toBe('none'); expect(internals.gccFired).toBe(false);
+    expect(session.selection.size).toBe(0); expect(session.selectBox).toBeNull(); expect(session.planPreview).toEqual([]);
+    expect(session.aim).toEqual({ active: false, node: -1, arc: [], landing: null });
+    expect(session.tool).toBe('flag'); expect(session.planTool).toBe('select'); expect(session.orderMarker).toBeNull();
+    expect(session.view).toBe('action'); expect(session.followFaction).toBeNull();
+    expect(session.camera.yaw).toBe(world.avatarOf(2).yaw); expect(session.camera.cmdX).toBe(world.avatarOf(2).pos.x);
+    expect(session.prompt).toBeNull(); expect(session.channel).toBe(-1);
+  });
+});

@@ -1,5 +1,6 @@
 import { burnTime, endTime, matchSettings } from "../matchSettings";
 import { BOSS_DEATH_DURATION } from '../boss';
+import { hasSurvivingAltar } from '../bossTakeover';
 /**
  * Elimination, match end (conquest: the last camp standing; Dawn: the dominant camp once
  * DAWN_TIME arrives), The Burn (sudden death) timing.
@@ -104,16 +105,15 @@ export function eliminateByBoss(world: World, faction: FactionId): void {
 }
 
 /**
- * Resolve only host-authored encounter facts. Human camps define the loss condition; in an
- * AI-only/spectator match all active camps participate. Eliminated camps never share a win.
+ * Resolve only host-authored encounter facts. Every surviving camp's altars keep the
+ * cooperative encounter alive, whether a human or an NPC currently controls that camp.
+ * Eliminated humans can choose an eligible surviving NPC camp without restarting it.
  */
 export function updateBossOutcome(world: World): void {
   if (world.phase !== 'playing' || world.effigyRevealedAt === null || world.bossOutcome) return;
   const active = matchSettings(world.options).active;
-  const players = active.filter((id) => world.options.humans.includes(id));
-  const participants = players.length ? players : active;
-  const survivors = active.filter((id) => world.factions[id]?.alive);
-  const lost = !participants.some((id) => world.factions[id]?.alive);
+  const survivors = active.filter((id) => hasSurvivingAltar(world, id));
+  const lost = survivors.length === 0;
   const boss = world.boss;
   const defeated = boss && boss.hp <= 0 && boss.action === 'dead' && boss.deathAt !== null &&
     world.time + 1e-6 >= boss.deathAt + BOSS_DEATH_DURATION;
@@ -126,7 +126,7 @@ export function updateBossOutcome(world: World): void {
   world.winner = null;
   world.emit({ t: 'bossEnded', kind: world.bossOutcome.kind, winners: [...winners] });
   world.emit({ t: 'notify', faction: 'all', severity: 'epic', text: lost
-    ? 'The Effigy endures. Every player camp has fallen.'
+    ? 'The Effigy endures. Every altar has fallen.'
     : 'The Effigy has fallen. The surviving camps share the victory.' });
 }
 

@@ -408,6 +408,10 @@ const MESSAGES: { [K in MessageType]: Entry<Extract<ClientMessage, { t: K }>> } 
     keys: ['t', 'seat'],
     parse: ({ seat }) => (seat === null || isFaction(seat) ? { t: 'seat', seat } : null),
   },
+  bossTakeover: {
+    keys: ['t', 'seat'],
+    parse: ({ seat }) => (isFaction(seat) ? { t: 'bossTakeover', seat } : null),
+  },
   ready: {
     keys: ['t', 'ready'],
     parse: ({ ready }) => (typeof ready === 'boolean' ? { t: 'ready', ready } : null),
@@ -432,11 +436,11 @@ const MESSAGES: { [K in MessageType]: Entry<Extract<ClientMessage, { t: K }>> } 
     parse: ({ text }) => (isText(text, RAW_CHAT) ? { t: 'chat', text } : null),
   },
   input: {
-    keys: ['t', 'seq', 'input', 'cmds'],
+    keys: ['t', 'inputEpoch', 'seq', 'input', 'cmds'],
     parse: (m) => {
-      const { seq, cmds } = m;
+      const { inputEpoch, seq, cmds } = m;
       const input = avatarInput(m.input);
-      if (!input || !isInt(seq, 1, Number.MAX_SAFE_INTEGER) || !Array.isArray(cmds) || cmds.length > MAX_FRAME_COMMANDS) {
+      if (!input || !isInt(inputEpoch, 1, Number.MAX_SAFE_INTEGER) || !isInt(seq, 1, Number.MAX_SAFE_INTEGER) || !Array.isArray(cmds) || cmds.length > MAX_FRAME_COMMANDS) {
         return null;
       }
       const out: Command[] = [];
@@ -445,7 +449,7 @@ const MESSAGES: { [K in MessageType]: Entry<Extract<ClientMessage, { t: K }>> } 
         if (!cmd) return null;
         out.push(cmd);
       }
-      return { t: 'input', seq, input, cmds: out };
+      return { t: 'input', inputEpoch, seq, input, cmds: out };
     },
   },
   ping: {

@@ -4,12 +4,11 @@
  * never stops, so the menu reads "The burn goes on", shows the standings (handles, camps, ping)
  * and its last button leaves the burn instead; a watcher may also take over an AI-steered camp.
  */
-import { FACTION_IDS } from '../sim/types';
 import type { World } from '../sim/world';
 import type { UiHost, UiPart } from './core';
 import { button, el, html, setClass, setText, show } from './dom';
 import { TIPS } from './lore';
-import { takeableSeat, watchingOnline } from './online';
+import { campChoices, canRecoverBossCamp } from './online';
 import { StandingsTable } from './scoreboard';
 import { sigilSvg } from './title';
 
@@ -82,11 +81,11 @@ export class PauseMenu implements UiPart {
       setText(this.quit, this.online ? 'Leave the burn' : 'Quit to title');
     }
     this.wasOpen = open;
-    if (!open || !this.online || !world) return;
-    this.standings.update(this.host.app, world);
-    let free = false;
-    if (watchingOnline(this.host.app, world)) for (const f of FACTION_IDS) free ||= takeableSeat(world, this.host.app.net?.lobby ?? null, f);
-    show(this.playCamp, free);
+    if (!open || !world) return;
+    if (this.online) this.standings.update(this.host.app, world);
+    const recovery = canRecoverBossCamp(this.host.app, world);
+    setText(this.playCamp, recovery ? 'Choose a surviving camp' : 'Play a camp');
+    show(this.playCamp, recovery || campChoices(this.host.app, world).length > 0);
   }
 
   dispose(): void {

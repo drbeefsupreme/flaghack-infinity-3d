@@ -82,6 +82,7 @@ const SERVER_KINDS: Record<ServerMessage['t'], true> = {
   lobby: true,
   chat: true,
   matchStart: true,
+  bossTakeoverResult: true,
   state: true,
   pong: true,
   notice: true,
@@ -129,6 +130,8 @@ export class NetClient implements NetSession {
   ping = 0;
   reconnecting = false;
   readonly notices: string[] = [];
+  pendingBossTakeover: FactionId | null = null;
+  bossTakeoverError: string | null = null;
 
   private readonly url: string;
   private readonly name: string;
@@ -140,6 +143,8 @@ export class NetClient implements NetSession {
   private token: string | null;
   private inMatch = false;
   private matchSeat: FactionId | null = null;
+  /** Only input for the latest host-issued snapshot may drive the current seat. */
+  private inputEpoch: number | null = null;
   private welcomed = false;
   private finished = false;
   /** A transient denial arrived while reconnecting: keep retrying when the host closes the socket. */
@@ -182,6 +187,14 @@ export class NetClient implements NetSession {
     this.send({ t: 'seat', seat });
   }
 
+  requestBossTakeover(seat: FactionId): void {
+    if (!this.inMatch || !this.connected || this.pendingBossTakeover !== null) return;
+    this.pendingBossTakeover = seat;
+    this.bossTakeoverError = null;
+    this.changed();
+    this.send({ t: 'bossTakeover', seat });
+  }
+
   setReady(ready: boolean): void {
     this.send({ t: 'ready', ready });
   }
@@ -205,7 +218,9 @@ export class NetClient implements NetSession {
 
   /** One local sim tick of a seated player (see ClientMessage 'input'). Serialized at once. */
   sendInput(seq: number, input: AvatarInput, cmds: Command[]): void {
-    if (this.inMatch && this.connected) this.send({ t: 'input', seq, input, cmds });
+    if (this.inMatch && this.connected && this.inputEpoch !== null && this.pendingBossTakeover === null) {
+      this.send({ t: 'input', inputEpoch: this.inputEpoch, seq, input, cmds });
+    }
   }
 
   leave(): void {
@@ -265,6 +280,9 @@ export class NetClient implements NetSession {
         // Back from a drop mid-burn: matchStart follows at once, so the lobby must not flash.
         if (!this.inMatch || msg.lobby.phase === 'lobby') {
           this.inMatch = false;
+          this.inputEpoch = null;
+          this.pendingBossTakeover = null;
+          this.bossTakeoverError = null;
           this.status = 'lobby';
         }
         this.changed();
@@ -282,6 +300,9 @@ export class NetClient implements NetSession {
         this.serverName = msg.lobby.serverName;
         if (msg.lobby.phase === 'lobby' && this.inMatch) {
           this.inMatch = false;
+          this.inputEpoch = null;
+          this.pendingBossTakeover = null;
+          this.bossTakeoverError = null;
           this.status = 'lobby';
         }
         this.changed();
@@ -295,9 +316,21 @@ export class NetClient implements NetSession {
       case 'matchStart':
         this.inMatch = true;
         this.matchSeat = msg.seat;
+        this.inputEpoch = msg.inputEpoch;
+        this.pendingBossTakeover = null;
+        this.bossTakeoverError = null;
         this.status = 'match';
         this.changed();
         this.hooks.matchStart(msg.options, msg.seat, msg.snapshot);
+        return;
+      case 'bossTakeoverResult':
+        if (msg.seat !== this.pendingBossTakeover) return;
+        if (!msg.ok) {
+          this.pendingBossTakeover = null;
+          this.bossTakeoverError = msg.reason ?? 'That camp is no longer available.';
+        }
+        // On success keep the old controls/seat until the authoritative snapshot arrives.
+        this.changed();
         return;
       case 'state':
         if (this.inMatch) this.hooks.state(msg.frame);
@@ -319,6 +352,9 @@ export class NetClient implements NetSession {
 
   private socketClosed(code: number): void {
     if (this.finished) return;
+    this.inputEpoch = null;
+    this.pendingBossTakeover = null;
+    this.bossTakeoverError = null;
     if (code === CLOSE_REPLACED) return this.finish('This handle was claimed from another window.');
     if (code === CLOSE_GOING_AWAY) return this.finish(this.notices[this.notices.length - 1] ?? 'The host has ended the burn.');
     if (code === CLOSE_POLICY) return this.finish('The host closed the connection.');
@@ -361,6 +397,8 @@ export class NetClient implements NetSession {
     this.error = error;
     this.reconnecting = false;
     this.inMatch = false;
+    this.inputEpoch = null;
+    this.pendingBossTakeover = null;
     this.changed();
     this.hooks.closed(error);
   }

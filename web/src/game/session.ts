@@ -159,6 +159,8 @@ export class Session {
   debug = false;
   /** Online spectator: watches without a seat (no gameplay input, free camera). */
   spectator = false;
+  /** Camp chooser owns keyboard/controller focus and keeps the pointer free. */
+  campChoiceOpen = false;
   /** Online: player handles by seat (nameplates, Hearth rail, feed). Empty offline. */
   playerNames: Partial<Record<FactionId, string>> = {};
   /** Online spectator / fallen camp: the faction whose vexillomancer the camera follows ([ and ] cycle), else null. */

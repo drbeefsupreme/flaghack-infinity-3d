@@ -64,16 +64,57 @@ describe('boss outcome rules', () => {
     expect(w.bossOutcome?.winners).toEqual([0, 1, 2, 3]);
   });
 
-  it('explicitly loses when all human camps fall even if NPC allies survive', () => {
+  it('continues after every human camp falls and loses only after the last NPC altar is gone', () => {
     const w = setup();
     consumeLastAltar(w, 0);
     updateVictory(w, 0);
     expect(w.bossOutcome).toBeNull();
     consumeLastAltar(w, 1);
     updateVictory(w, 0);
+    expect(w.bossOutcome).toBeNull();
+    expect(w.phase).toBe('playing');
+    consumeLastAltar(w, 2);
+    updateVictory(w, 0);
+    expect(w.bossOutcome).toBeNull();
+    expect(w.factions[3].alive).toBe(true);
+    consumeLastAltar(w, 3);
+    updateVictory(w, 0);
     expect(w.bossOutcome).toEqual({ kind: 'defeat', winners: [], at: w.time });
     expect(w.phase).toBe('ended');
+    expect(w.drainEvents().filter(e => e.t === 'bossEnded')).toHaveLength(1);
+    updateVictory(w, 0);
+    expect(w.drainEvents()).toEqual([]);
+  });
+
+  it('awards surviving NPC camps a cooperative victory after every human was eliminated', () => {
+    const w = setup();
+    consumeLastAltar(w, 0); consumeLastAltar(w, 1);
+    w.boss!.hp = 0; w.boss!.deathAt = w.time; w.boss!.action = 'death';
+    updateVictory(w, 0);
+    expect(w.phase).toBe('playing');
+    w.time += BOSS_DEATH_DURATION; w.boss!.action = 'dead';
+    updateVictory(w, 0);
+    expect(w.bossOutcome).toEqual({ kind: 'victory', winners: [2, 3], at: w.time });
+  });
+
+  it.each(['death', 'dead'] as const)('last-altar loss still defeats the encounter during simultaneous boss %s', action => {
+    const w = setup();
+    for (const f of [0, 1, 2, 3] as const) consumeLastAltar(w, f);
+    w.boss!.hp = 0; w.boss!.deathAt = w.time - BOSS_DEATH_DURATION; w.boss!.action = action;
+    updateVictory(w, 0);
+    expect(w.bossOutcome).toEqual({ kind: 'defeat', winners: [], at: w.time });
+    expect(w.winner).toBeNull();
+  });
+
+  it('does not count stale altar IDs or a merely alive avatar as a remaining altar', () => {
+    const w = setup();
+    for (const id of [0, 1, 2] as const) consumeLastAltar(w, id);
+    const last = w.hearthOf(3)!;
+    w.buildings.delete(last.id);
     expect(w.factions[3].alive).toBe(true);
+    expect(w.factions[3].hearthIds).toContain(last.id);
+    updateVictory(w, 0);
+    expect(w.bossOutcome?.kind).toBe('defeat');
   });
 
   it('uses all active factions for an AI-only match and suppresses conquest and Dawn', () => {

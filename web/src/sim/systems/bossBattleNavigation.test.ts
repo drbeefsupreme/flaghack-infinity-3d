@@ -25,7 +25,8 @@ it.each(['boss-live', 'boss-combat', 'altar-route-1'])('makes altar progress dur
     for (const e of w.drainEvents()) { if (e.t === 'bossFootfall') contacts++; if (e.t === 'sceneryCrushed') crushed += e.count; }
   }
   expect(firstEaten).toBeLessThan(150); expect(eaten.size).toBeGreaterThanOrEqual(1);
-  // A random first choice can be the only human altar and end the match immediately.
+  // Losing the human altar does not end the battle while NPC altars remain.
   expect(contacts).toBeGreaterThan(20); expect(crushed).toBeGreaterThan(0);
   expect(w.phase).toBe('ended'); expect(w.bossOutcome?.kind).toBe('defeat');
+  expect(w.factions.every(f => f.hearthIds.length === 0)).toBe(true);
 });

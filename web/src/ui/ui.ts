@@ -196,7 +196,7 @@ export class GameUI {
       setClass(root, 'scr-ended', s.screen === 'ended');
       setClass(root, 'spectator', s.spectator && matchScreen(s.screen));
       setClass(root, 'view-command', s.view === 'command');
-      setClass(root, 'modal-open', s.panels.codex || s.panels.settings || s.panels.chakras || s.panels.help);
+      setClass(root, 'modal-open', s.campChoiceOpen || s.panels.codex || s.panels.settings || s.panels.chakras || s.panels.help);
       for (const p of this.parts) p.update(world, t0);
     }
     if (t0 - this.lastMap >= MAP_MS) {
@@ -283,7 +283,7 @@ export class GameUI {
 
   /** Enter / O while no text field has the keyboard (fields handle their own keys). */
   private onOnlineKey(ev: KeyboardEvent): void {
-    if (!this.app.net || ev.isComposing || typingIn(ev.target)) return;
+    if (!this.app.net || this.app.session.campChoiceOpen || ev.isComposing || typingIn(ev.target)) return;
     if (ev.code === 'KeyO') {
       if (ev.repeat || !matchScreen(this.app.session.screen)) return;
       this.scoreboard.setHeld(true);

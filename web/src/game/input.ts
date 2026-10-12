@@ -45,6 +45,8 @@ export class Input {
   private focused = true;
   onMenuBack: (() => void) | null = null;
   private menuButtons = new Set<number>();
+  private blockedPadButtons = new Set<number>();
+  private waitForNeutralSticks = false;
   private navigateMenu(pad: Gamepad | undefined): void {
     const next = new Set<number>();
     if (pad && this.focused)
@@ -52,7 +54,8 @@ export class Input {
         if (b.pressed) next.add(i);
       });
     const pressed = (i: number) => next.has(i) && !this.menuButtons.has(i);
-    const elements = Array.from(document.querySelectorAll<HTMLElement>('button,input,select,summary,a[href]')).filter(
+    const scope = document.querySelector?.<HTMLElement>('[data-gamepad-modal]:not(.is-off)') ?? document;
+    const elements = Array.from(scope.querySelectorAll<HTMLElement>('button,input,select,summary,a[href]')).filter(
       (e) => e.getClientRects().length > 0 && !(e as HTMLButtonElement).disabled && !e.closest('[inert]'),
     );
     if (pressed(13) || pressed(12)) {
@@ -104,12 +107,16 @@ export class Input {
     this.gamepadActive = !!pad && enabled && this.focused;
     if (this.gamepadActive && pad) {
       pad.buttons.forEach((b, i) => {
-        if (b.pressed || b.value > 0.55) next.add(`Pad${i}`);
+        const down = b.pressed || b.value > 0.55;
+        if (!down) this.blockedPadButtons.delete(i);
+        if (down && !this.blockedPadButtons.has(i)) next.add(`Pad${i}`);
       });
+      if (this.waitForNeutralSticks && pad.axes.every((axis) => Math.abs(axis) <= this.controls.deadzone)) this.waitForNeutralSticks = false;
       const swap = this.controls.swapSticks ? 2 : 0,
         look = this.controls.swapSticks ? 0 : 2;
       [this.moveX, this.moveY] = stick(pad.axes[swap] ?? 0, pad.axes[swap + 1] ?? 0, this.controls.deadzone);
-      const [x, y] = stick(pad.axes[look] ?? 0, pad.axes[look + 1] ?? 0, this.controls.deadzone);
+      let [x, y] = stick(pad.axes[look] ?? 0, pad.axes[look + 1] ?? 0, this.controls.deadzone);
+      if (this.waitForNeutralSticks) { this.moveX = this.moveY = 0; x = y = 0; }
       if (cursor) {
         this.mx = Math.max(0, Math.min(this.width, this.mx + x * 700 * dt));
         this.my = Math.max(0, Math.min(this.height, this.my + y * 700 * dt));
@@ -262,6 +269,15 @@ export class Input {
     if (document.pointerLockElement !== this.canvas) return;
     this.expectUnlock = true;
     document.exitPointerLock();
+  }
+
+  /** Ownership handoff: held menu buttons/sticks must be released before moving the new avatar. */
+  resetForSeat(): void {
+    this.clear();
+    this.endFrame();
+    const pad = Array.from(navigator.getGamepads?.() ?? []).find((p) => p?.connected && p.mapping === 'standard');
+    this.blockedPadButtons = new Set(pad?.buttons.flatMap((b, i) => b.pressed || b.value > .55 ? [i] : []) ?? []);
+    this.waitForNeutralSticks = !!pad && pad.axes.some((axis) => Math.abs(axis) > this.controls.deadzone);
   }
 
   /** Forget every held key/button (focus loss, pause, view switch). */

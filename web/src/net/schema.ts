@@ -1361,11 +1361,12 @@ function bossWire(b: BossState | null): Wire {
     b.barrier ? [b.barrier.edge, b.barrier.faction, quant(b.barrier.x, CM), quant(b.barrier.z, CM), quant(b.barrier.at, MS)] : null,
     quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched, eyeWire(b.eye),
     b.objectiveAltarId, quant(b.routeStartStride, CM), quant(b.nextSceneryStompStride, CM), quant(b.opportunisticAfter, MS),
-    b.lightning.map(l => [l.kind, l.id, l.faction, eyeVector(l.from), eyeVector(l.to)])];
+    b.lightning.map(l => [l.kind, l.id, l.faction, eyeVector(l.from), eyeVector(l.to)]), quant(b.interruptImmuneUntil, MS)];
 }
 
 export function bossFromWire(v: Wire): BossState | null {
-  if (!Array.isArray(v) || v.length < 27 || !oneOf(v[7], BOSS_ACTIONS)) return null;
+  if (!Array.isArray(v) || v.length < 28 || !oneOf(v[7], BOSS_ACTIONS) ||
+      typeof v[27] !== 'number' || !Number.isFinite(v[27]) || v[27] < 0) return null;
   const target = list(v[11]);
   const barrier = list(v[17]);
   const held = list(v[19]);
@@ -1382,6 +1383,7 @@ export function bossFromWire(v: Wire): BossState | null {
     objectiveAltarId: typeof v[22] === 'number' ? int(v[22], -1) : null,
     routeStartStride: dequant(v[23], CM), nextSceneryStompStride: dequant(v[24], CM), opportunisticAfter: dequant(v[25], MS),
     retaliateUntil: dequant(v[14], MS), nextAttackAt: dequant(v[15], MS),
+    interruptImmuneUntil: dequant(v[27], MS),
     deathAt: v[16] === null ? null : dequant(v[16], MS),
     barrier: barrier.length === 5 ? { edge: int(barrier[0], -1), faction: faction(barrier[1]),
       x: dequant(barrier[2], CM), z: dequant(barrier[3], CM), at: dequant(barrier[4], MS) } : null,

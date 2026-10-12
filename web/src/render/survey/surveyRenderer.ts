@@ -18,6 +18,7 @@ import { gccActive } from '../../sim/systems/gcc';
 import type { GameEvent } from '../../sim/events';
 import type { RenderContext, RenderModule } from '../context';
 import { BeamLayer } from './beams';
+import { BossVisionFeature } from './bossVision';
 import { CrystalLayer } from './crystals';
 import { DecalLayer, createDecalMaterial } from './decals';
 import { FacetLayer } from './facetLayer';
@@ -62,6 +63,7 @@ export class SurveyRenderer implements RenderModule {
   private readonly phason: PhasonFeature;
   private readonly crystals: CrystalLayer;
   private readonly objectives: ObjectiveFeature;
+  private readonly bossVision: BossVisionFeature;
   private readonly res = new THREE.Vector2();
   private readonly viewDir = new THREE.Vector3();
   private grid = 1;
@@ -97,6 +99,7 @@ export class SurveyRenderer implements RenderModule {
     this.aim = new AimFeature(world, session);
     this.phason = new PhasonFeature(world, d, this.lattice, this.u);
     this.objectives = new ObjectiveFeature(scene, world, session, d, this.u, ctx.shared);
+    this.bossVision = new BossVisionFeature(scene, world, session, this.u);
   }
 
   onEvent(e: GameEvent): void {
@@ -204,6 +207,7 @@ export class SurveyRenderer implements RenderModule {
     // Pixels per metre at 1 m of view distance, for markers that keep a minimum screen size.
     const projScale = ctx.camera.projectionMatrix.elements[5] * 0.5 * this.res.y;
     this.objectives.update(now, ctx.camera, projScale, this.res, u.uPx.value);
+    this.bossVision.update(ctx.camera, this.res, u.uPx.value);
   }
 
   /**
@@ -249,6 +253,7 @@ export class SurveyRenderer implements RenderModule {
     this.aimGhosts.dispose();
     this.crystals.dispose();
     this.objectives.dispose();
+    this.bossVision.dispose();
     this.decalMat.dispose();
     this.data.dispose();
   }

@@ -5,6 +5,7 @@ import { groundHeight } from '../../terrain';
 import type { BossState } from '../../boss';
 import type { V3 } from '../../math';
 import { BOSS_EYE_TIMING } from '../../boss';
+import { bossRecoilPoseTime } from '../../bossRecoil';
 import { solveBossEyeAim } from '../../bossEyeRig';
 import type { BossEyeQuaternion } from '../../bossEyeRig';
 
@@ -12,10 +13,12 @@ export interface BossProjectileImpact { t: number; pos: V3; headshot: boolean; r
 
 function poseFrames(boss: BossState, now: number) {
   const aiming = boss.eye?.chargeAt != null;
-  const key = `${aiming ? 'idle' : boss.action}:${boss.crouched}` as keyof typeof BOSS_HIT_POSE_DATA;
+  const recoil = !aiming && boss.action === 'recoil';
+  const key = recoil ? 'death:true' : `${aiming ? 'idle' : boss.action}:${boss.crouched}` as keyof typeof BOSS_HIT_POSE_DATA;
   const fallback = `idle:${boss.crouched}` as keyof typeof BOSS_HIT_POSE_DATA;
   const clip = BOSS_HIT_POSE_DATA[key] ?? BOSS_HIT_POSE_DATA[fallback];
   let t = aiming ? 0 : Math.max(0, now - boss.actionAt);
+  if (recoil) t = bossRecoilPoseTime(t);
   if (clip.phaseDistance) t = ((boss.stride / clip.phaseDistance) % 1 + 1) % 1;
   const samples = clip.samples;
   const next = samples.findIndex(s => s.at > t);

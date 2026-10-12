@@ -28,6 +28,7 @@ import { iconSvg } from './icons';
 import type { IconName } from './icons';
 import { takeableSeat } from './online';
 import { BossHud } from './bossHud';
+import { BossVisionHud } from './bossVisionHud';
 
 /** Dusk falls at 6:00 and night at 10:00 (design §14). */
 const DUSK_AT = 6 * 60;
@@ -95,6 +96,7 @@ export class HudPart implements UiPart {
   private spectatePlay: HTMLButtonElement;
   private selectBox: HTMLElement;
   private bossHud: BossHud;
+  private bossVisionHud: BossVisionHud;
 
   constructor(host: UiHost, layout: UiLayout) {
     this.host = host;
@@ -136,6 +138,7 @@ export class HudPart implements UiPart {
     // ── Clock plaque ──
     const plaque = el('div', 'clock plaque', layout.topCenter);
     this.bossHud = new BossHud(layout.topCenter, plaque, layout.center);
+    this.bossVisionHud = new BossVisionHud(layout.topCenter);
     tutorialTarget(plaque, 'clock');
     const main = el('div', 'clock-main', plaque);
     this.todIc = el('span', 'tod-ic', main);
@@ -201,6 +204,7 @@ export class HudPart implements UiPart {
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
     this.bossHud.update(world, matchScreen(s.screen));
+    this.bossVisionHud.update(world, s);
     if (!matchScreen(s.screen) || !world) return;
     const P = s.playerFaction;
     const fac = world.factions[P];
@@ -342,6 +346,7 @@ export class HudPart implements UiPart {
 
   dispose(): void {
     this.bossHud.dispose();
+    this.bossVisionHud.dispose();
     for (const n of this.nodes) n.remove();
   }
 }

@@ -1,0 +1,18 @@
+.boss-vision {
+  order: 1;
+  width: clamp(260px, 53vw, 760px);
+  padding: 7px 12px;
+  color: #f7efdb;
+  background: #11191cec;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.boss-vision-title { color: #7cffe0; font-weight: 800; letter-spacing: .08em; }
+.boss-vision-targets { padding-top: 3px; }
+.boss-vision-eye { color: #f1b9fb; padding-top: 2px; }
+@media (max-width: 680px) {
+  .boss-vision { width: min(82vw, 460px); font-size: 10px; }
+}

@@ -76,6 +76,21 @@ describe('crouched eating hand-to-mouth alignment', () => {
     fx.dispose(); disposeBossModel(model);
   });
 
+  it('hides the carried-target cue immediately when a host meal interrupt begins recoil', async () => {
+    const { model, pose, fx } = await rig();
+    const boss = bossFixture(); boss.action = 'grab'; boss.crouched = true; boss.actionAt = 0;
+    boss.held = { kind: 'building', id: 2, faction: 0, x: 0, z: 0 };
+    pose.sample(boss, 2); fx.update(boss, 2);
+    const held = model.getObjectByName('boss-held-target')!;
+    expect(held.visible).toBe(true);
+    boss.action = 'recoil'; boss.actionAt = 2; boss.held = null;
+    for (const now of [2, 2.25, 2.9, 3]) {
+      pose.sample(boss, now); fx.update(boss, now);
+      expect(held.visible).toBe(false);
+    }
+    fx.dispose(); disposeBossModel(model);
+  });
+
   it('enlarges the grip with the 32m hand while keeping carried world objects their existing size', async () => {
     const { model, pose, fx } = await rig();
     const boss = bossFixture(); boss.action = 'grab'; boss.crouched = true; boss.actionAt = boss.spawnedAt = 0;

@@ -17,6 +17,7 @@ import {
 import { FACTION_IDS, NEUTRAL } from '../types';
 import type { FactionId, Owner } from '../types';
 import type { World } from '../world';
+import { flushBossBarrierBreaks } from './boss/barrierBreaks';
 import { isAvatarDown } from './avatars';
 import { collapseSimulacrum } from './flags';
 import { gccActive } from './gcc';
@@ -85,7 +86,7 @@ export function markSurveyDirty(world: World): void {
 export function updateSurvey(world: World, dt: number): void {
   const sc = scratchOf(world);
   collapseObservedSimulacra(world);
-  if (world.survey.dirty) recompute(world, sc);
+  if (world.survey.dirty) { recompute(world, sc); flushBossBarrierBreaks(world); }
   observe(world, sc);
 }
 

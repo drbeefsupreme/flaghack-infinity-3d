@@ -7,7 +7,7 @@ const { runInNewContext } = require('node:vm');
 const yaml = require('js-yaml');
 const workflow = yaml.load(readFileSync(join(__dirname, '../../.github/workflows/desktop-build.yml'), 'utf8'));
 const job = workflow.jobs.windows;
-const marker = 'Preserve Windows source hashes [desktop-build:0.1.1-iteration.1:20261011-retry1]';
+const marker = 'Update selected-branch launcher [desktop-build:0.1.2-iteration.1:20261012]';
 test('initial push build is restricted to the exact authorized iteration marker', () => {
   assert.deepEqual(workflow.on.push.branches, ['iteration']);
   assert.equal(job.if.replace(/\s+/g, ' ').trim(), `github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/iteration' && github.event.head_commit.message == '${marker}')`);
@@ -22,11 +22,12 @@ test('initial push build is restricted to the exact authorized iteration marker'
 });
 test('push builds pin the event commit and fixed channel/version without credentials', () => {
   assert.equal(job.env.FLAGHACK_CHANNEL, "${{ github.event_name == 'push' && 'iteration' || inputs.channel }}");
-  assert.equal(job.env.DESKTOP_VERSION, "${{ github.event_name == 'push' && '0.1.1-iteration.1' || inputs.version }}");
+  assert.equal(job.env.DESKTOP_VERSION, "${{ github.event_name == 'push' && '0.1.2-iteration.1' || inputs.version }}");
   const checkout = job.steps.find(step => step.uses?.startsWith('actions/checkout@'));
   assert.equal(checkout.with.ref, "${{ github.event_name == 'push' && github.sha || (inputs.channel == 'stable' && 'main' || 'iteration') }}");
   assert.equal(checkout.with['persist-credentials'], false);
   assert.deepEqual(workflow.permissions, { contents: 'read' });
+  assert.equal(job.steps.find(step => step.name === 'Test game').run, 'npm test -- --maxWorkers=2');
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.channel.options, ['stable', 'iteration']);
   assert.ok(!job.steps.some(step => /gh release|git push|--publish always/.test(step.run || '')));
 });

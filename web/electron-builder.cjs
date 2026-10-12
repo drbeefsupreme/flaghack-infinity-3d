@@ -4,7 +4,7 @@ if (!['stable', 'iteration'].includes(channel)) throw new Error('FLAGHACK_CHANNE
 module.exports = {
   appId: 'com.flaghack.infinity', productName: 'FLAGHACK Infinity',
   directories: { output: 'desktop-release' },
-  files: ['desktop/**/*', '!desktop/**/*.test.cjs', 'dist/**/*', 'dist-desktop/**/*', 'package.json'],
+  files: ['desktop/**/*', '!desktop/**/*.test.cjs', 'dist/**/*', 'package.json'],
   extraMetadata: { desktopChannel: channel },
   asar: true,
   npmRebuild: false,

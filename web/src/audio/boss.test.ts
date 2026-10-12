@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { bossFixture } from '../../tests/bossFixture';
 import { BossAudio, BossAudioTracker } from './boss';
-import { BOSS_EYE_TIMING } from '../sim/boss';
+import { BOSS_EYE_TIMING, BOSS_TIMING } from '../sim/boss';
 import type { AudioEngine } from './engine';
 function harness() {
-  const sink = { play: vi.fn(), cancel: vi.fn(), stopBeam: vi.fn(), updateBeam: vi.fn(), vocal: vi.fn(), stopVocals: vi.fn() }, tracker = new BossAudioTracker(sink), b = bossFixture();
+  const sink = { play: vi.fn(), cancel: vi.fn(), stopBeam: vi.fn(), stopWindup: vi.fn(), updateBeam: vi.fn(), vocal: vi.fn(), stopVocals: vi.fn() }, tracker = new BossAudioTracker(sink), b = bossFixture();
   b.spawnedAt = 100; b.actionAt = 100; b.action = 'idle'; b.stride = 0;
   return { sink, tracker, b };
 }
@@ -98,8 +98,8 @@ describe('boss shared-view audio lifecycle', () => {
   it('routes every recipe through the capped arena-wide boss bus under the existing volume controls', () => {
     const voice = vi.fn(() => null);
     const audio = new BossAudio({ voice, ctx: { currentTime: 0 } } as unknown as AudioEngine, { get: () => ({ duration: 4 }) as AudioBuffer, ready: Promise.resolve() });
-    for (const cue of ['emerge', 'death', 'step', 'stomp', 'charge', 'beam', 'impact', 'crush'] as const) audio.play(cue, { x: 1, z: 2 });
-    expect(voice).toHaveBeenCalledTimes(8);
+    for (const cue of ['swipeWindup', 'stompWindup', 'grabWindup', 'emerge', 'death', 'step', 'stomp', 'charge', 'beam', 'impact', 'crush'] as const) audio.play(cue, { x: 1, z: 2 });
+    expect(voice).toHaveBeenCalledTimes(11);
     for (const [spec] of voice.mock.calls as unknown as [{ bus: string; at: unknown; gain: number; directionalOnly: boolean }][]) {
       expect(spec.bus).toBe('boss'); expect(spec.at === undefined || JSON.stringify(spec.at) === JSON.stringify({ x: 1, z: 2 })).toBe(true); expect(spec.gain).toBeLessThanOrEqual(1.3); expect(spec.directionalOnly).toBe(spec.at ? true : undefined);
     }
@@ -120,5 +120,50 @@ describe('synchronized sampled vocal slots', () => {
     expect(sink.vocal).toHaveBeenCalledTimes(1); expect(sink.stopVocals).toHaveBeenCalled();
     tracker.update(b, at + 95.9); b.hp = 0; tracker.update(b, at + 96);
     expect(sink.vocal).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('one-shot melee windup warnings', () => {
+  it.each([
+    ['swipe', 'swipeWindup', BOSS_TIMING.swipeHit],
+    ['stomp', 'stompWindup', BOSS_TIMING.stompHit],
+    ['grab', 'grabWindup', BOSS_TIMING.grasp],
+  ] as const)('plays %s once per fresh action, then stops at its exact contact edge', (action, cue, duration) => {
+    const { sink, tracker, b } = harness(); tracker.update(b, 100);
+    b.action = action; b.actionAt = 100.1; b.actionSeq++; b.held = null;
+    tracker.update(b, 100.2);
+    expect(sink.play).toHaveBeenCalledExactlyOnceWith(cue, b.pos, expect.closeTo(.1));
+    for (let frame = 15; frame < duration * 144; frame++) tracker.update({ ...b }, 100.1 + frame / 144);
+    expect(sink.play).toHaveBeenCalledTimes(1);
+    sink.stopWindup.mockClear(); tracker.update(b, b.actionAt + duration);
+    expect(sink.stopWindup).toHaveBeenCalledOnce();
+    for (let t = b.actionAt + duration; t < 102; t += .1) tracker.update(b, t);
+    b.actionAt = 102; b.actionSeq++; tracker.update(b, 102); tracker.update(b, 102.01);
+    expect(sink.play.mock.calls.map(c => c[0])).toEqual([cue, cue]);
+  });
+
+  it.each(['swipe', 'stomp', 'grab'] as const)('never replays a %s warning on late join, stale state, resume, or new boss ID', action => {
+    const { sink, tracker, b } = harness(); b.action = action; b.actionAt = 100;
+    tracker.update(b, 100.1); tracker.update({ ...b }, 100.2);
+    expect(sink.play).not.toHaveBeenCalled();
+    tracker.reset(); tracker.update(b, 100.3); expect(sink.play).not.toHaveBeenCalled();
+    b.actionSeq++; b.actionAt = 101; tracker.update(b, 110);
+    b.id++; b.actionAt = 110.1; tracker.update(b, 110.1); tracker.update(b, 110.2);
+    expect(sink.play).not.toHaveBeenCalled();
+  });
+
+  it.each(['recoil', 'idle', 'eye', 'hit', 'death', 'ended', 'reset'] as const)('cancels the warning on %s without inventing an impact', reason => {
+    const { sink, tracker, b } = harness(); tracker.update(b, 100);
+    b.action = 'grab'; b.actionAt = 100.1; b.actionSeq++; tracker.update(b, 100.1);
+    expect(sink.play.mock.calls.map(c => c[0])).toEqual(['grabWindup']);
+    if (reason === 'reset') { tracker.reset(); expect(sink.cancel).toHaveBeenLastCalledWith(); return; }
+    if (reason === 'recoil' || reason === 'idle') b.action = reason;
+    if (reason === 'eye') b.eye.chargeAt = 100.2;
+    if (reason === 'hit') b.hitSeq = b.actionSeq;
+    if (reason === 'death') b.hp = 0;
+    tracker.update(b, 100.2, reason !== 'ended');
+    expect(sink.stopWindup).toHaveBeenCalled();
+    expect(sink.play.mock.calls.map(c => c[0])).toEqual(reason === 'eye' ? ['grabWindup', 'charge'] : ['grabWindup']);
   });
 });

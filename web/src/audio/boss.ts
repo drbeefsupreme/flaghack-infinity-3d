@@ -1,14 +1,15 @@
 /** Boss audio from durable eye/lifecycle state and authoritative impact events. Never mutates the sim. */
 import { BOSS_EYE_TIMING, type BossState } from '../sim/boss';
+import { bossAttackPhase } from '../sim/bossAttackPresentation';
 import type { GameEvent } from '../sim/events';
 import type { V2 } from '../sim/math';
 import type { AudioEngine, VoiceHandle } from './engine';
 import { BossSamples, type BossVocal } from './bossSamples';
 import { BOSS_VOICE_MIX } from './bossMix';
-import { BOSS_CUE_DURATION, synthBoss, type BossCue } from './bossSynth';
-export interface BossAudioSink { play(cue: BossCue, at: V2, age?: number): void; cancel(chargeOnly?: boolean): void; vocal?(cue: BossVocal): void; stopVocals?(): void; stopBeam?(): void; updateBeam?(at: V2, age: number): void; }
+import { BOSS_CUE_DURATION, synthBoss, isBossWindupCue, type BossCue, type BossWindupCue } from './bossSynth';
+export interface BossAudioSink { play(cue: BossCue, at: V2, age?: number): void; cancel(chargeOnly?: boolean): void; vocal?(cue: BossVocal): void; stopVocals?(): void; stopBeam?(): void; stopWindup?(): void; updateBeam?(at: V2, age: number): void; }
 type Seen = { id: number; deathAt: number | null; chargeAt: number | null; firedAt: number | null;
-  now: number; hasImpact: boolean };
+  now: number; hasImpact: boolean; actionSeq: number; actionAt: number; windup: BossWindupCue | null };
 const FRESH = .35;
 export class BossAudioTracker {
   private seen: Seen | null = null;
@@ -24,8 +25,10 @@ export class BossAudioTracker {
     const first = !this.initialized;
     this.initialized = true;
     if (!b) { if (prev) this.sink.cancel(); this.seen = null; return; }
+    const phase = bossAttackPhase(b, now);
+    const windup = phase && isBossWindupCue(phase.kind) ? phase.kind : null;
     const snapshot = (): Seen => ({ id: b.id, deathAt: b.deathAt, chargeAt: b.eye.chargeAt, firedAt: b.eye.firedAt,
-      now, hasImpact: b.eye.impact !== null });
+      now, hasImpact: b.eye.impact !== null, actionSeq: b.actionSeq, actionAt: b.actionAt, windup });
     // An initial/full snapshot or clock jump only seeds the watcher. No historical roars,
     // impacts, footsteps or shots on late join, tab resumption, reconnect or replay seek.
     if (first || prev && (prev.id !== b.id || now < prev.now || now - prev.now > .75)) {
@@ -39,15 +42,21 @@ export class BossAudioTracker {
     const fresh = (at: number): boolean => now >= at && now - at <= FRESH;
     if (allowAttacks && !prev && b.action === 'emerge' && fresh(b.spawnedAt)) this.sink.play('emerge', b.pos);
     if (b.hp <= 0 || b.deathAt !== null || b.action === 'dead') {
-      this.sink.stopBeam?.(); this.sink.stopVocals?.();
+      this.sink.stopBeam?.(); this.sink.stopWindup?.(); this.sink.stopVocals?.();
       if (prev && prev.deathAt === null && b.deathAt !== null) {
         this.sink.cancel(); if (fresh(b.deathAt)) this.sink.play('death', b.pos);
       } else if (b.eye.chargeAt !== prev?.chargeAt || b.eye.firedAt !== prev?.firedAt) this.sink.cancel(true);
       this.seen = snapshot(); return;
     }
     if (!allowAttacks) {
-      this.sink.cancel(true); this.sink.stopBeam?.(); this.sink.stopVocals?.(); this.seen = snapshot(); return;
+      this.sink.cancel(true); this.sink.stopBeam?.(); this.sink.stopWindup?.(); this.sink.stopVocals?.(); this.seen = snapshot(); return;
     }
+    const newAction = !prev || prev.actionSeq !== b.actionSeq || prev.actionAt !== b.actionAt;
+    if (prev?.windup && (newAction || prev.windup !== windup)) this.sink.stopWindup?.();
+    // Only a freshly observed action starts a warning. Late joins/seek seed above;
+    // repeated frames and full-snapshot object replacement cannot replay a one-shot.
+    if (windup && fresh(b.actionAt) && (newAction || prev?.windup !== windup))
+      this.sink.play(windup, b.pos, now - b.actionAt);
     // Shared simulation clock and boss ID produce identical sparse vocal slots for
     // every client. Crossing a slot is required: late joins never replay it.
     const start = b.spawnedAt + 24 + b.id % 9;
@@ -171,6 +180,15 @@ export class BossAudio implements BossAudioSink {
     const t = this.engine.ctx.currentTime;
     this.voices = this.voices.filter(v => {
       if (v.cue !== 'beam') return true;
+      v.releaseDuck(); v.voice.input.gain.cancelScheduledValues(t); v.voice.input.gain.setTargetAtTime(0, t, .012);
+      return false;
+    });
+  }
+  stopWindup(): void {
+    if (!this.voices.some(v => isBossWindupCue(v.cue))) return;
+    const t = this.engine.ctx.currentTime;
+    this.voices = this.voices.filter(v => {
+      if (!isBossWindupCue(v.cue)) return true;
       v.releaseDuck(); v.voice.input.gain.cancelScheduledValues(t); v.voice.input.gain.setTargetAtTime(0, t, .012);
       return false;
     });

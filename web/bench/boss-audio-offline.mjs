@@ -17,7 +17,7 @@ let sourceHash = createHash('sha256').update(recipeSource + synthSource).digest(
 const synthURL = url(synthSource);
 let resolvedRecipe = recipeSource.replace("'./synth'", JSON.stringify(synthURL));
 if (recipeSource.includes("'../sim/boss'")) {
-  const timing = source('../sim/boss').match(/export const BOSS_EYE_TIMING = [^;]+;/)?.[0];
+  const timing = source('../sim/boss').match(/export const BOSS_(?:EYE_)?TIMING = [^;]+;/g)?.join('\n');
   if (!timing) throw Error('Cannot resolve shared boss eye timing');
   sourceHash = createHash('sha256').update(recipeSource + synthSource + timing).digest('hex');
   resolvedRecipe = resolvedRecipe.replace("'../sim/boss'", JSON.stringify(url(timing)));

@@ -33,6 +33,20 @@ describe('boss audio through the production GameAudio frame hook', () => {
     expect(voice.mock.calls.map(([s]) => s.key)).toEqual(['boss-emerge', 'boss-charge', 'boss-beam', 'boss-death']);
     for (const [spec] of voice.mock.calls) { expect(spec.bus).toBe('boss'); expect(spec.directionalOnly).toBe(spec.key === 'boss-emerge' ? undefined : true); }
   });
+  it('plays a fresh melee warning through GameAudio once and never replays it after pause', () => {
+    const b = bossFixture(); b.action = 'idle';
+    const { audio, world, session, voice } = harness(b); audio.update(.016);
+    b.action = 'swipe'; b.actionAt = 100; b.actionSeq++; world.time = 100; audio.update(.016);
+    world.boss = { ...b }; world.time = 100.1;
+    for (let frame = 0; frame < 30; frame++) audio.update(.016);
+    expect(voice.mock.calls.map(([s]) => s.key)).toEqual(['boss-swipeWindup']);
+    expect(voice.mock.calls[0][0]).toMatchObject({ bus: 'boss', gain: .85, dur: .55, directionalOnly: true });
+    session.screen = 'paused'; audio.update(.016); session.screen = 'playing'; audio.update(.016);
+    expect(voice).toHaveBeenCalledTimes(1);
+    world.time = 100.55; audio.update(.016);
+    expect(voice).toHaveBeenCalledTimes(1);
+  });
+
   it('observes replicated snapshot replacement without re-playing historical cues', () => {
     const b = bossFixture(); b.action = 'walk'; b.stride = 0;
     const { audio, world, voice } = harness(b); audio.update(.016);

@@ -3,7 +3,7 @@ import { TestAudioContext, TestNode, TestParam } from '../../tests/audioContext'
 import { AudioEngine } from './engine';
 import { BossAudio } from './boss';
 import { BOSS_VOICE_MIX } from './bossMix';
-import type { BossCue } from './bossSynth';
+import { isBossWindupCue, type BossCue } from './bossSynth';
 import { Session } from '../game/session';
 vi.mock('./bossSamples', () => ({ BossSamples: class { ready = Promise.resolve(); get() { return { duration: 4 }; } } }));
 function param(p: AudioParam): TestParam { return p as unknown as TestParam; }
@@ -112,7 +112,11 @@ describe('arena-wide boss mix in the actual audio engine', () => {
     for (const cue of Object.keys(BOSS_VOICE_MIX) as BossCue[]) {
       b.play(cue, { x: 0, z: 0 });
       expect(voice).toHaveBeenLastCalledWith(expect.objectContaining({ wet: cue === 'emerge' ? .4 : BOSS_VOICE_MIX[cue].wet, gain: BOSS_VOICE_MIX[cue].gain }));
-      expect(BOSS_VOICE_MIX[cue].wet).toBeGreaterThan(.2);
+      // Existing foreground voices retain their boosted reverb. Short warnings
+      // deliberately use less wet signal so their contact edges stay legible.
+      if (isBossWindupCue(cue)) {
+        expect(BOSS_VOICE_MIX[cue].wet).toBe({ swipeWindup: .16, stompWindup: .2, grabWindup: .18 }[cue]);
+      } else expect(BOSS_VOICE_MIX[cue].wet).toBeGreaterThan(.2);
     }
     expect(ctx.nodes.filter(n => n.kind === 'convolver')).toHaveLength(1);
     expect(e.reverb.buffer).toBe(impulse);

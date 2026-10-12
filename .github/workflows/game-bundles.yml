@@ -1,0 +1,113 @@
+name: Publish selected-branch game bundles
+
+# Only prebuilt browser assets are distributed. No player-side build or Node code.
+on:
+  push:
+    branches: [main, iteration]
+  workflow_dispatch:
+    inputs:
+      branch:
+        type: choice
+        required: true
+        default: iteration
+        options: [main, iteration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-bundle-${{ github.event_name == 'push' && github.ref_name || inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'elmorei/flaghack-infinity-3d'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      branch: ${{ steps.identity.outputs.branch }}
+      commit: ${{ steps.identity.outputs.commit }}
+    env:
+      GAME_BRANCH: ${{ github.event_name == 'push' && github.ref_name || inputs.branch }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Record the exact selected-branch build
+        id: identity
+        shell: bash
+        run: |
+          case "$GAME_BRANCH" in main|iteration) ;; *) exit 1 ;; esac
+          echo "branch=$GAME_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+        working-directory: web
+      - run: npm test -- --maxWorkers=2
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - name: Package game assets with hashes and license notices
+        shell: bash
+        env:
+          GAME_COMMIT: ${{ steps.identity.outputs.commit }}
+        run: node .github/scripts/build-game-bundle.cjs --branch "$GAME_BRANCH" --commit "$GAME_COMMIT" --dist web/dist --out "$RUNNER_TEMP/game-bundle"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verified-game-build
+          path: ${{ runner.temp }}/game-bundle/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: elmorei/flaghack-infinity-3d
+      GAME_BRANCH: ${{ needs.build.outputs.branch }}
+      GAME_COMMIT: ${{ needs.build.outputs.commit }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-game-build
+          path: bundle
+      - name: Verify immutable payload, then publish matching branch manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GAME_BRANCH" in main|iteration) ;; *) exit 1 ;; esac
+          [[ "$GAME_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          BUNDLE="game-$GAME_BRANCH-$GAME_COMMIT.json.gz"
+          export BUNDLE
+          node <<'JS'
+          const fs = require('node:fs'), crypto = require('node:crypto');
+          const m = JSON.parse(fs.readFileSync('bundle/latest.json'));
+          const bytes = fs.readFileSync('bundle/' + process.env.BUNDLE);
+          if (m.schema !== 1 || m.runtimeApi !== 1 || m.branch !== process.env.GAME_BRANCH || m.commit !== process.env.GAME_COMMIT || m.bundle !== process.env.BUNDLE || m.size !== bytes.length || m.sha256 !== crypto.createHash('sha256').update(bytes).digest('hex')) throw new Error('Artifact identity or checksum mismatch');
+          JS
+          # Do not advertise a stale build when newer source has already landed.
+          TIP=$(gh api "repos/$GH_REPO/commits/$GAME_BRANCH" --jq .sha)
+          if [[ "$TIP" != "$GAME_COMMIT" ]]; then echo 'Branch advanced; newer workflow owns the feed.'; exit 0; fi
+          TAG="game-$GAME_BRANCH"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GAME_COMMIT" --title "Game content: $GAME_BRANCH" --notes 'Prebuilt sandboxed browser-game assets for the FLAGHACK launcher.' --prerelease
+          EXISTING=$(gh release view "$TAG" --json assets --jq ".assets[] | select(.name == \"$BUNDLE\") | .name")
+          if [[ -n "$EXISTING" ]]; then
+            mkdir existing
+            gh release download "$TAG" --pattern "$BUNDLE" --dir existing
+            cmp "existing/$BUNDLE" "bundle/$BUNDLE"
+          else
+            gh release upload "$TAG" "bundle/$BUNDLE"
+          fi
+          # Upload the small manifest last. Clients reject missing/mismatched tips.
+          TIP=$(gh api "repos/$GH_REPO/commits/$GAME_BRANCH" --jq .sha)
+          if [[ "$TIP" == "$GAME_COMMIT" ]]; then gh release upload "$TAG" bundle/latest.json --clobber; fi

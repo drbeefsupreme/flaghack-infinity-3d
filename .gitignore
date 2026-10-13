@@ -12,3 +12,6 @@ web/.vite/
 
 web/dist-desktop/
 web/desktop-release/
+
+web/desktop/bundled-game.json
+web/game-release/

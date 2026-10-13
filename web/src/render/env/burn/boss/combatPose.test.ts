@@ -12,6 +12,7 @@ import { createDayState } from '../../timeOfDay';
 import type { EnvContext } from '../../envTypes';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { BOSS_TIMING, createBossEyeState, type BossState } from '../../../../sim/boss';
+import { bossRecoilPoseTime } from '../../../../sim/bossRecoil';
 
 async function model() {
   const b = fs.readFileSync(new URL('../../../../../public/models/boss/skeletal-boss.glb', import.meta.url));
@@ -21,7 +22,7 @@ function boss(action: BossState['action'] = 'idle', crouched = false): BossState
   return { lightning: [], id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action, actionAt: 110,
     eye: createBossEyeState(100), actionSeq: 3, hitSeq: -1, target: null, focusFaction: null,
     objectiveAltarId: null, routeStartStride: 0, nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
-    nextAttackAt: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched };
+    nextAttackAt: 0, interruptImmuneUntil: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched };
 }
 function signature(m: THREE.Group): number[] {
   const values: number[] = [];
@@ -43,7 +44,7 @@ describe('approved-rig combat presentation', () => {
   });
   it('samples every action reversibly without consuming host state or changing the 32m scale', async () => {
     const m = await model(), p = new BossCombatPose(m);
-    for (const action of ['idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'death', 'dead'] as const) {
+    for (const action of ['idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'recoil', 'death', 'dead'] as const) {
       const b = boss(action, true); b.stride = 1.4; if (action === 'death' || action === 'dead') b.deathAt = 110;
       const before = JSON.stringify(b);
       p.sample(b, 111.1); const first = signature(m);
@@ -52,6 +53,23 @@ describe('approved-rig combat presentation', () => {
       expect(signature(m).every(Number.isFinite)).toBe(true);
       expect(m.scale.toArray()).toEqual([1, 1, 1]);
     }
+    disposeBossModel(m);
+  });
+  it('recoils through only the existing crouched flinch, reverses to rest, and never moves the planted legs', async () => {
+    const m = await model(), p = new BossCombatPose(m), b = boss('recoil', true);
+    p.sample(b, b.actionAt); const start = signature(m), head = m.getObjectByName('head')!.quaternion.clone();
+    const lower = ['root', 'pelvis', 'thighL', 'shinL', 'footL', 'thighR', 'shinR', 'footR'];
+    const low = lower.map(name => m.getObjectByName(name)!.matrixWorld.clone());
+    p.sample(b, b.actionAt + .25);
+    expect(m.getObjectByName('head')!.quaternion.angleTo(head)).toBeGreaterThan(.1);
+    for (const age of [0, .04, .13, .25, .5, .9, 1, 3]) {
+      p.sample(b, b.actionAt + age); const recoil = signature(m);
+      lower.forEach((name, i) => m.getObjectByName(name)!.matrixWorld.elements.forEach((v, j) => expect(v).toBeCloseTo(low[i].elements[j], 5)));
+      p.sample(boss('death', true), b.actionAt + bossRecoilPoseTime(age));
+      const original = signature(m);
+      recoil.forEach((v, i) => expect(v).toBeCloseTo(original[i], 6));
+    }
+    p.sample(b, b.actionAt + 1); expect(signature(m)).toEqual(start);
     disposeBossModel(m);
   });
   it('loops by actual distance with no accumulated root translation', async () => {

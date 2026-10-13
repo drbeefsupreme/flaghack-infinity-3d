@@ -20,7 +20,7 @@ function boss(): BossState {
   return { lightning: [], id: 88, pos: { x: 12, z: -7 }, yaw: .7, hp: 5000, maxHp: 5000, spawnedAt: 100, action: 'idle', actionAt: 110,
     actionSeq: 3, hitSeq: -1, target: null, focusFaction: null,
     objectiveAltarId: null, routeStartStride: 0, nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
-    nextAttackAt: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched: false, eye: createBossEyeState(100) };
+    nextAttackAt: 0, interruptImmuneUntil: 0, deathAt: null, barrier: null, stride: 0, held: null, crouched: false, eye: createBossEyeState(100) };
 }
 function parent(m: THREE.Group, fx: BossEyeBeamFx) { const p = new THREE.Group(); p.position.set(-9, 0, 13); p.add(m, fx.group); p.updateMatrixWorld(true); return p; }
 function materialValues(m: THREE.Group) {

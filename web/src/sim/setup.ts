@@ -35,6 +35,7 @@ import { registerBuildingShape } from './systems/buildings';
 import { canPlantAt, plantFlag } from './systems/flags';
 import { geometryOwners, updateSurvey } from './systems/survey';
 import { updateVictory } from './systems/victory';
+import { initializeEffigyAudience } from './systems/units/effigySpectators';
 import { FACTION_IDS } from './types';
 import type { Building, FactionId, MatchOptions } from './types';
 import { createSurveyState, World } from './world';
@@ -98,6 +99,7 @@ export function createMatch(options: MatchOptions): World {
   // Instant-Burn matches are already ignited in the first rendered/replicated snapshot.
   // Keep simulation time at zero so the 90-second reveal and all other timers run normally.
   if (options.mode !== 'tutorial' && burnTime(options) === 0) updateVictory(world, 0);
+  initializeEffigyAudience(world);
   return world;
 }
 

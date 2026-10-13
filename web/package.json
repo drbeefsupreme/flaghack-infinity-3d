@@ -1,7 +1,7 @@
 {
   "name": "flaghack-infinity",
   "private": true,
-  "version": "0.1.1-iteration.1",
+  "version": "0.1.2-iteration.1",
   "type": "module",
   "description": "Survey Flags: a 3D 1v1v1v1 vexillomantic action-strategy game built on an aperiodic Ley Lattice.",
   "scripts": {
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval:sim": "bun bench/sim-eval.ts",
-    "desktop:build": "npm run build && vite build --ssr server/host.ts --outDir dist-desktop",
+    "desktop:build": "npm run build && node desktop/build-metadata.cjs",
     "desktop:test": "node --test desktop/*.test.cjs",
     "desktop:dev": "npm run desktop:build && electron .",
     "desktop:package": "npm run desktop:build && electron-builder --config electron-builder.cjs --win --x64 --publish never"

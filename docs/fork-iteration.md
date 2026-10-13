@@ -4,7 +4,7 @@
 
 Begin the Survey opens the lobby for local games; joining a host opens the multiplayer lobby. Each of the four player seats has an On/Off toggle, and the number of days is selected in the lobby. At least one seat remains on. Offline, choose any enabled character with Play this character; other enabled seats use AI. Turning off the selected local seat moves you to another enabled seat. Disabled seats show a neutral numbered placeholder and have no avatar, Hearth, GCC, starting stock or Signifiers in the match. They also stay out of the Hearth rail, standings and end-of-match statistics. Their camp scenery remains part of the map.
 
-In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 8; all players must use the same build.
+In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 12; all players must use the same build.
 
 Choose 0–5 days or Unlimited. A day means one complete daylight/night cycle. Default: 1 day at 1,800 seconds, preserving the original 14:00 Burn and 30:00 Dawn deadline. With multiple days, the Burn occurs at the same point in the **last** cycle. The sky repeats each cycle. Zero days begins at ignition, with the Burn sky and simulation time 0:00; the boss still reveals 90 seconds later. With boss mode off, zero days retains the full remaining Burn night before Dawn (16 minutes at the default day length, or 160 seconds with a 300-second day). Conquest can finish a competitive match earlier; a single-camp creative/solo match finishes only at its time limit. Unlimited remains a separate choice with no time limit or scheduled Burn; competitive conquest still works. Previously saved Unlimited choices are migrated without changing their meaning.
 
@@ -102,7 +102,7 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
   the approved non-boss sequence.
 - The simulation stores and replicates `effigyRevealedAt` exactly 90 seconds after
   the scheduled Burn. A skipped step or late join reconstructs the same state.
-  Protocol version 8 includes this field and the full encounter state, and validates the configurable hoarding threshold. It distinguishes
+  Protocol version 12 includes this field and the full encounter state, including shared interrupt immunity, and validates the configurable hoarding threshold. It distinguishes
   zero-day ignition from Unlimited (`days: -1`). Older clients must reload.
 - Reveal clears both original pedestal and mast collision, rebuilding static
   navigation and lattice plantability without discarding dynamic blockers.
@@ -128,6 +128,16 @@ Controller movement/buttons are cleared on blur, disconnect and screen changes. 
 - The reveal starts the cooperative encounter below. Ordinary Dawn and conquest
   endings stop during the fight. With a 300-second day the Burn is at 140 s and
   reveal at 230 s; the former 300-second Dawn deadline no longer ends the fight.
+
+### Neutral Burn spectators
+
+Neutral hippies gather during the final 120 seconds before ignition, using ordinary
+pathing to stable, spaced audience positions around the effigy. The ring starts 16 m
+from its center, beyond the guy-line anchors, and expands for large crowds or enlarged
+effigy footprints. Arrived spectators face the effigy. Zero-day games initialize only
+starting neutrals in safe ring positions; Unlimited and tutorial worlds keep wandering.
+Recruitment, KO and combat still interrupt watching. After the ordinary burn is consumed
+the audience disperses; an active giant encounter instead takes priority immediately.
 
 ### Cooperative giant encounter
 
@@ -174,6 +184,11 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   against walls and defended loops, and disappear at death. Staff attacks still reach
   from the hull edge; projectile scoring continues to use the separate animated rig.
 - During the fight its health replaces the top-center clock in the same ornate plaque.
+  The day phase settles continuously into full night during the five-second emergence
+  and stays there while the giant lives. At zero HP the sun starts rising smoothly,
+  reaching Dawn over the existing 12-second death sequence. Sky, lighting, HUD and the
+  audio fallback derive this from the same replicated timestamps; attacks, tides and
+  the Burn keep advancing normally. Ordinary and tutorial day cycles are unchanged.
   Gentle, single lightning pulses illuminate its original materials for 0.9 seconds,
   spaced 8–14 seconds apart; reveal, death and menu screens do not flash.
 - The emergence uses CGEffex’s selected T-rex roar; occasional ecfike/123agumon vocals
@@ -183,7 +198,10 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   Death retains its distinct procedural bellow. Low footstep impacts follow
   the actual standing and crouching foot-contact phases; the eye has a three-second
   charging sound, a sustained five-second firing sound, and coalesced impact explosions. Destroyed scenery
-  produces a coalesced crushing sound. Footfall and deliberate stomp cues follow the exact
+  produces a coalesced crushing sound and a brief dark dust/debris eruption per removed prop.
+  The eruption follows its grounded footprint and height, with capped size and a dedicated
+  2,048-particle pool; duplicates and late-join reconstruction do not replay it.
+  Footfall and deliberate stomp cues follow the exact
   authoritative damage-contact events. These use the existing spatial SFX,
   volume and mute controls, and do not replay old cues on late join or resume.
   Other boss cues retain horizontal direction but carry across the arena on a dedicated bus;
@@ -237,9 +255,24 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
   eating or charging. Every qualifying segment gets its own line-aligned field, so both
   sides of a corner can appear at once. Their opacity is unchanged; a 5.3 m exit distance
   prevents flicker. Departure, a broken loop
-  or boss death clears the field. The giant must consume real supporting
+  or boss death clears the field. When the giant actually breaks a loop by consuming or
+  knocking down its supporting Flags, matching colored shards burst outward from the
+  disappearing planes. This is a one-shot host fact, with no replay on late joins, no
+  burst from proximity departure, and a fixed 2,048-particle pool. The giant must consume real supporting
   boundary Flags, rather than teleporting through a defense. A small loop also prevents a
   hand from reaching across it to consume an altar.
+- Omega Pulse deals 500 damage to the giant within its unchanged 12/16/20 m
+  level-dependent radius and keeps its 75-second cooldown. A successful pulse can interrupt
+  an unconsumed grab with one second of recoil. The giant then has 20 seconds of shared
+  interrupt immunity across all casters; damage still lands during immunity. A consumed
+  target is never restored, and charging/firing the eye cannot be interrupted by the pulse.
+  Ordinary target damage and all other spell behavior are unchanged.
+- During its existing 30-second effect, Acid Cop Vision privately marks the giant's
+  chosen altar and current tactical target. Once the eye commits to an attack, it also
+  shows the dashed aim plan, separately from the actual firing ray and first impact.
+  The plan is not a guarantee of clear line of sight or future damage. It reads existing
+  authoritative intent rather than predicting random choices. The overlay disappears
+  immediately on expiry, encounter death or leaving play; existing drug drawbacks remain.
 - Losing an original altar does not eliminate a camp with another owned altar. Losing the
   final owned altar does. This rule applies in ordinary conquest and in the encounter.
 - At zero HP the giant catches fire, falls to its knees and burns away for 12 seconds. Only
@@ -278,4 +311,4 @@ Right-click your avatar to make selected workers follow. **Hold position** guard
 
 ## Gentle gameplay terrain dome
 
-The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 11 rejects older flat-terrain clients with a reload hint.
+The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 12 rejects older clients with a reload hint; terrain heights and shared giant interrupt state require the same version on every peer.

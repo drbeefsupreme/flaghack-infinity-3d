@@ -1,6 +1,7 @@
 /** In-place, reversible combat posing on the approved 109-bone deformation rig. */
 import * as THREE from 'three';
 import type { BossState } from '../../../../sim/boss';
+import { bossRecoilPoseTime } from '../../../../sim/bossRecoil';
 import { BOSS_SCALE } from './bossModel';
 import { CROUCH_WALK_DATA } from './crouchWalkData';
 import { smooth } from './revealTimeline';
@@ -81,6 +82,7 @@ export class BossCombatPose {
       // Ground-level attacks retain the native mobile crouch for their whole clip.
       // Do not resurrect a standing attack when an older snapshot has a stale flag.
       case 'swipe': case 'grab': this.clip(boss.action, t); break;
+      case 'recoil': this.clip('death:true', bossRecoilPoseTime(t)); break;
       case 'stomp': this.clip(`stomp:${boss.crouched}`, t); break;
       case 'death': case 'dead': this.clip('death:' + boss.crouched, boss.deathAt === null ? t : Math.max(0, now - boss.deathAt)); break;
       default:

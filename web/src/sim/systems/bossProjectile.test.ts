@@ -62,6 +62,7 @@ describe('real boss projectile impacts', () => {
     ['crouch', false, .025], ['rise', true, .625],
     ['swipe', false, 1.1], ['swipe', true, 2.39],
     ['grab', true, 1.35], ['grab', true, 2.8], ['grab', true, 3.79], ['grab', false, 2.8],
+    ['recoil', true, 0], ['recoil', true, .25], ['recoil', true, .8], ['recoil', true, 1],
   ] as const) {
     it(`destroys thrown Flags once and emits 100/300 fireworks at the swept impact in ${action}:${crouched} at ${age}s`, () => {
       for (const headshot of [false, true]) {

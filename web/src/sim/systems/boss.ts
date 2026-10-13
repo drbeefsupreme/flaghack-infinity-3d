@@ -1,6 +1,6 @@
 import { groundHeight } from '../terrain';
 /** Host-only giant AI, movement and once-per-action impact windows. */
-import { BOSS_DEATH_DURATION, BOSS_RADIUS, BOSS_TIMING, createBossEyeState } from '../boss';
+import { BOSS_DEATH_DURATION, BOSS_INTERRUPT_IMMUNITY, BOSS_RADIUS, BOSS_RECOIL_DURATION, BOSS_TIMING, createBossEyeState } from '../boss';
 import { BOSS_GAMEPLAY_SCALE as SIZE } from '../bossDimensions';
 import { bossFootContacts } from '../bossGait';
 import type { BossAction, BossState, BossTarget } from '../boss';
@@ -11,6 +11,7 @@ import { footprintDistance } from '../map/mapgen';
 import type { V2 } from '../math';
 import type { Building, EntityId, FactionId, Owner } from '../types';
 import type { World } from '../world';
+import { captureBossBarrierBreak, recordBossBarrierBreak } from './boss/barrierBreaks';
 import { barrierFlags, bossLoopEdges, sweepBossLoops } from './boss/barriers';
 import { registerBuildingShape } from './buildings';
 import { damageEntity } from './combat';
@@ -38,7 +39,7 @@ export function spawnBoss(world: World): BossState | null {
     hp, maxHp: hp, spawnedAt: at, action: 'emerge', crouched: false, actionAt: at,
     actionSeq: 0, hitSeq: -1, target: null, focusFaction: null, objectiveAltarId: null, routeStartStride: 0,
     nextSceneryStompStride: 0, opportunisticAfter: 0, retaliateId: null, retaliateUntil: 0,
-    nextAttackAt: at + BOSS_TIMING.emerge, deathAt: null, barrier: null, stride: 0, held: null, eye: createBossEyeState(at), lightning: [] };
+    nextAttackAt: at + BOSS_TIMING.emerge, interruptImmuneUntil: 0, deathAt: null, barrier: null, stride: 0, held: null, eye: createBossEyeState(at), lightning: [] };
   world.emit({ t: 'notify', faction: 'all', text: 'The giant has awakened. Rival camps stand together. Protect your altars and bring it down!', severity: 'epic' });
   return world.boss;
 }
@@ -63,6 +64,19 @@ function action(world: World, b: BossState, next: BossAction): void {
   if ((next === 'swipe' || next === 'grab') && !b.crouched) next = 'crouch';
   if (b.action === next) return;
   b.action = next; b.actionAt = world.time; b.actionSeq++; b.held = null;
+}
+
+/** A pulse can release a pending meal, but cannot undo a consumed target or stop the eye. */
+export function interruptBossGrab(world: World): boolean {
+  const b = world.boss;
+  if (!b || b.hp <= 0 || b.deathAt !== null || world.phase !== 'playing' || world.effigyRevealedAt === null ||
+      b.action !== 'grab' || b.hitSeq === b.actionSeq || world.time < b.interruptImmuneUntil ||
+      b.eye.chargeAt !== null || b.eye.firedAt !== null) return false;
+  b.crouched = true;
+  b.interruptImmuneUntil = world.time + BOSS_INTERRUPT_IMMUNITY;
+  b.nextAttackAt = Math.max(b.nextAttackAt, world.time + BOSS_RECOIL_DURATION);
+  action(world, b, 'recoil');
+  return true;
 }
 export function bossTargetPosition(world: World, t: BossTarget | null): V2 | null {
   if (!t) return null;
@@ -158,6 +172,12 @@ function advanceBoss(world: World, b: BossState, dt: number): void {
   }
   const age = world.time - b.actionAt + 1e-9;
   if (b.action === 'emerge') { if (age >= BOSS_TIMING.emerge) action(world, b, 'idle'); return; }
+  // A successful pulse owns exactly one second of recovery. Existing eye charge/fire
+  // cannot enter this branch through a pulse; retain its priority if state is restored.
+  if (b.action === 'recoil' && b.eye.chargeAt === null && b.eye.firedAt === null) {
+    if (age >= BOSS_RECOIL_DURATION) action(world, b, 'idle');
+    else return;
+  }
   // Eye charge/fire is an authoritative interrupt: release any unconsumed grasp,
   // settle in the current stance and stop moving until the frozen beam expires.
   if (updateBossEye(world, b, dt)) return;
@@ -307,7 +327,9 @@ function consumeTarget(world: World, b: BossState): void {
 }
 
 export function consumeFlag(world: World, id: EntityId): void {
+  const before = captureBossBarrierBreak(world, [id]);
   destroyFlag(world, id);
+  recordBossBarrierBreak(world, before);
 }
 
 export function consumeBuilding(world: World, building: Building, destroyed = false): void {

@@ -7,6 +7,6 @@ export function bossFixture(): BossState {
     target: { kind: 'building', id: 100 }, focusFaction: 2, objectiveAltarId: 100,
     routeStartStride: 5.25, nextSceneryStompStride: 21.55, opportunisticAfter: 250,
     retaliateId: 45, retaliateUntil: 251.5,
-    nextAttackAt: 248.25, deathAt: null, barrier: { edge: 4, faction: 1, x: 8.1, z: 9.2, at: 241.25 },
+    nextAttackAt: 248.25, interruptImmuneUntil: 0, deathAt: null, barrier: { edge: 4, faction: 1, x: 8.1, z: 9.2, at: 241.25 },
     stride: 15.55, held: { kind: 'flag', id: 123, faction: -1, x: 1.25, z: -8.25 }, eye: createBossEyeState(230) };
 }

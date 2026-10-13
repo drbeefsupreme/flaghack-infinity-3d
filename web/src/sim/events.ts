@@ -22,6 +22,8 @@ export type Severity = 'info' | 'good' | 'warn' | 'danger' | 'epic';
 export type GameEvent =
   /** Host-only removal fact; one sound cue per successful scenery impact batch. */
   | { t: 'sceneryCrushed'; pos: V2; count: number }
+  /** Cosmetic per-prop removal fact. Absolute ground position and full local dimensions. */
+  | { t: 'sceneryDestroyed'; sceneryId: number; pos: V3; size: V3; yaw: number }
   // Flags
   | { t: 'flagPlanted'; flagId: EntityId; node: number; faction: Owner; by: EntityId | -1; pos: V3 }
   | { t: 'flagPulled'; flagId: EntityId; node: number; faction: Owner; prevOwner: Owner; by: EntityId | -1; pos: V3 }
@@ -58,6 +60,8 @@ export type GameEvent =
   | { t: 'swing'; by: EntityId; pos: V3; yaw: number }
   | { t: 'hit'; target: EntityId; by: EntityId | -1; amount: number; pos: V3 }
   | { t: 'meleeImpact'; impactId: number; target: EntityId; by: EntityId; faction: Owner; pos: V3 }
+  /** Cosmetic live-only break fact; poses/colors are frozen before topology changes. */
+  | { t: 'bossBarrierShattered'; bossId: EntityId; breakId: number; at: number; segments: { edge: number; faction: FactionId; color: number; pos: V3; yaw: number }[] }
   | { t: 'bossImpact'; bossId: EntityId; by: EntityId; flagId: EntityId; faction: FactionId; pos: V3; headshot: boolean; amount: number }
   | { t: 'bossFootfall'; bossId: EntityId; pos: V2; heavy: boolean }
   | { t: 'ko'; id: EntityId; kind: 'avatar' | 'hippie'; faction: Owner; by: EntityId | -1; pos: V3 }

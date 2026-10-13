@@ -28,6 +28,7 @@ export type TaskKind =
   | 'repair' // repairing a damaged / disabled building
   | 'follow' // following the vexillomancer
   | 'push' // pushing the GCC
+  | 'watchBurn' // neutral audience approaching / watching the effigy
   | 'wander' // neutral drift / overstimulated
   | 'distracted' // attention ran out: off to a sound camp
   | 'flee'; // hurt worker running home

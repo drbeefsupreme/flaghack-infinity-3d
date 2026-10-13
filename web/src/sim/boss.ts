@@ -9,6 +9,10 @@ export const BOSS_FLAG_BODY_DAMAGE = 100;
 export const BOSS_FLAG_HEAD_DAMAGE = 300;
 export const BOSS_RADIUS = 2.35 * BOSS_GAMEPLAY_SCALE;
 export const BOSS_DEATH_DURATION = 12;
+/** Boss-only Omega tuning; ordinary targets keep the original pulse damage. */
+export const BOSS_OMEGA_DAMAGE = 500;
+export const BOSS_RECOIL_DURATION = 1;
+export const BOSS_INTERRUPT_IMMUNITY = 20;
 export const BOSS_EYE_TIMING = { period: 30, charge: 3, beam: 5 } as const;
 export const BOSS_EYE_BLAST_RADIUS = 5;
 export const BOSS_EYE_DAMAGE = 1000;
@@ -39,7 +43,7 @@ export function clearBossEyeCharge(boss: BossState): void {
   boss.eye.origin = null; boss.eye.direction = null; boss.eye.impact = null; boss.eye.impactTag = null;
   boss.eye.route = []; boss.eye.sample = -1; boss.eye.damaged = []; boss.eye.knockedFlags = [];
 }
-export const BOSS_ACTIONS = ['emerge', 'idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'death', 'dead'] as const;
+export const BOSS_ACTIONS = ['emerge', 'idle', 'walk', 'crouch', 'crouchWalk', 'rise', 'swipe', 'stomp', 'grab', 'recoil', 'death', 'dead'] as const;
 export type BossAction = typeof BOSS_ACTIONS[number];
 export type BossTargetKind = 'avatar' | 'hippie' | 'building' | 'piece' | 'flag';
 export interface BossTarget { kind: BossTargetKind; id: EntityId; }
@@ -71,6 +75,8 @@ export interface BossState {
   retaliateId: EntityId | null;
   retaliateUntil: number;
   nextAttackAt: number;
+  /** Shared across every attacker; damage still lands while further grab interrupts are blocked. */
+  interruptImmuneUntil: number;
   deathAt: number | null;
   barrier: BossBarrier | null;
   /** Ground-space stride distance drives in-place animation on every peer. */

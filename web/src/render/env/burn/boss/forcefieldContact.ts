@@ -1,14 +1,13 @@
 /** Presentation-only proximity to intact Ley loops, reconstructed from each peer's world. */
 import type { BossState } from '../../../../sim/boss';
-import { clamp } from '../../../../sim/math';
+import { FORCEFIELD_ENTER_DISTANCE, FORCEFIELD_EXIT_DISTANCE, projectBossForcefield } from '../../../../sim/bossForcefield';
+export { FORCEFIELD_ENTER_DISTANCE, FORCEFIELD_EXIT_DISTANCE } from '../../../../sim/bossForcefield';
 import { bossLoopEdges } from '../../../../sim/systems/boss/barriers';
 import type { FactionId } from '../../../../sim/types';
 import type { World } from '../../../../sim/world';
 
 // Distances are measured from the boss CENTER to the finite line segment (not from
 // the footprint's rim). Spatial hysteresis absorbs interpolation jitter at 5 metres.
-export const FORCEFIELD_ENTER_DISTANCE = 5;
-export const FORCEFIELD_EXIT_DISTANCE = 5.3;
 export interface BossForcefieldContact {
   bossId: number;
   edge: number;
@@ -30,15 +29,9 @@ export function bossForcefieldContacts(
     if (seen.has(ei)) continue;
     seen.add(ei);
     const edge = world.lattice.edges[ei], a = world.lattice.nodes[edge.a], b = world.lattice.nodes[edge.b];
-    const dx = b.x - a.x, dz = b.z - a.z, length2 = dx * dx + dz * dz;
-    const along = clamp(length2 > 0 ? ((boss.pos.x - a.x) * dx + (boss.pos.z - a.z) * dz) / length2 : 0, 0, 1);
-    const x = a.x + along * dx, z = a.z + along * dz;
-    const distance = Math.hypot(boss.pos.x - x, boss.pos.z - z);
+    const { x, z, yaw, distance } = projectBossForcefield(boss.pos, a, b);
     if (distance > (retained.has(ei) ? FORCEFIELD_EXIT_DISTANCE : FORCEFIELD_ENTER_DISTANCE)) continue;
-    contacts.push({ bossId: boss.id, edge: ei, faction: world.survey.edgeLey[ei] as FactionId, x, z,
-      // Align each plane with its own line. At a shared endpoint, facing the boss
-      // would collapse both corner fields onto the same plane and double brightness.
-      yaw: Math.atan2(-dz, dx) });
+    contacts.push({ bossId: boss.id, edge: ei, faction: world.survey.edgeLey[ei] as FactionId, x, z, yaw });
   }
   return contacts.sort((a, b) => a.edge - b.edge);
 }

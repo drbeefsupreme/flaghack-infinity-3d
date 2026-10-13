@@ -14,6 +14,7 @@ import { damageEntity } from '../combat';
 import { pieceBottom, pieceGroundHeight } from '../econ/pieceGeometry';
 import { dropLoose } from '../flags';
 import { destroySceneryBlast } from '../scenery';
+import { captureBossBarrierBreak, recordBossBarrierBreak } from './barrierBreaks';
 import { segmentPointDistanceSquared, sweptBodyDistanceSquared } from './blastGeometry';
 import { updateSurvey } from '../survey';
 import { brainOf, releaseTask } from '../units/brain';
@@ -157,7 +158,9 @@ export function blastBossEye(world: World, boss: BossState, at: V3, from: V3 | n
   for (const b of buildings) if (b.kind !== 'hearth' && b.hp <= BOSS_EYE_DAMAGE) {
     for (const flag of world.flags.values()) if (flag.holder === b.id) hitFlags.set(flag.id, { ...b.pos, y: groundHeight(b.pos.x, b.pos.z, world.map.half) });
   }
+  const brokenBarriers = captureBossBarrierBreak(world, hitFlags.keys(), boss);
   for (const [id, pos] of hitFlags) { dropLoose(world, id, pos); knocked.add(id); }
+  recordBossBarrierBreak(world, brokenBarriers);
   for (const projectile of [...world.projectiles.values()]) if (hitFlags.has(projectile.flagId)) world.projectiles.delete(projectile.id);
   for (const avatar of world.avatars.values()) if (avatar.action.kind === 'pull' && hitFlags.has(avatar.action.flagId)) breakChannel(world, avatar);
   for (const hippie of world.hippies.values()) {

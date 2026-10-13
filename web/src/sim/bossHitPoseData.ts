@@ -10,10 +10,11 @@
  * Timed clips use seconds since actionAt (deathAt for death); locomotion uses
  * positiveModulo(stride / phaseDistance, 1) against normalized sample.at.
  * emerge includes the approved head-back spread and .35..1.1s settle into rest.
+ * Recoil aliases only death:true at 0..0.7s via bossRecoilPoseTime; sampled geometry is unchanged.
  * Regions 0..6 score headshots. The remainder are body/coat regions.
  * Regenerate if any source changes. Sources:
  * public/models/boss/skeletal-boss.glb sha256 9758bbe1180ff8b02c0cad4385d93e3f39aeabb5710ba074a2f89546887f2e4a
- * src/render/env/burn/boss/combatPose.ts sha256 e99b5cd873f00f4859bb79d26a929bf6914232d15044f0a4d547b88cf732c887
+ * src/render/env/burn/boss/combatPose.ts sha256 8886ec0b3facba9c931eeb8eb12f129e41e2835798fe9708bc1c030039c86f64
  * src/render/env/burn/boss/revealPose.ts sha256 53ea8c1e1545ce0cd26baa7e411a2b65c4378b4a3ba319de6e4da9c8e0656e66
  * src/render/env/burn/boss/crouchWalkData.ts sha256 3fd5813a4b535cbf1abc53084c7c081ffdc12adf62655ec6b73eba4b0fa455ef
  * src/render/env/burn/boss/rearFlapPose.ts sha256 4040763afd68c55189214583496d3575246c126f804edd52833b827b381707b3

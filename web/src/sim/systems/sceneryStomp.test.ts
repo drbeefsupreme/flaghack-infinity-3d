@@ -71,12 +71,12 @@ describe('bounded stomp scenery footprint', () => {
     world.drainEvents();
     expect(crushScenery(world, { x: 0, z: 0 }, { x: 0, z: 0 }, 2.5, undefined, 5)).toBe(9);
     expect([...world.destroyedScenery]).toEqual(kinds.map((_, i) => i * 2));
-    expect(world.drainEvents()).toEqual([{ t: 'sceneryCrushed', pos: { x: 0, z: 0 }, count: 9 }]);
+    expect(world.drainEvents().filter(e => e.t === 'sceneryCrushed')).toEqual([{ t: 'sceneryCrushed', pos: { x: 0, z: 0 }, count: 9 }]);
     expect(crushScenery(world, { x: 0, z: 0 }, { x: 0, z: 0 }, 2.5, undefined, 5)).toBe(0);
     syncScenery(world);
     expect(world.drainEvents()).toEqual([]);
     expect(crushScenery(world, { x: 0, z: 0 }, { x: 0, z: 0 }, 7.36)).toBe(9);
-    expect(world.drainEvents()).toEqual([{ t: 'sceneryCrushed', pos: { x: 0, z: 0 }, count: 9 }]);
+    expect(world.drainEvents().filter(e => e.t === 'sceneryCrushed')).toEqual([{ t: 'sceneryCrushed', pos: { x: 0, z: 0 }, count: 9 }]);
   });
 
   it('emits one beam crush cue only on a new removal, replicates it live, and never replays it on late joins', () => {
@@ -89,7 +89,7 @@ describe('bounded stomp scenery footprint', () => {
     expect(destroySceneryHit(world, 0)).toBe(false);
     syncScenery(world);
     const events = world.drainEvents();
-    expect(events).toEqual([{ t: 'sceneryCrushed', pos: { x: prop.x, z: prop.z }, count: 1 }]);
+    expect(events.filter(e => e.t === 'sceneryCrushed')).toEqual([{ t: 'sceneryCrushed', pos: { x: prop.x, z: prop.z }, count: 1 }]);
     world.tick++;
     const frame = wire({ tick: world.tick, time: world.time, acks: {}, delta: encoder.delta(events), events });
     peer.push(frame); peer.catchUp();

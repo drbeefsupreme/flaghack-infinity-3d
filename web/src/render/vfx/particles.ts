@@ -427,6 +427,19 @@ export class ParticlePool {
     this.mesh.visible = this.used > 0;
   }
 
+  /** Empty a dedicated pool on reset/expiry without allocating new GPU resources. */
+  clear(): void {
+    const d = this.buf.data;
+    for (let i = 0; i < this.used; i++) {
+      d[i * this.buf.stride + 3] = -1e6;
+      d[i * this.buf.stride + 7] = 0;
+    }
+    this.buf.mark(0, this.used);
+    this.cursor = this.used = this.seedSeq = 0;
+    this.mesh.geometry.instanceCount = 0;
+    this.mesh.visible = false;
+  }
+
   dispose(): void {
     this.mesh.removeFromParent();
     this.mesh.geometry.dispose();

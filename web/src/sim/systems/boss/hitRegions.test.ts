@@ -8,8 +8,21 @@ import { BOSS_HEIGHT, BOSS_MODEL_SCALE } from '../../bossDimensions';
 import { CROUCH_WALK_DATA } from '../../../render/env/burn/boss/crouchWalkData';
 import { BOSS_WALK_STRIDE } from '../../../render/env/burn/boss/combatPose';
 import { sampleBossHitRegions } from './hitRegions';
+import { bossRecoilPoseTime } from '../../bossRecoil';
 
 describe('baked boss pose collision contract', () => {
+  it('maps the complete recoil and recovery to the exact existing crouched flinch collision samples', () => {
+    const boss = bossFixture(); boss.action = 'recoil'; boss.crouched = true;
+    for (const age of [0, .01, .1, .25, .5, .9, .999, 1, 20]) {
+      const recoil = sampleBossHitRegions(boss, boss.actionAt + age);
+      const original = { ...boss, action: 'death' as const };
+      const existing = sampleBossHitRegions(original, original.actionAt + bossRecoilPoseTime(age));
+      recoil.forEach((v, i) => expect(v).toBeCloseTo(existing[i], 10));
+      expect([...recoil].every(Number.isFinite)).toBe(true);
+      expect(bossRecoilPoseTime(age)).toBeGreaterThanOrEqual(0);
+      expect(bossRecoilPoseTime(age)).toBeLessThanOrEqual(.7);
+    }
+  });
   it('records the current model and animation source hashes', () => {
     const data = readFileSync(new URL('../../bossHitPoseData.ts', import.meta.url), 'utf8');
     const hashes = [...data.matchAll(/ \* (\S+) sha256 ([a-f0-9]{64})/g)];

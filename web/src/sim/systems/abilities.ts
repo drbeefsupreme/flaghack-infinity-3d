@@ -5,6 +5,7 @@
  * Owner: Economy agent.
  */
 import type { CommandOf } from '../commands';
+import { BOSS_OMEGA_DAMAGE } from '../boss';
 import { ABILITY, ALIGN_COST, ALIGN_RADIUS, ALIGN_TIME, BUILDINGS, MAP_HALF } from '../constants';
 import { spawnZone } from '../factory';
 import { clamp, distToSegment } from '../math';
@@ -13,6 +14,7 @@ import { FACTION_IDS } from '../types';
 import type { AbilityId, Avatar, AvatarAction, ChakraId, EntityId, FactionId, Flag, HippieOrder } from '../types';
 import type { World } from '../world';
 import { isCollapsed } from './buildings';
+import { interruptBossGrab } from './boss';
 import { bossEncounterActive } from './boss/damage';
 import { damageEntity, knockback } from './combat';
 import { wallSegment } from './econ/pieceGeometry';
@@ -357,7 +359,9 @@ function castOmega(world: World, f: FactionId, av: Avatar, level: number): V2 {
   spawnZone(world, 'omega', f, centre, radius, cfg.zoneTime, level);
   const r2 = radius * radius;
   const boss = world.boss;
-  if (boss && (boss.pos.x - cx) ** 2 + (boss.pos.z - cz) ** 2 <= r2) damageEntity(world, boss.id, cfg.damage, av.id);
+  if (boss && (boss.pos.x - cx) ** 2 + (boss.pos.z - cz) ** 2 <= r2 && damageEntity(world, boss.id, BOSS_OMEGA_DAMAGE, av.id)) {
+    interruptBossGrab(world);
+  }
   for (const h of world.hippies.values()) {
     if (h.faction === f || h.faction === -1 || h.koUntil > world.time) continue;
     if ((h.pos.x - cx) ** 2 + (h.pos.z - cz) ** 2 > r2) continue;

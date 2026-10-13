@@ -1,6 +1,7 @@
 /** Read-only encounter feedback. Every effect can be reconstructed on a late join. */
 import * as THREE from 'three';
 import type { BossState } from '../../../../sim/boss';
+import { BOSS_FORCEFIELD_WIDTH, BOSS_FORCEFIELD_HEIGHT, BOSS_FORCEFIELD_CENTER_HEIGHT } from '../../../../sim/bossForcefield';
 import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import type { EnvContext } from '../../envTypes';
 import { groundHeight } from '../../../../sim/terrain';
@@ -43,7 +44,7 @@ export class BossCombatFx {
   readonly deathAge = { value: -1 };
   private readonly geos = new Set<THREE.BufferGeometry>();
   private readonly mats = new Set<THREE.Material>();
-  private readonly shieldGeometry = new THREE.PlaneGeometry(10 * BOSS_GAMEPLAY_SCALE, 20 * BOSS_GAMEPLAY_SCALE, 1, 1);
+  private readonly shieldGeometry = new THREE.PlaneGeometry(BOSS_FORCEFIELD_WIDTH, BOSS_FORCEFIELD_HEIGHT, 1, 1);
   private readonly shieldMaterial: THREE.ShaderMaterial;
   private readonly shields = new Map<number, THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>>();
   private readonly shieldTime = { value: 0 };
@@ -177,7 +178,7 @@ export class BossCombatFx {
         this.shields.set(contact.edge, mesh); this.mats.add(material); this.group.add(mesh);
       }
       mesh.material.uniforms.uColor.value.set(world.factions[contact.faction].color);
-      mesh.position.set(contact.x - origin.x, groundHeight(contact.x, contact.z, world.map.half ?? MAP_HALF) + 7.5 * BOSS_GAMEPLAY_SCALE, contact.z - origin.z);
+      mesh.position.set(contact.x - origin.x, groundHeight(contact.x, contact.z, world.map.half ?? MAP_HALF) + BOSS_FORCEFIELD_CENTER_HEIGHT, contact.z - origin.z);
       mesh.rotation.y = contact.yaw;
     }
   }

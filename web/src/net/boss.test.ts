@@ -6,7 +6,7 @@ import { spawnFlag, spawnHippie } from '../sim/factory';
 import { SnapshotEncoder } from './codec';
 import { Motion } from './interp';
 import { NetMirror } from './mirror';
-import { encodeRow, WORLD_FIELDS } from './schema';
+import { bossFromWire, encodeRow, WORLD_FIELDS } from './schema';
 
 const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 function setup() {
@@ -40,7 +40,7 @@ describe('durable boss replication', () => {
       }
     };
     flush();
-    for (const action of ['stomp', 'crouchWalk', 'rise', 'swipe', 'death', 'dead'] as const) {
+    for (const action of ['stomp', 'crouchWalk', 'rise', 'swipe', 'recoil', 'death', 'dead'] as const) {
       host.tick++; host.time += 1;
       host.boss.action = action;
       host.boss.actionAt = host.time;
@@ -51,6 +51,7 @@ describe('durable boss replication', () => {
       host.boss.target = null;
       host.boss.objectiveAltarId = action === 'dead' ? null : 100 + host.tick;
       host.boss.routeStartStride += .15; host.boss.nextSceneryStompStride += .25; host.boss.opportunisticAfter += 1.5;
+      host.boss.interruptImmuneUntil = host.time + 20;
       host.boss.held = null;
       host.boss.barrier = null;
       host.boss.deathAt = action === 'death' || action === 'dead' ? 250 : null;
@@ -62,6 +63,20 @@ describe('durable boss replication', () => {
       }
       flush();
     }
+  });
+
+  it('rejects missing or malformed shared immunity clocks and unknown recoil actions', () => {
+    const host = setup(); host.boss = bossFixture();
+    host.boss.action = 'recoil'; host.boss.interruptImmuneUntil = 267.125;
+    const row = WORLD_FIELDS.find(f => f.key === 'boss')!.enc(host, host) as unknown[];
+    expect(bossFromWire(row as never)?.interruptImmuneUntil).toBe(267.125);
+    expect(bossFromWire(row.slice(0, 27) as never)).toBeNull();
+    for (const invalid of [null, '267125', -1, Infinity, NaN]) {
+      const invalidRow = [...row]; invalidRow[27] = invalid;
+      expect(bossFromWire(invalidRow as never)).toBeNull();
+    }
+    const invalidAction = [...row]; invalidAction[7] = 'permanentStun';
+    expect(bossFromWire(invalidAction as never)).toBeNull();
   });
 
   it('interpolates boss motion/stride and airborne height without advancing actions, damage or clocks', () => {

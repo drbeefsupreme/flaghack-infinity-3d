@@ -1,5 +1,6 @@
 /** Closed Ley loops stop the entire boss footprint, including nested and implied loops. */
 import { BOSS_RADIUS } from '../../boss';
+import type { Lattice } from '../../lattice/lattice';
 import { latticeTopology } from '../../lattice/topology';
 import { clamp, distToSegment } from '../../math';
 import type { V2 } from '../../math';
@@ -14,6 +15,13 @@ const caches = new WeakMap<World, LoopCache>();
 export function bossLoopEdges(world: World): number[] {
   const old = caches.get(world), lat = world.lattice, ley = world.survey.edgeLey;
   if (old?.survey === world.survey.version && old.topology === lat.version) return old.edges;
+  const edges = cyclicLeyEdges(lat, ley);
+  caches.set(world, { survey: world.survey.version, topology: lat.version, edges });
+  return edges;
+}
+
+/** Read-only cycle projection; also used to establish causality without advancing Survey. */
+export function cyclicLeyEdges(lat: Lattice, ley: Int8Array): number[] {
   const seen = new Int32Array(lat.nodes.length), low = new Int32Array(lat.nodes.length);
   const bridge = new Uint8Array(lat.edges.length);
   let stamp = 0;
@@ -42,9 +50,7 @@ export function bossLoopEdges(world: World): number[] {
       } else low[frame.n] = Math.min(low[frame.n], seen[next]);
     }
   }
-  const edges = lat.edges.filter(e => ley[e.id] >= 0 && !bridge[e.id]).map(e => e.id);
-  caches.set(world, { survey: world.survey.version, topology: lat.version, edges });
-  return edges;
+  return lat.edges.filter(e => ley[e.id] >= 0 && !bridge[e.id]).map(e => e.id);
 }
 
 /** Earliest exact intersection of moving point with a segment's radius-r capsule. */

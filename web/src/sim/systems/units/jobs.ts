@@ -13,7 +13,7 @@ import { canPlantAt } from '../flags';
 import { brainOf, releaseTask } from './brain';
 import type { Brain } from './brain';
 import type { UnitsState } from './state';
-import { boundaryFlags, criticalFlags, planBlockers, threatFlags } from './targets';
+import { boundaryFlags, criticalFlags, HIPPIE_REACH_Y, nearestLooseFlag, planBlockers, threatFlags } from './targets';
 
 const JOB_INDEX: Record<JobKind, number> = { survey: 0, gather: 1, defend: 2, raid: 3, ritual: 4 };
 /** Gatherers a single pile keeps busy. */
@@ -69,6 +69,9 @@ export function allocateJobs(world: World, sys: UnitsState, f: FactionId): void 
       excess--;
     }
   }
+  // Recovery-only Survey work belongs to a hand that can actually see the loose Flag.
+  const surveyPlanWork = [...fac.plan].some(node => canPlantAt(world, node, f)) ||
+    (sys.raiders[f] === 0 && planBlockers(world, sys, f).length > 0);
   // Free hippies fill the largest deficits (ties go to the heavier weight).
   for (const h of free) {
     let best = -1;
@@ -76,6 +79,7 @@ export function allocateJobs(world: World, sys: UnitsState, f: FactionId): void 
     for (let j = 0; j < JOBS.length; j++) {
       const def = target[j] - count[j];
       if (def <= 0) continue;
+      if (j === JOB_INDEX.survey && !surveyPlanWork && !nearestLooseFlag(world, sys, h, brainOf(h), f, HIPPIE_AI.fetchRadius)) continue;
       if (def > bestDef || (def === bestDef && weights[JOBS[j]] > weights[JOBS[best]])) {
         best = j;
         bestDef = def;
@@ -101,22 +105,28 @@ function measureWork(world: World, sys: UnitsState, f: FactionId, cap: Float64Ar
   let nodes = 0;
   for (const n of fac.plan) if (n >= 0 && n < lat.nodes.length && nodeFlag[n] < 0 && canPlantAt(world, n, f)) nodes++;
   let flags = sys.stockByFaction[f];
-  if (nodes > flags) {
-    const range = BUILDINGS.hearth.radius + LOOSE_FLAG_RANGE;
-    for (const fl of sys.looseFlags) {
-      if (fl.owner !== f && fl.owner !== NEUTRAL) continue;
-      for (const hid of fac.hearthIds) {
-        const hb = world.buildings.get(hid);
-        if (!hb || (hb.pos.x - fl.pos.x) ** 2 + (hb.pos.z - fl.pos.z) ** 2 > range * range) continue;
-        flags++;
-        break;
-      }
+  let recovery = 0;
+  const range = BUILDINGS.hearth.radius + LOOSE_FLAG_RANGE;
+  const hasHome = fac.hearthIds.some(id => {
+    const home = world.buildings.get(id);
+    return home?.faction === f && home.kind === 'hearth' && home.built >= 1;
+  });
+  for (const fl of sys.looseFlags) {
+    if (fl.state !== 'loose' || (fl.owner !== f && fl.owner !== NEUTRAL) ||
+        fl.pos.y - world.collision.groundHeight(fl.pos.x, fl.pos.z) > HIPPIE_REACH_Y) continue;
+    for (const hid of fac.hearthIds) {
+      const hb = world.buildings.get(hid);
+      if (!hb || hb.faction !== f || (hb.pos.x - fl.pos.x) ** 2 + (hb.pos.z - fl.pos.z) ** 2 > range * range) continue;
+      flags++;
+      break;
     }
-    for (const h of sys.active) if (h.faction === f && h.job === 'survey' && h.carryingFlag !== -1) flags++;
+    // Only offer recovery work a currently available hand can see and bring home.
+    if (hasHome && sys.pool.some(h => (h.pos.x - fl.pos.x) ** 2 + (h.pos.z - fl.pos.z) ** 2 < HIPPIE_AI.fetchRadius ** 2)) recovery++;
   }
+  for (const h of sys.active) if (h.faction === f && h.job === 'survey' && h.carryingFlag !== -1) flags++;
   // A camp without raiders keeps one Survey hand to pull Flags squatting on the plan.
   const blockers = planBlockers(world, sys, f).length;
-  cap[JOB_INDEX.survey] = Math.min(nodes, flags) + (blockers > 0 && sys.raiders[f] === 0 ? 1 : 0);
+  cap[JOB_INDEX.survey] = Math.min(nodes, flags) + recovery + (blockers > 0 && sys.raiders[f] === 0 ? 1 : 0);
 
   let piles = 0;
   for (const p of world.piles.values()) if (p.lumber > 0) piles++;

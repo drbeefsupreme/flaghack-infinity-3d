@@ -18,13 +18,13 @@ const SEPARATION = 1.0;
 const SEPARATION_GAIN = 2.4;
 /** Waypoints count as reached within this distance. */
 const WAYPOINT_REACH = 0.9;
+/** Get close to a partial endpoint before declaring a task unreachable. */
+const BLOCKED_REACH = 0.25;
 /** A routed goal must move this far (or this share of the trip) before a new route is planned. */
 const REPLAN_MIN = 1.5;
 const REPLAN_FRACTION = 0.2;
 /** A blocked route is retried after this long (walls fall, gates open). */
 const BLOCKED_RETRY = 5;
-/** A partial A* path ending farther than this from the goal means the goal is walled off. */
-const BLOCKED_GAP = 3;
 /** Slow down inside this distance of the final goal. */
 const ARRIVE_SLOW = 1.2;
 const STEER_RATE = 10;
@@ -55,13 +55,18 @@ export function moveTo(world: World, sys: UnitsState, h: Hippie, b: Brain, x: nu
   b.moving = true;
   b.goalX = x;
   b.goalZ = z;
+  b.goalRadius = arrive;
   const rx = x - b.routeX;
   const rz = z - b.routeZ;
   const replan = Math.max(REPLAN_MIN, REPLAN_FRACTION * Math.sqrt(d2));
   if (
     b.route === 'none' ||
     rx * rx + rz * rz > replan * replan ||
-    (b.route === 'blocked' && world.time - b.routeAt > BLOCKED_RETRY)
+    // A small target move can still put it across a wall. Distance-only hysteresis must
+    // not keep a now-obstructed direct route (or its final A* leg) alive indefinitely.
+    ((b.route === 'direct' || (b.route === 'path' && b.path && b.pathIdx === b.path.length - 1 && (rx !== 0 || rz !== 0))) &&
+      !world.nav.lineOfSight(h.pos.x, h.pos.z, x, z)) ||
+    (b.route === 'blocked' && (world.time - b.routeAt > BLOCKED_RETRY || rx * rx + rz * rz > BLOCKED_REACH * BLOCKED_REACH))
   ) {
     b.routeX = x;
     b.routeZ = z;
@@ -91,7 +96,7 @@ export function routeExhausted(h: Hippie, b: Brain): boolean {
   const end = path[path.length - 1];
   const dx = end.x - h.pos.x;
   const dz = end.z - h.pos.z;
-  return b.pathIdx >= path.length - 1 && dx * dx + dz * dz <= WAYPOINT_REACH * WAYPOINT_REACH * 4;
+  return b.pathIdx >= path.length - 1 && dx * dx + dz * dz <= BLOCKED_REACH * BLOCKED_REACH;
 }
 
 /** Run queued A* requests FIFO, at most HIPPIE_AI.pathBudget per tick. */
@@ -114,10 +119,32 @@ export function servicePathQueue(world: World, sys: UnitsState): void {
       continue;
     }
     b.path = path;
-    const end = path[path.length - 1];
+    let end = path[path.length - 1];
+    // A snapped endpoint is a cell centre, not the closest usable interaction point.
+    // Advance safely toward the goal within that cell before judging its reachability.
+    // This matters for Flags near blockers and for a moving cart's pushing position.
+    const gap = Math.hypot(b.routeX - end.x, b.routeZ - end.z);
+    if (gap > 1e-4) {
+      let lo = 0;
+      let hi = Math.min(1, world.nav.cell * Math.SQRT2 / gap);
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        if (world.nav.lineOfSight(end.x, end.z, end.x + (b.routeX - end.x) * mid, end.z + (b.routeZ - end.z) * mid)) lo = mid;
+        else hi = mid;
+      }
+      const refined = { x: end.x + (b.routeX - end.x) * lo, z: end.z + (b.routeZ - end.z) * lo };
+      const previous = path.length > 1 ? path[path.length - 2] : h.pos;
+      // Refinement can swing the preceding leg across an obstacle corner. Keep the old
+      // endpoint as a waypoint whenever only its short final leg is known to be safe.
+      if (world.nav.lineOfSight(previous.x, previous.z, refined.x, refined.z)) path[path.length - 1] = refined;
+      else path.push(refined);
+      end = refined;
+    }
     const gx = end.x - b.routeX;
     const gz = end.z - b.routeZ;
-    b.route = gx * gx + gz * gz > BLOCKED_GAP * BLOCKED_GAP ? 'blocked' : 'path';
+    // Snapped/partial endpoints are only usable when they reach the task's interaction
+    // radius; a fixed gap otherwise labels nearby unreachable goals as complete routes.
+    b.route = gx * gx + gz * gz > b.goalRadius * b.goalRadius ? 'blocked' : 'path';
   }
   if (sys.pathHead >= q.length) {
     q.length = 0;
@@ -155,10 +182,13 @@ export function locomote(world: World, sys: UnitsState, h: Hippie, b: Brain, dt:
         const ex = wp.x - h.pos.x;
         const ez = wp.z - h.pos.z;
         if (ex * ex + ez * ez > WAYPOINT_REACH * WAYPOINT_REACH) break;
+        const next = path[b.pathIdx + 1];
+        if (!world.nav.lineOfSight(h.pos.x, h.pos.z, next.x, next.z)) break;
         b.pathIdx++;
       }
-      // Intermediate waypoints steer; the last leg aims at the true goal unless walled off.
-      if (b.pathIdx < path.length - 1 || b.route === 'blocked') {
+      // Never discard a safe endpoint to aim inside its blocker. A live moving target may
+      // replace the last waypoint only when that last leg remains clear.
+      if (b.pathIdx < path.length - 1 || b.route === 'blocked' || !world.nav.lineOfSight(h.pos.x, h.pos.z, wx, wz)) {
         wx = path[b.pathIdx].x;
         wz = path[b.pathIdx].z;
       }

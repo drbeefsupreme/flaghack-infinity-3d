@@ -24,7 +24,7 @@ import { moveTo, routeExhausted } from './move';
 import { buildingClosest, pieceClosest, pieceSpan } from './reach';
 import type { ReachPoint, Span } from './reach';
 import type { UnitsState } from './state';
-import { atBuilding, HIPPIE_REACH_Y, nearestRivalUnit, needsRepair, rivalUnitPos, structureOwner } from './targets';
+import { atBuilding, deliveryHearth, HIPPIE_REACH_Y, nearestRivalUnit, needsRepair, rivalUnitPos, structureOwner } from './targets';
 
 const ARRIVE_NODE = 0.7;
 const ARRIVE_FLAG = 1.0;
@@ -105,7 +105,7 @@ export function act(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Facti
       actFetchStock(world, sys, h, b, f);
       return;
     case 'pickup':
-      actPickup(world, sys, h, b, dt);
+      actPickup(world, sys, h, b, f, dt);
       return;
     case 'plant':
       actPlant(world, sys, h, b, f, dt);
@@ -172,27 +172,38 @@ function actIdle(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionI
 
 function actFetchStock(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId): void {
   const hb = world.buildings.get(b.target);
-  if (!hb || hb.faction !== f) {
+  if (!hb || hb.faction !== f || hb.built < 1 || !plantTargetValid(world, sys, h, b, f)) {
     releaseTask(world, h, b);
     return;
   }
   setStatusAt(h, b, 'fetching', hb.pos.x, hb.pos.z);
   if (!atBuilding(h, hb, HIPPIE.interactReach)) {
     moveTo(world, sys, h, b, b.px, b.pz, ARRIVE_RIM);
-    if (routeExhausted(h, b)) releaseTask(world, h, b);
+    if (routeExhausted(h, b)) {
+      b.avoidBuildings.set(hb.id, world.time + AVOID_TIME);
+      releaseTask(world, h, b);
+    }
     return;
   }
   b.moving = false;
   const node = b.node;
   const fl = takeFromStock(world, hb.id, h.id);
   b.stolen = false;
+  if (fl) {
+    sys.stockByHearth.set(hb.id, Math.max(0, (sys.stockByHearth.get(hb.id) ?? 0) - 1));
+    sys.stockByFaction[f] = Math.max(0, sys.stockByFaction[f] - 1);
+  }
   if (fl && node >= 0) startPlant(world, sys, h, b, node);
   else releaseTask(world, h, b);
 }
 
-function actPickup(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: number): void {
+function actPickup(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, dt: number): void {
   const fl = world.flags.get(b.flag);
-  if (!fl || fl.state !== 'loose' || fl.pos.y - world.collision.groundHeight(fl.pos.x, fl.pos.z) > HIPPIE_REACH_Y) {
+  if (!fl || fl.state !== 'loose' || (fl.owner !== h.faction && fl.owner !== NEUTRAL) ||
+      h.carryingFlag !== -1 || sys.flagClaims.get(fl.id) !== h.id ||
+      (fl.pos.x - h.pos.x) ** 2 + (fl.pos.z - h.pos.z) ** 2 > HIPPIE_AI.fetchRadius ** 2 ||
+      (b.node >= 0 && !plantTargetValid(world, sys, h, b, f)) ||
+      fl.pos.y - world.collision.groundHeight(fl.pos.x, fl.pos.z) > HIPPIE_REACH_Y) {
     releaseTask(world, h, b);
     return;
   }
@@ -215,14 +226,21 @@ function actPickup(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: numbe
   else releaseTask(world, h, b);
 }
 
+/** The reserved planting objective is still valid while fetching or carrying its Flag. */
+function plantTargetValid(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId): boolean {
+  return canPlantAt(world, b.node, f) && sys.nodeReservations.get(b.node) === h.id &&
+    (h.order?.kind === 'plant' ? h.order.node === b.node : world.factions[f].plan.has(b.node));
+}
+
 function actPlant(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, dt: number): void {
   const ordered = h.order !== null && h.order.kind === 'plant';
   const flagId = h.carryingFlag;
   const node = b.node;
   // A job plant follows the live plan; an ordered one plants where it was told (and ends when
   // someone else fills the node).
-  if (flagId === -1 || node < 0 || world.survey.nodeFlag[node] >= 0 || (!ordered && !world.factions[f].plan.has(node))) {
-    endTask(world, h, b, ordered && node >= 0 && world.survey.nodeFlag[node] >= 0);
+  if (flagId === -1 || !plantTargetValid(world, sys, h, b, f)) {
+    // Lost cargo or a contested reservation can recover; an invalid or filled node cannot.
+    endTask(world, h, b, ordered && !canPlantAt(world, node, f));
     return;
   }
   const n = world.lattice.nodes[node];
@@ -247,7 +265,9 @@ function actPull(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionI
   const ordered = h.order !== null && (h.order.kind === 'pull' || (h.order.kind === 'attack' && h.order.target === b.flag));
   if (
     !fl ||
+    sys.flagClaims.get(fl.id) !== h.id ||
     (fl.state !== 'planted' && fl.state !== 'loose') ||
+    (fl.state === 'loose' && fl.pos.y - world.collision.groundHeight(fl.pos.x, fl.pos.z) > HIPPIE_REACH_Y) ||
     (fl.owner !== f && isFlagProtected(world, fl)) ||
     (!ordered && fl.owner === f)
   ) {
@@ -305,10 +325,14 @@ function actDeliver(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Facti
     return;
   }
   let hb = world.buildings.get(b.target);
-  if (!hb || hb.faction !== f) {
-    hb = nearestHearth(world, f, h.pos);
+  if (!hb || hb.faction !== f || hb.built < 1) {
+    hb = deliveryHearth(world, h, b, f);
     if (!hb) {
-      if (stow) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: 0, z: h.pos.z });
+      if (nearestHearth(world, f, h.pos)) {
+        releaseTask(world, h, b);
+        return;
+      }
+      if (stow) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z), z: h.pos.z });
       else h.carryingLumber = 0;
       releaseTask(world, h, b);
       return;
@@ -319,6 +343,10 @@ function actDeliver(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Facti
   setStatusAt(h, b, stow && b.stolen ? 'stealing' : 'hauling', hb.pos.x, hb.pos.z);
   if (!atBuilding(h, hb, HIPPIE.interactReach)) {
     moveTo(world, sys, h, b, b.px, b.pz, ARRIVE_RIM);
+    if (routeExhausted(h, b)) {
+      b.avoidBuildings.set(hb.id, world.time + AVOID_TIME);
+      releaseTask(world, h, b);
+    }
     return;
   }
   b.moving = false;
@@ -527,11 +555,12 @@ function actFollow(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Factio
     return;
   }
   // Loose formation behind the vexillomancer, rows of FOLLOW_ROW.
-  const k = Math.max(0, b.slot);
+  const k = Math.max(0, b.followSlot);
   const a = av.yaw + Math.PI + ((k % FOLLOW_ROW) - (FOLLOW_ROW - 1) / 2) * FOLLOW_SPREAD;
   const r = FOLLOW_RING + Math.floor(k / FOLLOW_ROW) * FOLLOW_RING_STEP;
+  const spot = world.nav.nearestWalkable(av.pos.x + Math.sin(a) * r, av.pos.z + Math.cos(a) * r);
   setStatusAt(h, b, 'following', av.pos.x, av.pos.z);
-  moveTo(world, sys, h, b, av.pos.x + Math.sin(a) * r, av.pos.z + Math.cos(a) * r, 0.8);
+  moveTo(world, sys, h, b, spot.x, spot.z, 0.8);
 }
 
 function actPush(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, dt: number): void {

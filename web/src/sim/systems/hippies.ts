@@ -98,7 +98,7 @@ function giveOrder(world: World, h: Hippie, order: HippieOrder | null): void {
 function assignFollowerSlots(world: World, avatarId: EntityId): void {
   let k = 0;
   for (const h of world.hippies.values()) {
-    if (h.order && h.order.kind === 'follow' && h.order.avatarId === avatarId) brainOf(h).slot = k++;
+    if (h.order && h.order.kind === 'follow' && h.order.avatarId === avatarId) brainOf(h).followSlot = k++;
   }
 }
 
@@ -326,7 +326,7 @@ function live(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, 
     }
   } else if (b.hurt && b.task !== 'distracted') react(world, h, b, f);
   b.hurt = false;
-  if (!overstim && needsDecision(world, b)) decide(world, sys, h, b, f);
+  if (!overstim && needsDecision(world, b, h)) decide(world, sys, h, b, f);
   act(world, sys, h, b, f, dt);
   if (h.faction === f && !overstim && b.task !== 'distracted') shove(world, sys, h, b, f);
 }

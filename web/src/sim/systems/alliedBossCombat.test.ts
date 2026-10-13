@@ -68,6 +68,21 @@ describe('allied boss combat', () => {
     }
   });
 
+  it('resumes following immediately after the leader leaves an ongoing fight', () => {
+    const { world, h, b, boss } = setup();
+    const av = world.avatarOf(0);
+    av.pos = { x: 10, y: 0, z: 60 };
+    h.order = { kind: 'follow', avatarId: av.id };
+    updateHippies(world, SIM_DT);
+    expect(b.target).toBe(boss.id);
+    av.pos.x = 60;
+    world.time += SIM_DT;
+    updateHippies(world, SIM_DT);
+    expect(b.task).toBe('follow');
+    expect(h.status).toBe('following');
+    expect(h.order).toEqual({ kind: 'follow', avatarId: av.id });
+  });
+
   it.each([null, 'march', 'saffron', 'exhausted'] as (EffectKind | null)[])(
     'uses the existing melee speed multiplier against the boss: %s', effect => {
       const { world, h, b, boss } = setup();

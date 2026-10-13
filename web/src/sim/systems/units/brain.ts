@@ -51,6 +51,9 @@ export class Brain {
   target: EntityId = -1;
   /** Enemy unit a follower is currently chasing (-1 none). */
   foe: EntityId = -1;
+  /** Formation position belongs to the standing follow order, even while interrupted. */
+  followSlot = -1;
+  /** Drum Circle slot, released with the current task. */
   slot = -1;
   /** Task anchor: patrol centre or leash origin (NaN = no leash). */
   ax = 0;
@@ -82,6 +85,8 @@ export class Brain {
   avoidNode = -1;
   avoidFlag: EntityId = -1;
   avoidUntil = 0;
+  /** Unreachable stock/delivery Hearths and the time each may be tried again. */
+  readonly avoidBuildings = new Map<EntityId, number>();
   /** Movement speed fraction requested by the task (1 = full speed). */
   pace = 1;
 
@@ -89,6 +94,7 @@ export class Brain {
   moving = false;
   goalX = 0;
   goalZ = 0;
+  goalRadius = 0;
   route: RouteState = 'none';
   /** Goal the current route was planned for, and when. */
   routeX = 0;
@@ -143,6 +149,18 @@ export function beginTask(world: World, h: Hippie, b: Brain, task: TaskKind): vo
  */
 export function releaseTask(world: World, h: Hippie, b: Brain): void {
   const sys = unitsState(world);
+  // The census seeds these counts once per tick; task transitions must release them now
+  // so later hippies in the same tick can use the newly available work/stock.
+  const counts = b.task === 'fetchStock' ? sys.fetchers
+    : b.task === 'build' || b.task === 'repair' ? sys.helpers
+    : b.task === 'chop' ? sys.choppers
+    : b.task === 'respond' ? sys.responders : null;
+  if (counts && b.target >= 0) {
+    const remaining = (counts.get(b.target) ?? 0) - 1;
+    if (remaining > 0) counts.set(b.target, remaining);
+    else counts.delete(b.target);
+  }
+  if (b.clearing && h.faction >= 0) sys.clearers[h.faction] = Math.max(0, sys.clearers[h.faction] - 1);
   if (b.node >= 0 && sys.nodeReservations.get(b.node) === h.id) sys.nodeReservations.delete(b.node);
   if (b.flag >= 0 && sys.flagClaims.get(b.flag) === h.id) sys.flagClaims.delete(b.flag);
   if (b.task === 'drum' && b.target >= 0 && b.slot >= 0) {

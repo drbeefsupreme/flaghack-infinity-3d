@@ -6,6 +6,7 @@ import { defendedPullRate } from './flags';
 import { newMatch } from './rules/testWorld';
 import { act } from './units/act';
 import { brainOf } from './units/brain';
+import { decide } from './units/decide';
 import { unitsState } from './units/state';
 
 function scenario(defense: 'ward' | 'crystal' = 'ward') {
@@ -52,8 +53,9 @@ describe('Ward lightning protecting Flags', () => {
     h.pos = { x: flag.pos.x, z: flag.pos.z };
     h.order = { kind: 'pull', flagId: flag.id };
     const b = brainOf(h);
-    b.task = 'pull';
-    b.flag = flag.id;
+    // Use the real order transition so the pull owns its shared Flag claim.
+    decide(world, unitsState(world), h, b, 0);
+    expect(unitsState(world).flagClaims.get(flag.id)).toBe(h.id);
     const step = (seconds: number) => {
       for (let i = 0; i < Math.round(seconds / SIM_DT); i++) {
         world.time += SIM_DT;

@@ -40,6 +40,8 @@ const PLANT_SNAP = 2.5;
 const SHOVE_Y = 1.2;
 /** Scatter around a shared neutral spawn. */
 const NEUTRAL_SCATTER = 3;
+/** Automatic boss combat stays local to the unit and its ordered guard/leader anchor. */
+const BOSS_AUTO_RADIUS = 22;
 
 const scratch: V2 = { x: 0, z: 0 };
 
@@ -488,17 +490,34 @@ function fightBoss(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: numbe
   const boss = world.boss;
   if (!boss || boss.hp <= 0 || h.faction < 0 || !world.factions[h.faction].alive) return false;
   const d = Math.hypot(h.pos.x - boss.pos.x, h.pos.z - boss.pos.z);
-  const ordered = h.order?.kind === 'attack' && h.order.target === boss.id;
-  const fighter = !world.factions[h.faction].isPlayer || ordered ||
-    (d < 22 && (h.job === 'defend' || h.job === 'raid' || h.order?.kind === 'follow'));
-  if (!fighter) return false;
-  if (b.task !== 'engage' || b.target !== boss.id) { releaseTask(world, h, b); b.task = 'engage'; b.target = boss.id; }
+  const order = h.order;
+  let fighter = order?.kind === 'attack' && order.target === boss.id;
+  if (!fighter && h.carryingFlag === -1 && h.carryingLumber === 0) {
+    if (order?.kind === 'follow') {
+      const av = world.avatars.get(order.avatarId);
+      fighter = !!av && av.faction === h.faction && av.koUntil <= 0 && d < BOSS_AUTO_RADIUS &&
+        Math.hypot(av.pos.x - boss.pos.x, av.pos.z - boss.pos.z) < BOSS_AUTO_RADIUS;
+    } else if (order?.kind === 'defend') {
+      fighter = d < BOSS_AUTO_RADIUS &&
+        Math.hypot(order.at.x - boss.pos.x, order.at.z - boss.pos.z) < BOSS_AUTO_RADIUS;
+    } else if (!order) {
+      fighter = !world.factions[h.faction].isPlayer ||
+        (d < BOSS_AUTO_RADIUS && (h.job === 'defend' || h.job === 'raid'));
+    }
+  }
+  // Explicit work/move orders and return trips retain priority. Followers disengage as
+  // soon as their leader leaves, rather than being dragged away by a moving boss.
+  if (!fighter) {
+    if (b.task === 'engage' && b.target === boss.id) releaseTask(world, h, b);
+    return false;
+  }
+  if (b.task !== 'engage' || b.target !== boss.id) { beginTask(world, h, b, 'engage'); b.target = boss.id; }
   h.status = 'fighting'; h.statusTarget = boss.pos;
   h.facing = Math.atan2(boss.pos.x - h.pos.x, boss.pos.z - h.pos.z);
   const reach = BOSS_RADIUS + HIPPIE.shoveReach;
   if (moveTo(world, sys, h, b, boss.pos.x, boss.pos.z, reach) && world.time >= b.nextShoveAt) {
     damageMelee(world, boss.id, HIPPIE.shoveDamage, h.id);
-    b.nextShoveAt = world.time + HIPPIE.shoveInterval;
+    b.nextShoveAt = world.time + HIPPIE.shoveInterval / Math.max(0.25, speedMultiplier(world, h));
   }
   locomote(world, sys, h, b, dt);
   return true;

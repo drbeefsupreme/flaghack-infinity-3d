@@ -6,6 +6,8 @@
  */
 import * as THREE from 'three';
 import type { EnvContext, EnvPart } from './envTypes';
+import { burnStormLevel } from './burnWeather';
+import { bossLightningLevel } from './bossLightning';
 
 const RADIUS = 950;
 
@@ -33,6 +35,8 @@ uniform float uDusk;
 uniform float uNight;
 uniform float uDaylight;
 uniform float uCloudCover;
+uniform float uStorm;
+uniform float uLightning;
 uniform sampler2D uNoise;
 varying vec3 vDir;
 
@@ -84,7 +88,7 @@ void main() {
   col += mix(vec3(1.0, 0.75, 0.45), vec3(1.0, 0.95, 0.85), uDaylight) * disc * 38.0 * sunUp;
 
   // Night: stars + Milky Way, faded near the horizon haze.
-  if (uStars > 0.001 && h > -0.02) {
+  if (uStorm < 0.999 && uStars > 0.001 && h > -0.02) {
     float horizonFade = smoothstep(0.0, 0.25, h);
     vec3 mwN = normalize(vec3(0.42, 0.35, 0.84));
     float mwBand = exp(-pow(dot(d, mwN), 2.0) * 22.0);
@@ -106,7 +110,7 @@ void main() {
   col = mix(col, vec3(2.6, 2.6, 2.4) * craters * (0.12 + 0.88 * phase), moonDisc * uNight);
 
   // Clouds on a virtual layer 420 m up, drifting with the wind.
-  if (h > 0.0 && uCloudCover > 0.0) {
+  if (uStorm < 0.999 && h > 0.0 && uCloudCover > 0.0) {
     vec2 p = uCamPos.xz + d.xz * (420.0 - uCamPos.y) / max(h, 0.035);
     vec2 uv = p / 2600.0 + vec2(uTime * 0.0016, uTime * 0.0007);
     // Rotated octaves hide the value-noise lattice; the finest one adds wispy edges.
@@ -132,6 +136,20 @@ void main() {
     col = mix(col, cloud, dens * mix(0.92, 0.75, uNight));
   }
 
+  // Continuous rolling ceiling and ragged scud; fully hides the moon and stars.
+  if (uStorm > 0.001) {
+    vec2 sp = d.xz / max(d.y + 0.24, 0.12);
+    vec2 suv = sp * 0.21 + uCamPos.xz / 3200.0 + vec2(uTime * 0.003, uTime * 0.001);
+    const mat2 SR = mat2(0.8, 0.6, -0.6, 0.8);
+    float rolls = texture2D(uNoise, suv).r * 0.62 + texture2D(uNoise, SR * suv * 2.8 + 0.27).g * 0.38;
+    float scud = texture2D(uNoise, SR * suv * 6.1 - vec2(uTime * 0.001, 0.0)).g;
+    float detail = texture2D(uNoise, suv * 13.0 + 0.53).r;
+    float relief = smoothstep(0.22, 0.75, rolls) * 0.8 + scud * 0.15 + detail * 0.05;
+    vec3 overcast = mix(vec3(0.008, 0.012, 0.021), vec3(0.055, 0.068, 0.087), relief);
+    overcast = mix(overcast, uHorizon * 0.8 + vec3(0.009, 0.013, 0.018), 1.0 - smoothstep(-0.03, 0.15, h));
+    overcast += vec3(0.05, 0.065, 0.085) * uLightning * (0.35 + relief * 0.65);
+    col = mix(col, overcast, uStorm);
+  }
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -153,6 +171,8 @@ export class SkyDome implements EnvPart {
     uNight: { value: number };
     uDaylight: { value: number };
     uCloudCover: { value: number };
+    uStorm: { value: number };
+    uLightning: { value: number };
     uNoise: { value: THREE.Texture };
   };
 
@@ -173,6 +193,8 @@ export class SkyDome implements EnvPart {
       uDaylight: { value: 1 },
       uCloudCover: { value: env.ctx.quality === 'low' ? 0.38 : 0.42 },
       uNoise: { value: env.noise },
+      uStorm: { value: 0 },
+      uLightning: { value: 0 },
     };
     this.mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -198,6 +220,8 @@ export class SkyDome implements EnvPart {
     this.mesh.position.copy(cam.position);
     this.mesh.updateMatrix();
     this.uniforms.uCamPos.value.copy(cam.position);
+    this.uniforms.uStorm.value = burnStormLevel(this.env.ctx.world, this.env.ctx.session.screen);
+    this.uniforms.uLightning.value = bossLightningLevel(this.env.ctx.world.boss, this.env.ctx.world.time);
     this.uniforms.uStars.value = day.stars;
     this.uniforms.uDusk.value = day.dusk;
     this.uniforms.uDaylight.value = day.daylight;

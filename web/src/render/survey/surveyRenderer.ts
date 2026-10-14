@@ -31,6 +31,7 @@ import { HearthFeature } from './hearthRings';
 import { ImpliedPlanFeature } from './impliedPlan';
 import { LatticeLayer } from './latticeLayer';
 import { LeyLayer } from './leyLayer';
+import { MarkedNodeLayer } from './markedNodes';
 import { ObjectiveFeature } from './objectives';
 import { PhasonFeature } from './phasonFx';
 import { SpriteLayer } from './sprites';
@@ -57,6 +58,7 @@ export class SurveyRenderer implements RenderModule {
   private readonly xray: SpriteLayer;
   private readonly aimGhosts: GhostFlagLayer;
   private readonly implied: ImpliedPlanFeature;
+  private readonly marked: MarkedNodeLayer;
   private readonly focus: FocusFeature;
   private readonly hearths: HearthFeature;
   private readonly aim: AimFeature;
@@ -88,6 +90,8 @@ export class SurveyRenderer implements RenderModule {
     this.ley = new LeyLayer(scene, d, this.u);
     this.decalMat = createDecalMaterial(this.u);
     this.implied = new ImpliedPlanFeature(scene, world, session, d, this.u, this.decalMat);
+    this.marked = new MarkedNodeLayer(world, session, d, this.u, ctx.shared.fx);
+    ctx.shared.commandOverlay = this.marked.scene;
     this.decals = new DecalLayer(scene, this.decalMat, 1024, 5);
     this.beams = new BeamLayer(scene, this.u, 512, 10);
     this.sprites = new SpriteLayer(scene, this.u, 256, 11, false, this.implied.atlas);
@@ -199,6 +203,7 @@ export class SurveyRenderer implements RenderModule {
     this.hearths.update(now, this.decals, this.beams, this.xray);
     this.aim.update(now, this.sprites, this.decals, this.beams, this.aimGhosts);
     this.implied.update();
+    this.marked.update();
     this.decals.commit();
     this.beams.commit();
     this.sprites.commit();
@@ -246,6 +251,8 @@ export class SurveyRenderer implements RenderModule {
     this.lattice.dispose();
     this.ley.dispose();
     this.implied.dispose();
+    this.marked.dispose();
+    delete this.ctx.shared.commandOverlay;
     this.decals.dispose();
     this.beams.dispose();
     this.sprites.dispose();

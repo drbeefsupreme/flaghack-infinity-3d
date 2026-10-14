@@ -5,9 +5,9 @@
  * session fields or app.submit(Command); nothing here mutates the World.
  */
 import type { PlanTool } from '../game/session';
-import { BREW_COST, BREW_TIME, BUILDINGS, GCC, RECRUIT_RADIUS, RECRUIT_INTERVAL } from '../sim/constants';
+import { BREW_COST, BREW_TIME, BUILDINGS, DRUG_MAX, GCC, RECRUIT_RADIUS, RECRUIT_INTERVAL } from '../sim/constants';
 import { BUILDING_NAMES, canPlaceBuilding, isCollapsed } from '../sim/systems/buildings';
-import { brewBlocker } from '../sim/systems/drugs';
+import { brewBlocker, dosesOwnedOrPending } from '../sim/systems/drugs';
 import { DRUGS, JOBS } from '../sim/types';
 import type { Building, DrugId, EntityId, FactionState, Hippie, JobKind } from '../sim/types';
 import type { World } from '../sim/world';
@@ -198,6 +198,8 @@ export class CommandPanels implements UiPart {
 
     // ── Deck: Drug Labs ──
     this.labPanel = this.panel(this.deck, 'Drug labs', 'labs');
+    el('div', 'panel-hint', this.labPanel,
+      `Automatically brews random drugs, favoring low stock. Each dose uses ${BREW_COST} lumber. Queued orders go first after the current batch.`);
     this.labList = el('div', 'labs', this.labPanel);
   }
 
@@ -389,10 +391,12 @@ export class CommandPanels implements UiPart {
       let status: string;
       if (!working) status = b.disabled ? 'Disabled: needs repair' : `Under construction ${Math.round(b.built * 100)}%`;
       else if (lab.brewing) status = `Brewing ${DRUG_INFO[lab.brewing].name}`;
-      else status = 'Idle: queue a brew';
+      else if (DRUGS.every(d => dosesOwnedOrPending(world, fac.id, d) >= DRUG_MAX) && lab.queue.length === 0) status = 'Shelves full or reserved';
+      else if (fac.lumber < BREW_COST) status = `Waiting for ${BREW_COST} lumber`;
+      else status = lab.queue.length > 0 ? 'Queued brew starting' : 'Automatic brew starting';
       setText(row.status, status);
       setVar(row.fill, '--p', (lab.brewing ? Math.min(1, lab.progress) : 0).toFixed(3));
-      setText(row.queue, lab.queue.length > 0 ? `Queue: ${lab.queue.map((d) => DRUG_INFO[d].name).join(', ')}` : '');
+      setText(row.queue, lab.queue.length > 0 ? `Priority queue: ${lab.queue.map((d) => DRUG_INFO[d].name).join(', ')}` : 'Automatic selection');
       for (const [drug, btn] of row.brew) {
         const blocker = brewBlocker(world, fac.id, b.id, drug);
         setClass(btn, 'blocked', blocker !== '');

@@ -488,7 +488,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
         `${BUILDINGS.ward.cost}`,
         `−${pct(1 - CAPTURE.wardMult)}% enemy pressure on your Hearths within ${WARD_RADIUS} m. Observes ${WARD_OBSERVE_RADIUS} m. Vibe-check pulse every ${WARD_PULSE_INTERVAL} s: enemy hippies within ${WARD_PULSE_RADIUS} m stunned ${WARD_PULSE_STUN} s, ${WARD_PULSE_DAMAGE} damage.`,
       ],
-      ['**Drug Lab**', `${BUILDINGS.druglab.cost}`, `Brews one dose every ${BREW_TIME} s for ${BREW_COST} lumber, up to ${DRUG_MAX} of each drug.`],
+      ['**Drug Lab**', `${BUILDINGS.druglab.cost}`, `Automatically brews random drugs, favoring low stock: one dose every ${BREW_TIME} s for ${BREW_COST} lumber, up to ${DRUG_MAX} of each drug. Queued orders go first after the current batch.`],
     ],
   },
   { kind: 'h', text: 'Pieces' },

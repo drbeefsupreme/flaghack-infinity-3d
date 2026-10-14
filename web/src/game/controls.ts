@@ -24,6 +24,7 @@ import { MAX_RANGE_PITCH, solveThrowPitch, ThrowPredictor } from './aim';
 import type { AppApi } from './app';
 import { BuildGhost } from './buildMode';
 import { CameraRig, PITCH_MAX, PITCH_MIN } from './cameraRig';
+import { effigyCameraTarget } from './effigyCamera';
 import { CommandView, pingKindAt } from './commandView';
 import { Input, LMB, MMB, RMB } from './input';
 import { Picker } from './picking';
@@ -290,7 +291,7 @@ export class Controls {
       }
       if ((s.view === 'command' || watcher || typing || this.cursorWanted(s)) && this.input.locked) this.input.exitLock();
       s.pointerLocked = this.input.locked;
-      if (s.view === 'command') this.command.controlCamera(s, dt);
+      if (s.view === 'command' && !effigyCameraTarget(world)) this.command.controlCamera(s, dt);
       else if (!watcher) this.look(s);
       if (watcher) this.spectate(world, s, dt);
     }
@@ -552,7 +553,7 @@ export class Controls {
     if (inp.wasPressed('F1')) p.help = !p.help;
     if (inp.wasPressed('KeyL')) s.showLattice = !s.showLattice;
     if (inp.wasPressed('Backquote')) s.debug = !s.debug;
-    if (inp.wasPressed('Tab')) {
+    if (inp.wasPressed('Tab') && !effigyCameraTarget(world)) {
       if (s.view === 'action') {
         const target = watcher ? this.followed(world, s) : av;
         this.enterCommand(s, target ? target.pos : null);
@@ -598,6 +599,7 @@ export class Controls {
 
   private look(s: Session): void {
     const inp = this.input;
+    if (this.app.world && effigyCameraTarget(this.app.world)) return;
     if ((!inp.locked && !inp.lockUnavailable && !inp.gamepadActive) || this.cursorWanted(s)) return;
     const k = LOOK_SPEED * s.settings.mouseSensitivity * (s.aim.active ? AIM_LOOK_SCALE : 1);
     const cam = s.camera;

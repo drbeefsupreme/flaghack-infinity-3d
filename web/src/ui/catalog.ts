@@ -217,7 +217,7 @@ export const BUILD_INFO: Record<CampBuildingKind, BuildInfo> = {
   druglab: {
     name: BUILDING_NAMES.druglab,
     cost: BUILDINGS.druglab.cost,
-    effect: `Brews one dose every ${BREW_TIME} s (${BREW_COST} lumber). Holds up to ${DRUG_MAX} doses of each drug.`,
+    effect: `Automatically brews a random drug every ${BREW_TIME} s (${BREW_COST} lumber), favoring low stock. Queued orders take priority after the current batch. Holds up to ${DRUG_MAX} doses of each drug.`,
     icon: 'druglab',
   },
 };

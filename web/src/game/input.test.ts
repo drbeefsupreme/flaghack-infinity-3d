@@ -282,3 +282,40 @@ describe('confirmed camp control handoff', () => {
     expect(session.prompt).toBeNull(); expect(session.channel).toBe(-1);
   });
 });
+
+describe('emergence look lock', () => {
+  it.each(['mouse', 'gamepad'])('discards %s look while preserving movement and restores fresh look', async device => {
+    const { normalizeMatch } = await import('../sim/matchSettings');
+    const { bossRevealTime } = await import('../sim/effigyBurn');
+    const fixture = setup(), session = new Session(), { world } = newMatch('camera-input');
+    world.options.humans = [0];
+    world.options.match = normalizeMatch({ bossMode: true, days: 0 });
+    world.suddenDeath = true;
+    world.time = bossRevealTime(world.options);
+    const submitted: any[] = [];
+    session.screen = 'playing';
+    const handlers = new Controls({ session, world, submit: (command: any) => submitted.push(structuredClone(command)) } as unknown as AppApi, fixture.input.canvas) as any;
+    handlers.world = world;
+    const input = handlers.input as Input;
+    input.locked = true;
+    fixture.listeners.get('keydown')!({ code: 'KeyW', target: null, preventDefault() {}, altKey: false, ctrlKey: false, metaKey: false, repeat: false });
+    const yaw = session.camera.yaw, pitch = session.camera.pitch;
+    for (let i = 0; i < 90; i++) {
+      if (device === 'mouse') fixture.listeners.get('mousemove')!({ movementX: 70, movementY: 60 });
+      else { fixture.pad.axes[2] = 1; fixture.pad.axes[3] = 1; input.pollGamepad(1 / 60, true, false); }
+      handlers.look(session);
+      expect(session.camera.yaw).toBe(yaw); expect(session.camera.pitch).toBe(pitch);
+      input.endFrame();
+    }
+    handlers.tick();
+    expect(Math.hypot(submitted[0].input.moveX, submitted[0].input.moveZ)).toBeGreaterThan(0);
+    fixture.pad.axes[2] = fixture.pad.axes[3] = 0;
+    world.time += 5;
+    input.pollGamepad(1 / 60, true, false);
+    handlers.look(session);
+    expect(session.camera.yaw).toBe(yaw); expect(session.camera.pitch).toBe(pitch);
+    fixture.listeners.get('mousemove')!({ movementX: 10, movementY: 0 });
+    handlers.look(session);
+    expect(session.camera.yaw).not.toBe(yaw);
+  });
+});

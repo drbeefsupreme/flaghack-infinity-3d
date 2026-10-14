@@ -10,6 +10,8 @@ import { burnStormLevel } from './burnWeather';
 import { bossLightningLevel } from './bossLightning';
 
 const RADIUS = 950;
+/** Storm sky radiance only; ordinary sky, scene lighting and rain stay unchanged. */
+export const STORM_SKY_BRIGHTNESS = 0.8;
 
 const VERT = /* glsl */ `
 varying vec3 vDir;
@@ -148,6 +150,7 @@ void main() {
     vec3 overcast = mix(vec3(0.008, 0.012, 0.021), vec3(0.055, 0.068, 0.087), relief);
     overcast = mix(overcast, uHorizon * 0.8 + vec3(0.009, 0.013, 0.018), 1.0 - smoothstep(-0.03, 0.15, h));
     overcast += vec3(0.05, 0.065, 0.085) * uLightning * (0.35 + relief * 0.65);
+    overcast *= ${STORM_SKY_BRIGHTNESS.toFixed(1)};
     col = mix(col, overcast, uStorm);
   }
   gl_FragColor = vec4(col, 1.0);

@@ -7,7 +7,7 @@ import { burnTime, endTime, normalizeMatch, UNLIMITED_DAYS } from '../../sim/mat
 import { World } from '../../sim/world';
 import { burnStormLevel } from './burnWeather';
 import { BurnRain, RAIN_COUNTS } from './rain';
-import { SkyDome } from './sky';
+import { SkyDome, STORM_SKY_BRIGHTNESS } from './sky';
 import { createDayState } from './timeOfDay';
 import type { EnvContext } from './envTypes';
 
@@ -114,7 +114,8 @@ describe('bounded weather renderer', () => {
     const env = context(fixture(0)), sky = new SkyDome(env);
     const mesh = env.root.getObjectByName('sky') as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
     sky.update(0); expect(mesh.material.uniforms.uStorm.value).toBe(1);
-    expect(mesh.material.fragmentShader).toContain('col = mix(col, overcast, uStorm)');
+    expect(STORM_SKY_BRIGHTNESS).toBe(0.8);
+    expect(mesh.material.fragmentShader).toContain('overcast *= 0.8;\n    col = mix(col, overcast, uStorm)');
     env.ctx.session.screen = 'title'; sky.update(0); expect(mesh.material.uniforms.uStorm.value).toBe(0);
     sky.dispose();
   });

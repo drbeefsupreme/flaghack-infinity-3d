@@ -17,7 +17,6 @@ import { BOSS_GAMEPLAY_SCALE } from '../../../../sim/bossDimensions';
 import { applyBossChargeMaterial, bossCharge, bossEmergence, bossFlash, smooth } from './revealTimeline';
 import { bossAwakeningLevel } from '../../../../sim/bossPresentation';
 import { applyBossAwakeningMaterial } from './awakeningMaterial';
-import { BurningCoatFx } from './burningCoatFx';
 
 /** Above noon sunlight even at the far arena edge, with finite HDR values. */
 export const BOSS_ERUPTION_LIGHT_INTENSITY = 1200;
@@ -44,7 +43,6 @@ export class BossReveal {
   private combat: BossCombatPose | null = null;
   private combatFx: BossCombatFx | null = null;
   private eyeFx: BossEyeBeamFx | null = null;
-  private coatFx: BurningCoatFx | null = null;
   private fx: RevealFx;
   private impacts: BossImpactFx;
   private depth = new THREE.MeshDepthMaterial();
@@ -76,7 +74,6 @@ export class BossReveal {
       this.combat = new BossCombatPose(model);
       this.eyeFx = new BossEyeBeamFx(model, () => this.combat?.stabilizeRearFlap());
       const combatFx = this.combatFx = new BossCombatFx(env, model);
-      this.coatFx = new BurningCoatFx(model, env.noise);
       const materials = new Set<THREE.Material>();
       model.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
@@ -96,7 +93,6 @@ export class BossReveal {
       this.root.add(model);
       this.root.add(combatFx.group);
       this.root.add(this.eyeFx.group);
-      this.root.add(this.coatFx.group);
       this.gesture = new BossRevealPose(model);
       this.pose();
       // The model is loaded at match start, long before ignition. Warm its real skinning shaders.
@@ -140,9 +136,6 @@ export class BossReveal {
     this.eyeFx?.aim(eyeBoss, world.time);
     this.eyeFx?.update(eyeBoss, world.time);
     this.combatFx?.update(this.age >= 0 ? boss : null, world.time);
-    const screen = this.env.ctx.session.screen;
-    this.coatFx?.update(boss, world.time, this.age, this.uAwakening.value,
-      this.model.visible && world.phase !== 'ended' && (screen === 'playing' || screen === 'paused'));
   }
 
   update(burnElapsed: number): void {
@@ -198,7 +191,6 @@ export class BossReveal {
     this.env.fireLight.intensity = 0;
     this.combatFx?.dispose();
     this.eyeFx?.dispose();
-    this.coatFx?.dispose();
     if (this.model) disposeBossModel(this.model);
     this.depth.dispose();
     this.fx.dispose();

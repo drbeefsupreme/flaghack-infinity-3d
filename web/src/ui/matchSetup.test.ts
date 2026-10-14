@@ -174,3 +174,22 @@ describe('surprise encounter menu privacy', () => {
     panel.dispose(); ui.dispose();
   });
 });
+
+
+describe('population and jump setup', () => {
+  it('shows editable new defaults, honors custom choices, and resets on request', () => {
+    const { ui, overlay, read } = setup();
+    const field = (label: string) => descendants(overlay).find(node => node.tagName === 'label' && node.children.some(c => c.textContent === label))!.children.find(c => c.tagName === 'input')!;
+    const jump = field('Jump height multiplier'), population = field('Maximum Signifiers (whole world)');
+    expect([jump.value, population.value]).toEqual(['3.0', '200']);
+    jump.value = '1'; jump.dispatchEvent(new Event('change'));
+    population.value = '40'; population.dispatchEvent(new Event('change'));
+    ui.update();
+    expect(read().match).toMatchObject({ jumpHeight: 1, maxSignifiers: 40 });
+    expect([jump.value, population.value]).toEqual(['1.0', '40']);
+    descendants(overlay).find(node => node.innerHTML === 'Reset defaults')!.dispatchEvent(new Event('click'));
+    ui.update();
+    expect([jump.value, population.value]).toEqual(['3.0', '200']);
+    ui.dispose();
+  });
+});

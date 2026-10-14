@@ -25,7 +25,7 @@ Advanced Game Settings opens a separate window with a scrolling body, a fixed he
 
 Home-loop Flags and the avatar's six carried Flags are unchanged by stock tuning. Lore/help text that describes the original rules retains the original default values; the live clock uses the chosen match settings.
 
-Jump height scales the jump apex (2.0 is twice the original height) for both authoritative movement and client prediction. Structure blocking reserves the corner nodes of standing camp buildings when enabled. Terrain, occupied nodes and crystals always prevent placement.
+Jump height defaults to 3.0 and scales the jump apex (3.0 is three times the original height) for both authoritative movement and client prediction. Structure blocking reserves the corner nodes of standing camp buildings when enabled. Terrain, occupied nodes and crystals always prevent placement.
 
 ## Flag stock and hoarding
 
@@ -81,7 +81,7 @@ Working Drum Circles and Geomantic Command Centers each recruit one nearby neutr
 
 Aim at an awake, empty-handed neutral within 3 metres and press Interact (E by default) to hand them a carried Flag. Throwing a Flag directly into a neutral recruits them immediately without damage. Both transfers give them the actual Flag. Rival hippies still take damage from thrown Flags; a knockout makes them neutral when they respawn.
 
-Camp capacity is a soft attention limit: 12 plus 6 per working Drum Circle, with no fixed ceiling. Flags and buildings can recruit beyond it, including beyond 40 in a camp. The newest recruits above capacity lose an additional 2 attention per second, including while idle, and cannot recover by resting at home. At zero they take the normal distraction break. Increasing capacity or losing members removes the excess penalty from hippies who now fit within capacity. The HUD shows recruited population / attention capacity, with excess count in its tooltip. The separate Maximum Signifiers setting controls the whole world's population and must be raised above its default of 40 for a match with more than 40 hippies total.
+Camp capacity is a soft attention limit: 12 plus 6 per working Drum Circle, with no fixed ceiling. Flags and buildings can recruit beyond it, including beyond 40 in a camp. The newest recruits above capacity lose an additional 2 attention per second, including while idle, and cannot recover by resting at home. At zero they take the normal distraction break. Increasing capacity or losing members removes the excess penalty from hippies who now fit within capacity. The HUD shows recruited population / attention capacity, with excess count in its tooltip. The separate Maximum Signifiers setting controls the whole world's population and defaults to 200. Both population and jump height remain editable; explicitly saved choices are preserved.
 
 ## Controls
 

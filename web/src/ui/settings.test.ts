@@ -178,3 +178,25 @@ describe('population and jump defaults', () => {
     expect(restored.match).toMatchObject({ maxSignifiers: 40, jumpHeight: 1 });
   });
 });
+
+
+describe('ten-minute day default', () => {
+  it('uses 600 seconds in fresh sessions and saves missing the day length', () => {
+    const settings = new Session().settings;
+    expect(settings.match.dayLength).toBe(600);
+    storage({ match: { days: 1 } });
+    loadSettings(settings);
+    expect(settings.match.dayLength).toBe(600);
+  });
+
+  it.each([undefined, 1, 2, 3])('preserves an explicit saved 1800-second day at version %s', matchSettingsVersion => {
+    storage({ matchSettingsVersion, match: { dayLength: 1800 } });
+    const settings = new Session().settings;
+    loadSettings(settings);
+    expect(settings.match.dayLength).toBe(1800);
+    saveSettings(settings);
+    const restored = new Session().settings;
+    loadSettings(restored);
+    expect(restored.match.dayLength).toBe(1800);
+  });
+});

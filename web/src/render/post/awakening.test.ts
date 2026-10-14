@@ -18,16 +18,16 @@ function fixture(quality: RenderContext['quality']) {
 }
 afterEach(() => vi.restoreAllMocks());
 
-describe('five-second awakening final pass', () => {
+describe('one-second awakening final pass', () => {
   it.each(['low', 'medium', 'high'] as const)('samples authority directly on %s quality and clears without history', quality => {
     const render = vi.spyOn(EffectComposer.prototype, 'render').mockImplementation(() => {});
     const { ctx, post, uniforms } = fixture(quality);
     post.render(1 / 144); expect(uniforms.uAwakening.value).toBe(1);
-    ctx.world.time = 104.7; post.render(0); expect(uniforms.uAwakening.value).toBeCloseTo(.5);
+    ctx.world.time = 100.7; post.render(0); expect(uniforms.uAwakening.value).toBeCloseTo(.5);
     // A paused replay sample holds exactly, regardless of presentation time or dt.
     ctx.session.screen = 'paused'; ctx.time = 1e4; post.render(2); expect(uniforms.uAwakening.value).toBeCloseTo(.5);
-    ctx.world.time = 105; post.render(1 / 30); expect(uniforms.uAwakening.value).toBe(0);
-    ctx.world.time = 102; post.render(0); expect(uniforms.uAwakening.value).toBe(1);
+    ctx.world.time = 101; post.render(1 / 30); expect(uniforms.uAwakening.value).toBe(0);
+    ctx.world.time = 100.2; post.render(0); expect(uniforms.uAwakening.value).toBe(1);
     for (const screen of ['title', 'lobby', 'ended'] as const) {
       ctx.session.screen = screen; post.render(0); expect(uniforms.uAwakening.value).toBe(0);
     }

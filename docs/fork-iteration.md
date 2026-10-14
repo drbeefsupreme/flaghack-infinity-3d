@@ -6,13 +6,13 @@ Begin the Survey opens the lobby for local games; joining a host opens the multi
 
 In multiplayer, the leader controls match setup. A human must leave a seat before its camp can be disabled. New arrivals take only enabled seats; other arrivals spectate. Match settings travel with the authoritative world options so clients generate the same lattice. The network protocol is version 12; all players must use the same build.
 
-Choose 0–5 days or Unlimited. A day means one complete daylight/night cycle. Default: 1 day at 1,800 seconds, preserving the original 14:00 Burn and 30:00 Dawn deadline. With multiple days, the Burn occurs at the same point in the **last** cycle. The sky repeats each cycle. Zero days begins at ignition, with the Burn sky and simulation time 0:00; the boss still reveals 90 seconds later. With boss mode off, zero days retains the full remaining Burn night before Dawn (16 minutes at the default day length, or 160 seconds with a 300-second day). Conquest can finish a competitive match earlier; a single-camp creative/solo match finishes only at its time limit. Unlimited remains a separate choice with no time limit or scheduled Burn; competitive conquest still works. Previously saved Unlimited choices are migrated without changing their meaning.
+Choose 0–5 days or Unlimited. A day means one complete daylight/night cycle. Default: 1 day at 600 seconds, with the Burn at 4:40 and Dawn deadline at 10:00. Explicit saved day lengths are preserved. With multiple days, the Burn occurs at the same point in the **last** cycle. The sky repeats each cycle. Zero days begins at ignition, with the Burn sky and simulation time 0:00; the boss still reveals 90 seconds later. With boss mode off, zero days retains the full remaining Burn night before Dawn (5 minutes 20 seconds at the default day length, or 160 seconds with a 300-second day). Conquest can finish a competitive match earlier; a single-camp creative/solo match finishes only at its time limit. Unlimited remains a separate choice with no time limit or scheduled Burn; competitive conquest still works. Previously saved Unlimited choices are migrated without changing their meaning.
 
 Advanced Game Settings opens a separate window with a scrolling body, a fixed header and footer, and Done, close, Escape and backdrop dismissal. It contains the number of days, rival difficulty, random or fixed world seed, and all configurable match parameters below. Reset defaults preserves the lobby's player-seat selection. Online guests can inspect the settings; only the leader can edit them before the match. Advanced settings are bounded and applied at match creation:
 
 | Setting | Range | Default |
 | --- | --- | --- |
-| Full day length | 300–7,200 seconds | 1,800 |
+| Full day length | 300–7,200 seconds | 600 |
 | Boss HP | 100–1,000,000 whole HP (100-HP spinner steps) | 50,000 |
 | Lattice edge spacing | 6–12 metres | 8 |
 | Starting lumber | 0–1,000 | 150 |

@@ -175,7 +175,7 @@ describe('boss reveal presentation', () => {
     const effect = new Effigy(environment, async () => new THREE.Group()); await effect.ready;
     const children = [...environment.root.children];
     at(environment, effect, 89.999); expect(light.intensity).toBeLessThan(BOSS_ERUPTION_LIGHT_INTENSITY);
-    for (const t of [90, 91, 94.4, 92]) {
+    for (const t of [90, 90.1, 90.4, 90.2]) {
       at(environment, effect, t);
       expect(light.color.toArray()).toEqual([1, 1, 1]);
       expect(light.intensity).toBeGreaterThanOrEqual(BOSS_ERUPTION_LIGHT_INTENSITY);
@@ -183,10 +183,11 @@ describe('boss reveal presentation', () => {
       expect(environment.root.getObjectByName('boss-white-burst')!.visible).toBe(true);
       expect(environment.root.getObjectByName('boss-white-burst')!.scale.toArray()).toEqual([24.5, 20, 24.5]);
     }
-    at(environment, effect, 94.7); expect(light.intensity).toBeCloseTo(BOSS_ERUPTION_LIGHT_INTENSITY * .5 + 24 * Math.exp(-4.7 * .9));
-    at(environment, effect, 95); expect(light.distance).toBe(140); expect(light.decay).toBe(1.4);
-    expect(light.intensity).toBeLessThan(1);
-    at(environment, effect, 92); environment.ctx.session.screen = 'title'; effect.update(0);
+    at(environment, effect, 90.7); expect(light.intensity).toBeCloseTo(BOSS_ERUPTION_LIGHT_INTENSITY * .5 + 24 * Math.exp(-.7 * .9));
+    at(environment, effect, 91); expect(light.distance).toBe(140); expect(light.decay).toBe(1.4);
+    expect(light.intensity).toBeCloseTo(24 * Math.exp(-.9));
+    expect(environment.root.getObjectByName('boss-white-burst')!.visible).toBe(false);
+    at(environment, effect, 90.2); environment.ctx.session.screen = 'title'; effect.update(0);
     expect(light.intensity).toBeLessThan(BOSS_ERUPTION_LIGHT_INTENSITY);
     environment.ctx.session.screen = 'playing'; at(environment, effect, 0, null);
     expect(light.distance).toBe(140); expect(light.decay).toBe(1.4);

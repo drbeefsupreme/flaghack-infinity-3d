@@ -2,7 +2,9 @@
 import { bossRevealEnabled } from './effigyBurn';
 import type { World } from './world';
 
+// Camera focus and announcement retain the full emergence choreography.
 export const BOSS_AWAKENING_SECONDS = 5;
+export const BOSS_WHITEOUT_SECONDS = 1;
 export const BOSS_AWAKENING_FADE = 0.6;
 type AwakeningWorld = Pick<World, 'time' | 'effigyRevealedAt' | 'options'> & Partial<Pick<World, 'phase'>>;
 
@@ -16,8 +18,8 @@ export function bossAwakeningAge(world: AwakeningWorld | null | undefined): numb
 /** A single sustained plateau, then a smooth recovery. Never flickers or repeats. */
 export function bossAwakeningLevel(world: AwakeningWorld | null | undefined): number {
   const age = bossAwakeningAge(world);
-  if (age === null) return 0;
-  const t = Math.max(0, (age - (BOSS_AWAKENING_SECONDS - BOSS_AWAKENING_FADE)) / BOSS_AWAKENING_FADE);
+  if (age === null || age >= BOSS_WHITEOUT_SECONDS) return 0;
+  const t = Math.max(0, (age - (BOSS_WHITEOUT_SECONDS - BOSS_AWAKENING_FADE)) / BOSS_AWAKENING_FADE);
   return 1 - t * t * (3 - 2 * t);
 }
 

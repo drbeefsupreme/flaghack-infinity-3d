@@ -21,7 +21,7 @@ export const UNLIMITED_DAYS = -1;
 export const DEFAULT_MATCH: MatchSettings = {
   active: [0, 1, 2, 3],
   days: 1,
-  dayLength: DAWN_TIME,
+  dayLength: 600,
   gridScale: 8,
   startingLumber: 150,
   startingFlags: 14,

@@ -144,7 +144,7 @@ describe('configurable matches', () => {
     updateVictory(w, 0);
     expect(w.phase).toBe('playing');
   });
-  it.each([300, 1800, 7200])('keeps the entire non-boss Burn night with a %s-second zero-day cycle', (dayLength) => {
+  it.each([300, 600, 1800, 7200])('keeps the entire non-boss Burn night with a %s-second zero-day cycle', (dayLength) => {
     const normal = options({ dayLength, bossMode: false });
     const zero = options({ active: [0], days: 0, dayLength, bossMode: false, maxSignifiers: 0 });
     expect(endTime(zero)).toBeCloseTo(endTime(normal) - burnTime(normal));
@@ -181,9 +181,12 @@ describe('configurable matches', () => {
     expect(tutorial.suddenDeath).toBe(false);
     expect(tutorial.effigyRevealedAt).toBeNull();
   });
-  it('starts the Burn only during the last night and preserves default timing', () => {
-    expect(burnTime(options())).toBe(840);
-    expect(endTime(options())).toBe(1800);
+  it('starts the Burn only during the last night and uses the ten-minute default cycle', () => {
+    expect(DEFAULT_MATCH.dayLength).toBe(600);
+    expect(normalizeMatch().dayLength).toBe(600);
+    expect(burnTime(options())).toBe(280);
+    expect(bossRevealTime(options())).toBe(370);
+    expect(endTime(options())).toBe(600);
     expect(burnTime(options({ days: 3, dayLength: 600 }))).toBe(1480);
     expect(endTime(options({ days: 3, dayLength: 600 }))).toBe(1800);
   });

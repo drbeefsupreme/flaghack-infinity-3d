@@ -22,8 +22,8 @@ import type { GameEvent } from '../sim/events';
 import type { DeltaSnapshot, FullSnapshot } from './codec';
 
 /** Bump on any incompatible change; mismatched clients are denied with a reload hint. */
-// v12: boss recoil action and shared interrupt-immunity clock are durable encounter state.
-export const PROTOCOL_VERSION = 12;
+// v13: authoritative boss camp takeover and input epochs across seat/snapshot handoffs.
+export const PROTOCOL_VERSION = 13;
 export const DEFAULT_PORT = 8787;
 export const WS_PATH = '/ws';
 /** GET → HostInfo (JSON). Only a host server answers it: the client uses it to detect online mode. */
@@ -116,8 +116,10 @@ export interface StateFrame {
 export type ClientMessage =
   /** First message. `token` (from a previous welcome) reclaims the same player/seat. */
   | { t: 'hello'; protocol: number; name: string; password: string; token: string | null }
-  /** Lobby: take a seat (null = spectate). In a running match only an AI-held, alive seat can be taken. */
+  /** Lobby/pre-boss seat selection (null = spectate). During the boss use bossTakeover instead. */
   | { t: 'seat'; seat: FactionId | null }
+  /** An eliminated human claims an unreserved surviving AI camp during the actual boss encounter. */
+  | { t: 'bossTakeover'; seat: FactionId }
   | { t: 'ready'; ready: boolean }
   /** Leader only. */
   | { t: 'settings'; settings: Partial<LobbySettings> }
@@ -128,10 +130,11 @@ export type ClientMessage =
   | { t: 'chat'; text: string }
   /**
    * One client sim tick: the avatar input for that tick plus discrete commands queued since the
-   * previous frame. `seq` increases by 1 per tick from 1 for each match. The host stamps every
-   * command's `faction` with the sender's seat; spectators' inputs are ignored.
+   * previous frame. `seq` restarts at 1 after every matchStart; inputEpoch must match that
+   * snapshot's host-issued ownership epoch. The host stamps every command's `faction` with
+   * the sender's seat; spectators' inputs and obsolete epochs are ignored.
    */
-  | { t: 'input'; seq: number; input: AvatarInput; cmds: Command[] }
+  | { t: 'input'; inputEpoch: number; seq: number; input: AvatarInput; cmds: Command[] }
   | { t: 'ping'; id: number; clientTime: number };
 
 // ── Host → client ────────────────────────────────────────────────────────────
@@ -145,7 +148,9 @@ export type ServerMessage =
    * The client rebuilds static content with createMatch(options) and overwrites every dynamic
    * field from `snapshot` (see net/mirror.ts). `seat` is this client's faction (null: spectator).
    */
-  | { t: 'matchStart'; options: MatchOptions; seat: FactionId | null; snapshot: FullSnapshot }
+  | { t: 'matchStart'; options: MatchOptions; seat: FactionId | null; inputEpoch: number; snapshot: FullSnapshot }
+  /** Successful claims take effect with the following matchStart, never by client prediction. */
+  | { t: 'bossTakeoverResult'; seat: FactionId; ok: boolean; reason: string | null }
   | { t: 'state'; frame: StateFrame }
   | { t: 'pong'; id: number; clientTime: number; serverTime: number }
   /** Host notices shown as a banner (e.g. "The host is shutting down"). */

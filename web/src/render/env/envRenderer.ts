@@ -24,6 +24,7 @@ import { AmbientParticles } from './particles';
 import { LumberPiles } from './piles/lumberPiles';
 import { PropField } from './props/propField';
 import { SkyDome } from './sky';
+import { BurnRain } from './rain';
 import { terrainHeight } from './terrain';
 import { bossAwakeningExposure, bossAwakeningLevel } from '../../sim/bossPresentation';
 import { ATTRACT_CLOCK, computeDayState, createDayState } from './timeOfDay';
@@ -82,7 +83,7 @@ export class EnvRenderer implements RenderModule {
     const ground = new Ground(env);
     this.parts = [lighting, new SkyDome(env), ground];
     if (ctx.quality === 'high') this.parts.push(new GrassField(env, ground.typeTexture));
-    this.parts.push(new PropField(env), new Effigy(env), new LumberPiles(env), new AmbientParticles(env, ground.typeTexture));
+    this.parts.push(new PropField(env), new Effigy(env), new LumberPiles(env), new AmbientParticles(env, ground.typeTexture), new BurnRain(env));
   }
 
   update(dt: number): void {

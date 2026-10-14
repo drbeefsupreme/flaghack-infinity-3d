@@ -25,7 +25,8 @@ interface Match {
 }
 
 function match(seed = 'units-suite'): Match {
-  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
+  // Keep deterministic mechanics fixtures independent of editable menu defaults.
+  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard', match: normalizeMatch({ jumpHeight: 1, maxSignifiers: 40 }) });
   // No phason tides mid-test: they would decohere Flags under the scenario.
   world.tide.nextAt = Infinity;
   return { world, sim: new Simulation(world), events: [] };
@@ -179,18 +180,18 @@ describe('vexillomancer avatar', () => {
     expect(planted.state).toBe('planted');
   });
 
-  it('scales jump apex while preserving the original launch at 1.0', () => {
+  it('triples the default jump apex while preserving explicit original and double heights', () => {
     const m = match();
     const av = m.world.avatarOf(0);
     const n = m.world.lattice.nodes[openNode(m.world, 4, { x: 0, z: 60 })];
     const peaks: number[] = [];
-    for (const jumpHeight of [1, 2]) {
+    for (const jumpHeight of [1, 2, undefined]) {
       m.world.options.match = normalizeMatch({ jumpHeight });
       placeAvatar(av, n.x, n.z);
       av.onGround = true;
       const cmd: AvatarInput = { moveX: 0, moveZ: 0, sprint: false, jump: true, yaw: 0, pitch: 0 };
       stepAvatarMotion(m.world, av, cmd, SIM_DT);
-      expect(av.vel.y).toBeCloseTo(AVATAR.jumpSpeed * Math.sqrt(jumpHeight) - AVATAR.gravity * SIM_DT);
+      expect(av.vel.y).toBeCloseTo(AVATAR.jumpSpeed * Math.sqrt(jumpHeight ?? 3) - AVATAR.gravity * SIM_DT);
       cmd.jump = false;
       let peak = av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF);
       for (let i = 0; i < 120; i++) {
@@ -201,6 +202,8 @@ describe('vexillomancer avatar', () => {
       peaks.push(peak);
     }
     expect(peaks[1] / peaks[0]).toBeCloseTo(2, 1);
+    // Discrete 60 Hz integration slightly understates the smaller reference apex.
+    expect(Math.abs(peaks[2] / peaks[0] - 3)).toBeLessThan(0.1);
   });
 
   it('runs, jumps and lands back on the ground', () => {
@@ -674,18 +677,21 @@ describe('hippies', () => {
     expect(gcc.gcc?.pushedBy).toBe(-1);
   });
 
-  it('steps 150 hippies inside the tick budget', () => {
-    const m = match('units-perf');
-    const world = m.world;
-    let n = world.hippies.size;
-    for (let i = 0; n < 150; i++, n++) {
+  it.each([150, 200])('steps %i hippies inside the tick budget', (population) => {
+    // Retain the 150-worker stress scenario and cover the fresh 200-hippie default too.
+    const world = population === 200
+      ? createMatch({ seed: 'units-perf', difficulty: 'normal', humans: [], mode: 'standard' })
+      : match('units-perf').world;
+    world.tide.nextAt = Infinity;
+    const m: Match = { world, sim: new Simulation(world), events: [] };
+    for (let i = 0, n = world.hippies.size; n < population; i++, n++) {
       const f = (i % 4) as FactionId;
       const hearth = world.hearthOf(f);
       if (!hearth) throw new Error('no hearth');
       const a = (i * 2.399) % (Math.PI * 2);
       spawnHippie(world, f, { x: hearth.pos.x + Math.sin(a) * 9, z: hearth.pos.z + Math.cos(a) * 9 });
     }
-    expect(world.hippies.size).toBe(150);
+    expect(world.hippies.size).toBe(population);
     run(m, 2);
     let total = 0;
     const ticks = 600;

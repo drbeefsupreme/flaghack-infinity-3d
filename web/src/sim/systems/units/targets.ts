@@ -28,12 +28,14 @@ const MAX_HELPERS = 2;
 const REPAIR_BELOW = 0.98;
 
 /** Nearest own Hearth whose stock is not already spoken for by hippies walking to it. */
-export function hearthWithStock(world: World, sys: UnitsState, f: FactionId, x: number, z: number): Building | null {
+export function hearthWithStock(world: World, sys: UnitsState, f: FactionId, x: number, z: number, brain?: Brain): Building | null {
+  if (brain) pruneAvoidBuildings(world, brain);
   let best: Building | null = null;
   let bestD = Infinity;
   for (const hb of world.buildings.values()) {
     if (hb.faction !== f || (hb.kind !== 'hearth' && hb.kind !== 'workshop') || hb.built < 1) continue;
     const id = hb.id;
+    if (world.time < (brain?.avoidBuildings.get(id) ?? 0)) continue;
     if ((sys.stockByHearth.get(id) ?? 0) - (sys.fetchers.get(id) ?? 0) <= 0) continue;
     const d2 = (hb.pos.x - x) * (hb.pos.x - x) + (hb.pos.z - z) * (hb.pos.z - z);
     if (d2 < bestD) {
@@ -42,6 +44,27 @@ export function hearthWithStock(world: World, sys: UnitsState, f: FactionId, x: 
     }
   }
   return best;
+}
+
+/** Nearest completed own Hearth that has not recently proved unreachable. */
+export function deliveryHearth(world: World, h: Hippie, b: Brain, f: FactionId): Building | undefined {
+  pruneAvoidBuildings(world, b);
+  let best: Building | undefined;
+  let bestD = Infinity;
+  for (const id of world.factions[f].hearthIds) {
+    const home = world.buildings.get(id);
+    if (!home || home.faction !== f || home.kind !== 'hearth' || home.built < 1 || world.time < (b.avoidBuildings.get(id) ?? 0)) continue;
+    const d2 = (home.pos.x - h.pos.x) ** 2 + (home.pos.z - h.pos.z) ** 2;
+    if (d2 < bestD) { best = home; bestD = d2; }
+  }
+  return best;
+}
+
+/** Buildings can disappear during an unlimited match; failed-route memory stays bounded. */
+function pruneAvoidBuildings(world: World, b: Brain): void {
+  for (const [id, until] of b.avoidBuildings) {
+    if (until <= world.time || world.buildings.get(id)?.faction !== b.faction) b.avoidBuildings.delete(id);
+  }
 }
 
 /** Within `reach` metres of a building's edge. */
@@ -101,7 +124,7 @@ export function criticalFlags(world: World, sys: UnitsState, f: FactionId): Enti
   let owners: Int8Array | null = null;
   for (const hid of world.factions[f].hearthIds) {
     const hb = world.buildings.get(hid);
-    if (!hb) continue;
+    if (!hb || hb.faction !== f) continue;
     const facet = hb.hearth ? hb.hearth.facet : hb.facet;
     for (const e of FACTION_IDS) {
       if (e === f || !world.inSurvey(facet, e)) continue;
@@ -125,7 +148,7 @@ export function threatFlags(world: World, sys: UnitsState, f: FactionId): Entity
   const near = sys.nodeScratch;
   for (const hid of world.factions[f].hearthIds) {
     const hb = world.buildings.get(hid);
-    if (!hb) continue;
+    if (!hb || hb.faction !== f) continue;
     near.length = 0;
     world.lattice.nodesInRadius(hb.pos.x, hb.pos.z, CAPTURE.threatRadius, near);
     for (const n of near) {
@@ -338,7 +361,7 @@ function guarded(world: World, f: FactionId, x: number, z: number): boolean {
   const r2 = HIPPIE_AI.intruderRadius * HIPPIE_AI.intruderRadius;
   for (const id of world.factions[f].hearthIds) {
     const hb = world.buildings.get(id);
-    if (hb && (hb.pos.x - x) * (hb.pos.x - x) + (hb.pos.z - z) * (hb.pos.z - z) <= r2) return true;
+    if (hb?.faction === f && (hb.pos.x - x) * (hb.pos.x - x) + (hb.pos.z - z) * (hb.pos.z - z) <= r2) return true;
   }
   return world.inSurvey(world.lattice.facetAt(x, z), f);
 }

@@ -2,10 +2,11 @@
  * D.E.G.E.N. minimap (top-right): the whole burn inside a pentagonal brass frame. Three
  * canvas layers: a base (ground, roads, water, obstacles, Ley Lattice; redrawn when the
  * Crystal turns), a Survey layer (faction facets, Ley Lines, Flags, implied Flags; redrawn when
- * survey.version changes) and a live layer drawn at <= 15 Hz (instability, plans, Crystals,
+ * survey.version changes) and a live layer drawn at <= 15 Hz (instability, Crystals,
  * Hearths with stage rings, buildings, own Signifiers coloured by status, rivals only while
  * their mesh is tapped or Acid Cop Vision runs, pings, feed flashes, player arrow and view
- * cone, Command View camera box, drug side effects). Screen up is world -z.
+ * cone, Command View camera box, drug side effects). Planned/marked nodes belong only on
+ * the main map. Screen up is world -z.
  */
 import { MAP_HALF } from '../sim/constants';
 import type { GameEvent } from '../sim/events';
@@ -476,25 +477,6 @@ export class Minimap implements UiPart {
 
     const acid = !!fac && fac.drugActive.acidcop > t;
     const sees = (r: FactionState): boolean => r.id === P || acid || (fac?.meshTap[r.id] ?? 0) > t;
-
-    // Survey plans: own always, rivals' while their mesh is visible.
-    ctx.setLineDash([2 * u, 2 * u]);
-    ctx.lineWidth = 1 * u;
-    for (const f of world.factions) {
-      if (f.plan.size === 0 || !sees(f)) continue;
-      ctx.strokeStyle = f.id === P ? 'rgba(255, 230, 120, 0.9)' : f.css;
-      ctx.beginPath();
-      for (const node of f.plan) {
-        const n = lat.nodes[node];
-        if (!n || sv.nodeFlagOwner[node] === f.id) continue;
-        const x = this.sx(n.x);
-        const y = this.sy(n.z);
-        ctx.moveTo(x + 2.4 * u, y);
-        ctx.arc(x, y, 2.4 * u, 0, Math.PI * 2);
-      }
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
 
     // Crystals: pink/blue prisms (2017 homage).
     for (const c of world.crystals.values()) {

@@ -26,7 +26,7 @@ import type { UiHost, UiLayout, UiPart } from './core';
 import { button, el, escapeHtml, fmtClock, html, kbd, setAttr, setClass, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
 import type { IconName } from './icons';
-import { takeableSeat } from './online';
+import { campChoices, canRecoverBossCamp } from './online';
 import { BossHud } from './bossHud';
 import { BossVisionHud } from './bossVisionHud';
 
@@ -325,9 +325,9 @@ export class HudPart implements UiPart {
       // Online, quitting to the title leaves the host's burn for good.
       const net = this.host.app.net;
       setText(this.spectateBtn, net ? 'Leave the burn' : 'Title');
-      let free = false;
-      for (const g of FACTION_IDS) free ||= takeableSeat(world, net?.lobby ?? null, g);
-      show(this.spectatePlay, free);
+      const recovery = canRecoverBossCamp(this.host.app, world);
+      setText(this.spectatePlay, recovery ? 'Choose a surviving camp' : 'Play a camp');
+      show(this.spectatePlay, recovery || campChoices(this.host.app, world).length > 0);
     }
   }
 

@@ -25,7 +25,7 @@ Advanced Game Settings opens a separate window with a scrolling body, a fixed he
 
 Home-loop Flags and the avatar's six carried Flags are unchanged by stock tuning. Lore/help text that describes the original rules retains the original default values; the live clock uses the chosen match settings.
 
-Jump height scales the jump apex (2.0 is twice the original height) for both authoritative movement and client prediction. Structure blocking reserves the corner nodes of standing camp buildings when enabled. Terrain, occupied nodes and crystals always prevent placement.
+Jump height defaults to 3.0 and scales the jump apex (3.0 is three times the original height) for both authoritative movement and client prediction. Structure blocking reserves the corner nodes of standing camp buildings when enabled. Terrain, occupied nodes and crystals always prevent placement.
 
 ## Flag stock and hoarding
 
@@ -81,7 +81,7 @@ Working Drum Circles and Geomantic Command Centers each recruit one nearby neutr
 
 Aim at an awake, empty-handed neutral within 3 metres and press Interact (E by default) to hand them a carried Flag. Throwing a Flag directly into a neutral recruits them immediately without damage. Both transfers give them the actual Flag. Rival hippies still take damage from thrown Flags; a knockout makes them neutral when they respawn.
 
-Camp capacity is a soft attention limit: 12 plus 6 per working Drum Circle, with no fixed ceiling. Flags and buildings can recruit beyond it, including beyond 40 in a camp. The newest recruits above capacity lose an additional 2 attention per second, including while idle, and cannot recover by resting at home. At zero they take the normal distraction break. Increasing capacity or losing members removes the excess penalty from hippies who now fit within capacity. The HUD shows recruited population / attention capacity, with excess count in its tooltip. The separate Maximum Signifiers setting controls the whole world's population and must be raised above its default of 40 for a match with more than 40 hippies total.
+Camp capacity is a soft attention limit: 12 plus 6 per working Drum Circle, with no fixed ceiling. Flags and buildings can recruit beyond it, including beyond 40 in a camp. The newest recruits above capacity lose an additional 2 attention per second, including while idle, and cannot recover by resting at home. At zero they take the normal distraction break. Increasing capacity or losing members removes the excess penalty from hippies who now fit within capacity. The HUD shows recruited population / attention capacity, with excess count in its tooltip. The separate Maximum Signifiers setting controls the whole world's population and defaults to 200. Both population and jump height remain editable; explicitly saved choices are preserved.
 
 ## Controls
 
@@ -276,9 +276,11 @@ and their Signifiers attack the giant. Priority Beacons can direct your Signifie
 - Losing an original altar does not eliminate a camp with another owned altar. Losing the
   final owned altar does. This rule applies in ordinary conquest and in the encounter.
 - At zero HP the giant catches fire, falls to its knees and burns away for 12 seconds. Only
-  then do the surviving camps win together. If every human camp is eliminated first, the
-  result is an explicit loss; an AI-only game instead waits for every active camp to fall.
-  Dawn and conquest do not end an active giant encounter.
+  then do the surviving camps win together. Losing every human camp no longer ends the
+  encounter while any active camp still has an altar. Eliminated humans can choose an
+  available surviving NPC camp and continue with its existing avatar and assets; camps
+  reserved for disconnected humans cannot be taken. The encounter is lost only when every
+  altar is gone. Dawn and conquest do not end an active giant encounter.
 
 Combat decisions, hits and outcomes run on the host's fixed simulation clock. Snapshots and
 state frames include movement, HP, action times, stance, held targets, barriers, airborne
@@ -311,4 +313,4 @@ Right-click your avatar to make selected workers follow. **Hold position** guard
 
 ## Gentle gameplay terrain dome
 
-The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 12 rejects older clients with a reload hint; terrain heights and shared giant interrupt state require the same version on every peer.
+The square arena rises smoothly to 2 metres at the central effigy base. Every point on all four playable edges stays at the original zero height. The summit and border have horizontal tangents; outside decorative hills are unchanged. Terrain elevation is shared by physics, rendering and network mirrors. Avatars, Flags, projectiles, structures, scenery, survey markings and the Boss use the same ground profile. Horizontal lattice positions and gameplay radii are unchanged. Multiplayer protocol 13 rejects older clients with a reload hint; terrain heights, shared encounter state and input ownership epochs require the same version on every peer.

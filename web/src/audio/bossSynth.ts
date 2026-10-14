@@ -1,13 +1,38 @@
 /** Original procedural boss voices; no downloaded samples or third-party audio assets. */
 import { noise, tone } from './synth';
-import { BOSS_EYE_TIMING } from '../sim/boss';
-export type BossCue = 'emerge' | 'death' | 'step' | 'stomp' | 'charge' | 'beam' | 'impact' | 'crush';
-export const BOSS_CUE_DURATION: Record<BossCue, number> = { emerge: 4.3, death: 6.2, step: 1.25, stomp: 1.8, charge: BOSS_EYE_TIMING.charge, beam: BOSS_EYE_TIMING.beam, impact: 1.8, crush: 1.3 };
+import { BOSS_EYE_TIMING, BOSS_TIMING } from '../sim/boss';
+export type BossWindupCue = 'swipeWindup' | 'stompWindup' | 'grabWindup';
+export const isBossWindupCue = (cue: string | undefined): cue is BossWindupCue => cue === 'swipeWindup' || cue === 'stompWindup' || cue === 'grabWindup';
+export type BossCue = BossWindupCue | 'emerge' | 'death' | 'step' | 'stomp' | 'charge' | 'beam' | 'impact' | 'crush';
+export const BOSS_CUE_DURATION: Record<BossCue, number> = { swipeWindup: BOSS_TIMING.swipeHit, stompWindup: BOSS_TIMING.stompHit, grabWindup: BOSS_TIMING.grasp, emerge: 4.3, death: 6.2, step: 1.25, stomp: 1.8, charge: BOSS_EYE_TIMING.charge, beam: BOSS_EYE_TIMING.beam, impact: 1.8, crush: 1.3 };
 
 /** Schedule into a caller-owned, cancellable SFX voice. Supports OfflineAudioContext for QA. */
 export function synthBoss(ctx: BaseAudioContext, out: AudioNode, pink: AudioBuffer, white: AudioBuffer,
   cue: BossCue, t: number, age = 0): void {
-  if (cue === 'emerge' || cue === 'death') {
+  if (isBossWindupCue(cue)) {
+    const duration = BOSS_CUE_DURATION[cue], remaining = Math.max(.02, duration - age);
+    const progress = Math.min(1, age / duration), attack = Math.min(.035, remaining * .2);
+    const release = Math.min(.045, remaining * .2), hold = Math.max(0, remaining - attack - release);
+    const env = { a: attack, h: hold, d: release, peak: .11, curve: 'linear' as const };
+    // A light hand rush, low planted-foot rumble, and descending wooden creak.
+    // Each is one bounded warning graph, ending at the existing contact edge.
+    if (cue === 'swipeWindup') {
+      noise(ctx, out, t, { buf: white, filter: 'bandpass', f: 420 * (1600 / 420) ** progress,
+        f2: 1600, sweep: remaining, q: .7, env });
+      tone(ctx, out, t, { type: 'triangle', f: 190 * (330 / 190) ** progress, f2: 330,
+        glide: remaining, env: { ...env, peak: .06 } });
+    } else if (cue === 'stompWindup') {
+      tone(ctx, out, t, { f: 58 * (94 / 58) ** progress, f2: 94, glide: remaining, env: { ...env, peak: .16 } });
+      tone(ctx, out, t, { type: 'triangle', f: 116 * (188 / 116) ** progress, f2: 188, glide: remaining, env: { ...env, peak: .07 } });
+      noise(ctx, out, t, { buf: pink, filter: 'lowpass', f: 160 * (380 / 160) ** progress,
+        f2: 380, sweep: remaining, env });
+    } else {
+      tone(ctx, out, t, { type: 'triangle', f: 210 * (95 / 210) ** progress, f2: 95,
+        glide: remaining, vib: 11, vibRate: 9, env: { ...env, peak: .09 } });
+      noise(ctx, out, t, { buf: pink, filter: 'bandpass', f: 720 * (220 / 720) ** progress,
+        f2: 220, sweep: remaining, q: 2, env: { ...env, peak: .12 } });
+    }
+  } else if (cue === 'emerge' || cue === 'death') {
     const dying = cue === 'death', duration = BOSS_CUE_DURATION[cue];
     // A rough subharmonic throat, two resonant vowel bands and breath. Low-pass keeps
     // the saws' edge monstrous rather than buzzy; vibrato supplies a strained animal growl.

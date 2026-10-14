@@ -133,7 +133,7 @@ const INVALID: [string, unknown][] = [
 
 /** An input frame carrying `cmds` (raw JSON). */
 function input(cmds: unknown[], seq = 1): string {
-  return JSON.stringify({ t: 'input', seq, input: INPUT, cmds });
+  return JSON.stringify({ t: 'input', inputEpoch: 1, seq, input: INPUT, cmds });
 }
 
 describe('parseCommand', () => {
@@ -143,7 +143,7 @@ describe('parseCommand', () => {
 
   it.each(VALID.map((c) => [`${c.t} ${JSON.stringify(c).slice(0, 60)}`, c] as const))('accepts %s', (_label, cmd) => {
     expect(parseCommand(JSON.parse(JSON.stringify(cmd)))).toEqual(cmd);
-    expect(parseClientMessage(input([cmd]))).toEqual({ t: 'input', seq: 1, input: INPUT, cmds: [cmd] });
+    expect(parseClientMessage(input([cmd]))).toEqual({ t: 'input', inputEpoch: 1, seq: 1, input: INPUT, cmds: [cmd] });
   });
 
   it.each(INVALID)('rejects %s', (_label, value) => {
@@ -189,6 +189,7 @@ describe('parseClientMessage', () => {
     { t: 'hello', protocol: PROTOCOL_VERSION, name: 'alice', password: '', token: 'ab12' },
     { t: 'seat', seat: 2 },
     { t: 'seat', seat: null },
+    { t: 'bossTakeover', seat: 3 },
     { t: 'ready', ready: true },
     { t: 'settings', settings: { difficulty: 'vexillosaint' } },
     { t: 'settings', settings: { seed: null } },
@@ -196,7 +197,7 @@ describe('parseClientMessage', () => {
     { t: 'start' },
     { t: 'backToLobby' },
     { t: 'chat', text: 'There ought to be flags' },
-    { t: 'input', seq: 7, input: INPUT, cmds: [] },
+    { t: 'input', inputEpoch: 1, seq: 7, input: INPUT, cmds: [] },
     { t: 'ping', id: 3, clientTime: 1234.5 },
   ];
 
@@ -219,6 +220,12 @@ describe('parseClientMessage', () => {
     ['hello fractional protocol', JSON.stringify({ t: 'hello', protocol: 1.5, name: 'a', password: 'b', token: null })],
     ['seat out of range', '{"t":"seat","seat":4}'],
     ['seat as string', '{"t":"seat","seat":"1"}'],
+    ['boss seat null', '{"t":"bossTakeover","seat":null}'],
+    ['boss seat out of range', '{"t":"bossTakeover","seat":4}'],
+    ['boss seat forged source', '{"t":"bossTakeover","seat":2,"from":0}'],
+    ['input without epoch', JSON.stringify({ t: 'input', seq: 1, input: INPUT, cmds: [] })],
+    ['input epoch zero', JSON.stringify({ t: 'input', inputEpoch: 0, seq: 1, input: INPUT, cmds: [] })],
+    ['input fractional epoch', JSON.stringify({ t: 'input', inputEpoch: 1.5, seq: 1, input: INPUT, cmds: [] })],
     ['ready as string', '{"t":"ready","ready":"true"}'],
     ['unknown setting', '{"t":"settings","settings":{"map":"desert"}}'],
     ['unknown difficulty', '{"t":"settings","settings":{"difficulty":"insane"}}'],
@@ -227,7 +234,7 @@ describe('parseClientMessage', () => {
     ['chat too long', JSON.stringify({ t: 'chat', text: 'x'.repeat(MAX_CHAT_LENGTH * 4 + 1) })],
     ['seq 0', input([], 0)],
     ['fractional seq', input([], 1.5)],
-    ['cmds not an array', JSON.stringify({ t: 'input', seq: 1, input: INPUT, cmds: {} })],
+    ['cmds not an array', JSON.stringify({ t: 'input', inputEpoch: 1, seq: 1, input: INPUT, cmds: {} })],
     ['too many cmds', input(Array.from({ length: MAX_FRAME_COMMANDS + 1 }, () => ({ t: 'swing', faction: 0 })))],
     ['one bad cmd among good ones', input([{ t: 'swing', faction: 0 }, { t: 'swing', faction: 9 }])],
     ['infinite clientTime', '{"t":"ping","id":1,"clientTime":1e999}'],

@@ -82,6 +82,25 @@ describe('top-center encounter HUD integration', () => {
     expect(regions.center.find('boss-awakening')).toBeUndefined();
   });
 
+  it('reconstructs a halfway windup from an event-free snapshot without adding a HUD row', () => {
+    const { hud, world, regions, session } = setup();
+    world.boss = bossFixture(); world.boss.action = 'stomp'; world.time = world.boss.actionAt + .5;
+    const late = NetMirror.create(world.options, JSON.parse(JSON.stringify(new SnapshotEncoder(world).full())));
+    expect(late.world.drainEvents()).toEqual([]);
+    const status = regions.topCenter.find('boss-hud-status')!;
+    hud.update(late.world, 0);
+    expect(status.textContent).toBe('STOMP · WINDUP');
+    expect(status.classList.contains('boss-hud-warning')).toBe(true);
+    session.screen = 'paused'; hud.update(late.world, 60_000);
+    expect(status.textContent).toBe('STOMP · WINDUP');
+    session.screen = 'playing'; late.world.time = late.world.boss!.actionAt + 1;
+    hud.update(late.world, 60_100);
+    expect(status.classList.contains('boss-hud-warning')).toBe(false);
+    session.screen = 'title'; hud.update(late.world, 60_200);
+    expect(status.textContent).toBe('');
+    hud.dispose();
+  });
+
   it('switches the actual HudPart timer and restores it across death, quit, and consecutive matches', () => {
     const { hud, world, session, timer, bossBar } = setup();
     const check = (boss: boolean) => {

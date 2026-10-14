@@ -1,7 +1,8 @@
 /** Large, authoritative encounter health. This never estimates damage locally. */
 import type { World } from '../sim/world';
 import { bossAwakeningAge } from '../sim/bossPresentation';
-import { el, setAttr, setText, setVar, show } from './dom';
+import { bossAttackPhase, bossAttackProgress } from '../sim/bossAttackPresentation';
+import { el, setAttr, setClass, setText, setVar, show } from './dom';
 import './bossHud.css';
 
 export class BossHud {
@@ -24,6 +25,9 @@ export class BossHud {
     bar.setAttribute('aria-valuemin', '0');
     this.fill = el('i', 'boss-hud-fill', bar);
     this.status = el('div', 'boss-hud-status', this.element);
+    this.status.setAttribute('role', 'status');
+    this.status.setAttribute('aria-live', 'polite');
+    this.status.setAttribute('aria-atomic', 'true');
     // Kept out of the queued, wall-clock banners: late joins and paused worlds must
     // see exactly the same remaining awakening window as the eruption renderer.
     this.announcement = el('div', 'boss-awakening plaque is-off', announcementParent);
@@ -47,6 +51,11 @@ export class BossHud {
     setText(this.name, active ? 'THE EFFIGY' : '');
     // Run before every early return so leaving/restarting a match cannot strand the clock.
     show(this.timer, !active);
+    const attack = active && world?.phase === 'playing' ? bossAttackPhase(boss, world.time) : null;
+    setClass(this.status, 'boss-hud-warning', attack !== null);
+    setClass(this.status, 'boss-hud-attacking', attack?.active === true);
+    setVar(this.status, '--boss-attack-progress', attack && boss && world ? String(bossAttackProgress(boss, attack, world.time)) : '0');
+    setClass(this.element, 'boss-hud-dying', active && boss?.deathAt !== null);
     if (!active || !boss) {
       setText(this.value, '');
       setText(this.status, '');
@@ -57,8 +66,7 @@ export class BossHud {
     setText(this.value, `${hp.toLocaleString()} / ${boss.maxHp.toLocaleString()}`);
     setAttr(this.fill.parentElement!, 'aria-valuemax', String(boss.maxHp));
     setAttr(this.fill.parentElement!, 'aria-valuenow', String(hp));
-    setText(this.status, boss.deathAt !== null ? 'THE EFFIGY FALLS' : boss.action === 'grab' ? 'IT FEEDS ON FLAGS AND ALTARS' : 'PROTECT YOUR ALTARS · BREAK THE EFFIGY');
-    this.element.classList.toggle('boss-hud-dying', boss.deathAt !== null);
+    setText(this.status, attack?.label ?? (boss.deathAt !== null ? 'THE EFFIGY FALLS' : boss.action === 'grab' ? 'IT FEEDS ON FLAGS AND ALTARS' : 'PROTECT YOUR ALTARS · BREAK THE EFFIGY'));
   }
 
   dispose(): void { show(this.timer, true); this.element.remove(); this.announcement.remove(); }

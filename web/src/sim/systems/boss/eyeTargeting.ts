@@ -27,6 +27,10 @@ const ORIGIN_ENVELOPE = 24 * BOSS_GAMEPLAY_SCALE;
 interface Unit { id: number; x: number; z: number; y: number; height: number; radius: number; aim: V3; threat: number; }
 const radius2 = BOSS_EYE_BLAST_RADIUS ** 2;
 function bodyInside(at: V3, x: number, z: number, y: number, top: number, radius: number): boolean {
+  // Conservative bounds only: retain the exact sphere test and its epsilon below.
+  const reach = radius + BOSS_EYE_BLAST_RADIUS + 1e-9;
+  if (Math.abs(at.x - x) > reach || Math.abs(at.z - z) > reach ||
+      at.y < y - BOSS_EYE_BLAST_RADIUS - 1e-9 || at.y > top + BOSS_EYE_BLAST_RADIUS + 1e-9) return false;
   const horizontal = Math.max(0, Math.hypot(at.x - x, at.z - z) - radius);
   const vertical = Math.max(y - at.y, 0, at.y - top);
   return horizontal ** 2 + vertical ** 2 <= radius2 + 1e-9;
@@ -56,7 +60,11 @@ function rankedBossEyeTargets(world: World, boss: BossState): RatedTarget[] {
   // Include neighborhood centers so a real group spread around a five-meter circle
   // needn't have a unit standing exactly in its middle. Score only the bodies inside.
   for (const anchor of units) {
-    const neighbors = units.filter(u => Math.hypot(u.x - anchor.x, u.z - anchor.z, u.aim.y - anchor.aim.y) <= BOSS_EYE_BLAST_RADIUS * 2);
+    const neighbors = units.filter(u =>
+      Math.abs(u.x - anchor.x) <= BOSS_EYE_BLAST_RADIUS * 2 &&
+      Math.abs(u.z - anchor.z) <= BOSS_EYE_BLAST_RADIUS * 2 &&
+      Math.abs(u.aim.y - anchor.aim.y) <= BOSS_EYE_BLAST_RADIUS * 2 &&
+      Math.hypot(u.x - anchor.x, u.z - anchor.z, u.aim.y - anchor.aim.y) <= BOSS_EYE_BLAST_RADIUS * 2);
     if (neighbors.length < BOSS_EYE_MIN_GROUP) continue;
     const point = neighbors.reduce((sum, u) => ({ x: sum.x + u.x, y: sum.y + u.aim.y, z: sum.z + u.z }), { x: 0, y: 0, z: 0 });
     point.x /= neighbors.length; point.y /= neighbors.length; point.z /= neighbors.length;

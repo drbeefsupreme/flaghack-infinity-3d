@@ -14,6 +14,7 @@
  * uniform compare.
  */
 import * as THREE from 'three';
+import { SCENE_UV_GLSL } from './uvWarp';
 
 export type GradeUniforms = {
   /** Scene colour (linear HDR); ShaderPass assigns the composer's read buffer each frame. */
@@ -257,6 +258,8 @@ vec3 parchment(vec3 s, vec2 uv, vec2 px, float ink) {
   return mix(vec3(0.05, 0.03, 0.02), clamp(col, 0.0, 1.0), smoothstep(0.004, 0.02, edge));
 }
 
+${SCENE_UV_GLSL}
+
 void main() {
   float dust = uFxA.x;
   float acid = uFxA.y;
@@ -289,12 +292,8 @@ void main() {
     float a = quasicrystal(p * 170.0, t * 1.6);
     float b = quasicrystal(mat2(0.99863, 0.05234, -0.05234, 0.99863) * p * 180.0, -t * 1.1);
     moire = clamp(a * b * 4.0, -1.0, 1.0);
-    uv += instability * 0.0025 * vec2(sin(p.y * 15.0 + t * 2.1), sin(p.x * 12.0 - t * 1.7));
   }
-  if (acid > 0.002) {
-    uv = 0.5 + (uv - 0.5) * (1.0 - 0.016 * acid * sin(t * 0.85));
-    uv += acid * 0.004 * vec2(sin(uv.y * 11.0 + t * 1.3), sin(uv.x * 9.0 - t * 1.1));
-  }
+  uv = fhSceneUv(uv, uAspect, t, acid, instability);
 
   vec3 col;
   if (acid > 0.002) {
@@ -447,8 +446,9 @@ void main() {
   // Capture / Burn flash: a quick white-out, squared so it falls off fast.
   sc = mix(sc, vec3(1.0, 0.98, 0.93), flash * flash * 0.75);
   // Recover at exactly five seconds; no pulsing and no extra pass. Apply after
-  // Command View/vignette so illuminated surfaces actually clip to white there too.
-  sc = mix(sc, vec3(1.0), awakeningWhite);
+  // Command View/vignette, at half the original whiteout strength. Keep the
+  // authoritative envelope and boss alpha exclusion intact.
+  sc = mix(sc, vec3(1.0), awakeningWhite * 0.5);
   // Triangular dither (one 8-bit step) plus faint mid-tone grain, re-rolled every frame.
   vec2 seed = gl_FragCoord.xy + fract(t * 7.123) * vec2(113.7, 71.3);
   float n = hash12(seed) + hash12(seed + 37.21) - 1.0;

@@ -1,11 +1,12 @@
 /**
  * Implied Flags and plan ghosts. Implied Flags (the implied Flag fractal) are holographic
  * yellow Flags with a halo in the implying faction's colour and a Roman order glyph (I–III).
- * Plan ghosts mark the player's Survey Pattern nodes it does not hold yet (dashed ring +
+ * In action view, plan ghosts mark the player's unheld Survey Pattern nodes (dashed ring +
  * faint ghost Flag in faction colour); rivals' plans join while the player taps their
  * D.E.G.E.N. mesh or is on Acid Cop Vision. Planned nodes still held by a rival (or orphaned)
  * real Flag are pull targets instead: a red-orange dashed ring with an X at the Flag's foot
  * and chevrons climbing off its top. Command View plan-tool previews spin brighter.
+ * Command View uses persistent post-grade dots/Xs for the player's marked plan instead.
  * Instances are anchored to nodes and rebuilt only when the inputs change.
  */
 import * as THREE from 'three';
@@ -39,6 +40,7 @@ export class ImpliedPlanFeature {
   private lastTopology = -1;
   private lastVisible = -1;
   private lastPreview = -1;
+  private lastCommand = false;
   private readonly planHash = new Float64Array(4);
   private hashAcc = 0;
   private readonly hashNode = (n: number): void => {
@@ -99,6 +101,7 @@ export class ImpliedPlanFeature {
         planChanged = true;
       }
     }
+    const command = this.session.view === 'command';
     const preview = this.session.planPreview;
     this.hashAcc = preview.length * 31;
     for (let i = 0; i < preview.length; i++) this.hashNode(preview[i]);
@@ -106,6 +109,7 @@ export class ImpliedPlanFeature {
 
     if (
       !planChanged &&
+      command === this.lastCommand &&
       visible === this.lastVisible &&
       previewHash === this.lastPreview &&
       this.data.surveyStamp === this.lastStamp &&
@@ -113,6 +117,7 @@ export class ImpliedPlanFeature {
     ) {
       return;
     }
+    this.lastCommand = command;
     this.lastVisible = visible;
     this.lastPreview = previewHash;
     this.lastStamp = this.data.surveyStamp;
@@ -142,6 +147,7 @@ export class ImpliedPlanFeature {
 
     for (let f = 0; f < 4; f++) {
       if ((visible & (1 << f)) === 0) continue;
+      if (f === this.session.playerFaction && this.session.view === 'command') continue;
       const fc = w.factions[f];
       this.color.setHex(fc.color);
       // Pull targets read red-orange in the player's plan, leaning to the planner's colour in rivals'.

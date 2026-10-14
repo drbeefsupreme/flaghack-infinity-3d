@@ -26,6 +26,7 @@ import { spawnBuilding } from '../factory';
 import type { Building, BuildingKind, EntityId, FactionId } from '../types';
 import type { World } from '../world';
 import { damageEntity } from './combat';
+import { pickAutoBrew } from './drugs';
 import { pieceBottom } from './econ/pieceGeometry';
 import { econ } from './econ/state';
 import { applyEffect } from './effects';
@@ -232,14 +233,16 @@ function pulseWard(world: World, b: Building, f: FactionId, dt: number): void {
 }
 
 /**
- * Drug Lab: start the next queued brew when lumber allows (BREW_COST is paid at the start),
- * finish after BREW_TIME (lab.progress is the 0..1 fraction done). Queued drugs whose shelf is already
- * full are dropped unpaid.
+ * Drug Lab: finish the current batch, then prioritize explicit queued orders. An empty
+ * queue automatically picks a stock-weighted random dose. Both modes pay BREW_COST at
+ * the start and finish after BREW_TIME. Full-shelf orders are dropped unpaid; automatic
+ * production also reserves room for every batch already queued or brewing in the camp.
  */
 function brew(world: World, b: Building, f: FactionId, dt: number): void {
   const lab = b.lab;
   if (!lab) return;
   const fac = world.factions[f];
+  if (!fac.alive) return;
   while (lab.brewing === null && lab.queue.length > 0) {
     const next = lab.queue[0];
     if (fac.drugs[next] >= DRUG_MAX) {
@@ -252,6 +255,14 @@ function brew(world: World, b: Building, f: FactionId, dt: number): void {
     lab.brewing = next;
     lab.progress = 0;
   }
+  if (lab.brewing === null && fac.lumber >= BREW_COST && !hasReadyBrewOrder(world, f)) {
+    const next = pickAutoBrew(world, f);
+    if (next !== null) {
+      fac.lumber -= BREW_COST;
+      lab.brewing = next;
+      lab.progress = 0;
+    }
+  }
   if (lab.brewing === null) return;
   lab.progress += dt / BREW_TIME;
   if (lab.progress < 1) return;
@@ -260,6 +271,16 @@ function brew(world: World, b: Building, f: FactionId, dt: number): void {
   lab.brewing = null;
   lab.progress = 0;
   world.emit({ t: 'brewed', faction: f, drug });
+}
+
+/** An earlier automatic lab must not spend the lumber needed by a later explicit order. */
+function hasReadyBrewOrder(world: World, f: FactionId): boolean {
+  const stock = world.factions[f].drugs;
+  for (const b of world.buildings.values()) {
+    if (b.faction !== f || b.built < 1 || b.disabled || !b.lab || b.lab.brewing !== null) continue;
+    if (b.lab.queue.some(drug => stock[drug] < DRUG_MAX)) return true;
+  }
+  return false;
 }
 
 export function updateBuildings(world: World, dt: number): void {
@@ -277,6 +298,11 @@ export function updateBuildings(world: World, dt: number): void {
     if (helped) repairBuilding(world, b, BUILDING_REPAIR_HPS * dt);
     if (b.built < 1 || b.disabled) continue;
     if (b.kind === 'ward') pulseWard(world, b, f, dt);
-    else if (b.kind === 'druglab') brew(world, b, f, dt);
+  }
+  // Settle every lab's availability before spending: an earlier automatic lab must also
+  // defer to explicit orders in a later lab that finishes repair/construction this tick.
+  for (const b of world.buildings.values()) {
+    if (b.kind !== 'druglab' || b.faction === -1 || b.built < 1 || b.disabled) continue;
+    brew(world, b, b.faction, dt);
   }
 }

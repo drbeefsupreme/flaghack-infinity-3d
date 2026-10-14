@@ -29,7 +29,7 @@ afterEach(cleanup);
 async function stream(c: Client, firstSeq: number, count: number, input: AvatarInput): Promise<number> {
   const t0 = performance.now();
   for (let i = 0; i < count; i++) {
-    c.send({ t: 'input', seq: firstSeq + i, input, cmds: [] });
+    c.send({ t: 'input', inputEpoch: c.inputEpoch, seq: firstSeq + i, input, cmds: [] });
     const wait = t0 + ((i + 1) * 1000) / 60 - performance.now();
     if (wait > 0) await sleep(wait);
   }
@@ -308,7 +308,7 @@ describe('match', () => {
     mirror.catchUp();
     const node = canPlantAt(mirror.world, target, 0) ? target : nearestPlantable(mirror, to, 0, AVATAR.plantReach - 0.3);
     expect(node).toBeGreaterThanOrEqual(0);
-    alice.c.send({ t: 'input', seq, input: STILL, cmds: [{ t: 'plant', faction: 3, node }] });
+    alice.c.send({ t: 'input', inputEpoch: alice.c.inputEpoch, seq, input: STILL, cmds: [{ t: 'plant', faction: 3, node }] });
     await until(
       () => alice.c.frames.some((f) => f.events.some((e) => e.t === 'flagPlanted' && e.node === node && e.faction === 0)),
       'the planted flag',

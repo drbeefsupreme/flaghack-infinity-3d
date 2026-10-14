@@ -24,6 +24,7 @@ import { MAX_RANGE_PITCH, solveThrowPitch, ThrowPredictor } from './aim';
 import type { AppApi } from './app';
 import { BuildGhost } from './buildMode';
 import { CameraRig, PITCH_MAX, PITCH_MIN } from './cameraRig';
+import { effigyCameraTarget } from './effigyCamera';
 import { CommandView, pingKindAt } from './commandView';
 import { Input, LMB, MMB, RMB } from './input';
 import { Picker } from './picking';
@@ -237,7 +238,7 @@ export class Controls {
     this.input = new Input(canvas);
     this.command = new CommandView(this.input, this.queue);
     const input = this.input;
-    input.capturesKey = (code) => app.session.screen === 'playing' && (GAME_KEYS[code] === true || input.owns(code));
+    input.capturesKey = (code) => app.session.screen === 'playing' && !app.session.campChoiceOpen && (GAME_KEYS[code] === true || input.owns(code));
     input.onMenuBack = ()=>{const s=app.session;if(s.panels.settings)s.panels.settings=false;else if(s.panels.codex)s.panels.codex=false;else if(s.panels.help)s.panels.help=false;else if(s.panels.chakras)s.panels.chakras=false;else if(s.screen==='paused')app.setPaused(false);};
     input.onLockLost = () => {
       const s = app.session;
@@ -282,7 +283,7 @@ export class Controls {
     if (typing) this.input.clear();
     if (inPlay && av && this.freshWorld) this.beginMatch(s, av);
 
-    if (inPlay && av) {
+    if (inPlay && av && !s.campChoiceOpen) {
       this.toggles(world, s, av, watcher);
       if (s.view !== this.view) {
         if (s.view === 'command') this.enterCommand(s, watcher ? null : av.pos);
@@ -290,13 +291,14 @@ export class Controls {
       }
       if ((s.view === 'command' || watcher || typing || this.cursorWanted(s)) && this.input.locked) this.input.exitLock();
       s.pointerLocked = this.input.locked;
-      if (s.view === 'command') this.command.controlCamera(s, dt);
+      if (s.view === 'command' && !effigyCameraTarget(world)) this.command.controlCamera(s, dt);
       else if (!watcher) this.look(s);
       if (watcher) this.spectate(world, s, dt);
     }
+    if (s.campChoiceOpen && this.input.locked) this.input.exitLock();
     this.animateBlend(s, dt);
     this.updateCamera(world, s, av, watcher, dt);
-    if (inPlay && av && !watcher && !typing) {
+    if (inPlay && av && !watcher && !typing && !s.campChoiceOpen) {
       this.pick(world, s, av);
       this.targetedKeys(s, av);
       if (s.view === 'action') this.actionFrame(world, s, av, dt);
@@ -309,7 +311,7 @@ export class Controls {
   tick(): void {
     const s = this.app.session;
     const world = this.app.world;
-    if (!world || world !== this.world || s.screen !== 'playing' || !seated(world, s)) return;
+    if (!world || world !== this.world || s.screen !== 'playing' || s.campChoiceOpen || !seated(world, s)) return;
     const av = world.avatars.get(world.factions[s.playerFaction].avatarId);
     if (!av) return;
     if (!world.factions[s.playerFaction].alive) {
@@ -355,6 +357,26 @@ export class Controls {
     for (const c of this.queue) this.app.submit(c);
     this.queue.length = 0;
     this.throwQueued = false;
+  }
+
+  /** A confirmed ownership change is a fresh input/camera boundary, even in the same world. */
+  resetForSeat(): void {
+    const world = this.app.world, s = this.app.session;
+    if (!world) return;
+    this.input.resetForSeat();
+    this.attachWorld(world, s);
+    this.ctxKind = 'none'; this.ctxNode = -1; this.ctxTarget = -1;
+    this.lastPullAt = this.lastSwingAt = this.lastThrowAt = -Infinity;
+    this.throwPitch = 0;
+    this.idle(s);
+    const avatar = world.avatars.get(world.factions[s.playerFaction].avatarId);
+    if (avatar) {
+      this.beginMatch(s, avatar);
+      s.camera.cmdX = avatar.pos.x;
+      s.camera.cmdZ = avatar.pos.z;
+    }
+    // Pointer lock can be reacquired by the next real canvas gesture, never by a server reply.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
 
   dispose(): void {
@@ -408,7 +430,7 @@ export class Controls {
 
   /** A modal wants the mouse (panels, the Training Burn's graduation): no lock, no auto-pause. */
   private cursorWanted(s: Session): boolean {
-    return panelOpen(s) || this.app.tutorial?.state.phase === 'graduated';
+    return s.campChoiceOpen || panelOpen(s) || this.app.tutorial?.state.phase === 'graduated';
   }
 
   /**
@@ -531,7 +553,7 @@ export class Controls {
     if (inp.wasPressed('F1')) p.help = !p.help;
     if (inp.wasPressed('KeyL')) s.showLattice = !s.showLattice;
     if (inp.wasPressed('Backquote')) s.debug = !s.debug;
-    if (inp.wasPressed('Tab')) {
+    if (inp.wasPressed('Tab') && !effigyCameraTarget(world)) {
       if (s.view === 'action') {
         const target = watcher ? this.followed(world, s) : av;
         this.enterCommand(s, target ? target.pos : null);
@@ -577,6 +599,7 @@ export class Controls {
 
   private look(s: Session): void {
     const inp = this.input;
+    if (this.app.world && effigyCameraTarget(this.app.world)) return;
     if ((!inp.locked && !inp.lockUnavailable && !inp.gamepadActive) || this.cursorWanted(s)) return;
     const k = LOOK_SPEED * s.settings.mouseSensitivity * (s.aim.active ? AIM_LOOK_SCALE : 1);
     const cam = s.camera;

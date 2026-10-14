@@ -3,6 +3,8 @@ import type { MatchOptions } from './types';
 
 /** Boss reveal begins exactly this many simulation seconds after The Burn. */
 export const EFFIGY_BOSS_REVEAL_AT = 90;
+/** Shared rise duration for the model and local camera focus. */
+export const EFFIGY_BOSS_RISE_SECONDS = 5;
 
 /** Title/attract worlds explicitly opt out with bossMode:false; AI-only matches still work. */
 export function bossRevealEnabled(options: MatchOptions): boolean {

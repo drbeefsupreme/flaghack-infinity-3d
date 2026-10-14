@@ -156,3 +156,25 @@ describe('retired encounter settings migration', () => {
     expect(settings.match).toMatchObject({ days, bossMode: true, bossHp: 50000 });
   });
 });
+
+
+describe('population and jump defaults', () => {
+  it('uses the new defaults for fresh sessions and missing saved fields', () => {
+    const settings = new Session().settings;
+    expect(settings.match).toMatchObject({ maxSignifiers: 200, jumpHeight: 3 });
+    storage({ match: { dayLength: 600 } });
+    loadSettings(settings);
+    expect(settings.match).toMatchObject({ maxSignifiers: 200, jumpHeight: 3, dayLength: 600 });
+  });
+
+  it.each([undefined, 1, 2, 3])('preserves explicitly saved old defaults at settings version %s', (matchSettingsVersion) => {
+    storage({ matchSettingsVersion, match: { maxSignifiers: 40, jumpHeight: 1 } });
+    const settings = new Session().settings;
+    loadSettings(settings);
+    expect(settings.match).toMatchObject({ maxSignifiers: 40, jumpHeight: 1 });
+    saveSettings(settings);
+    const restored = new Session().settings;
+    loadSettings(restored);
+    expect(restored.match).toMatchObject({ maxSignifiers: 40, jumpHeight: 1 });
+  });
+});

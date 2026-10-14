@@ -54,6 +54,8 @@ const SLOW_LOG_EVERY_MS = 10_000;
 const STATS_EVERY_MS = 60_000;
 
 export interface MatchListener {
+  /** Commit validated control handoffs after this tick, before its authoritative snapshot. */
+  beforeFrame?(): void;
   /** A state frame is serialized: send it to every client in the match, then admit joiners. */
   frame(text: string): void;
   /** world.phase just became 'ended'. */
@@ -66,6 +68,7 @@ export interface MatchListener {
 
 interface HumanSeat {
   playerId: string;
+  inputEpoch: number;
   queue: InputMessage[];
   /** Re-submitted each tick (the sim copies the input it is given). */
   inputCmd: CommandOf<'avatarInput'>;
@@ -137,12 +140,13 @@ export class Match {
    * taking the seat). Any NPC lets go; the input queue and ack restart with the client's new
    * sequence, and the avatar stands still until the first frame arrives.
    */
-  driveHuman(f: FactionId, playerId: string): void {
+  driveHuman(f: FactionId, playerId: string, inputEpoch: number): void {
     this.npc[f] = null;
     const prev = this.human[f];
     if (prev) delete this.acks[prev.playerId];
     this.human[f] = {
       playerId,
+      inputEpoch,
       queue: [],
       inputCmd: { t: 'avatarInput', faction: f, input: this.stillInput(f) },
       lastQueuedSeq: 0,
@@ -173,7 +177,7 @@ export class Match {
   /** Queue one input frame for a human seat; false when refused (stale seq, not this player's seat, overflow). */
   pushInput(f: FactionId, playerId: string, msg: InputMessage): boolean {
     const seat = this.human[f];
-    if (!seat || seat.playerId !== playerId) return false;
+    if (!seat || seat.playerId !== playerId || msg.inputEpoch !== seat.inputEpoch) return false;
     if (msg.seq <= seat.lastQueuedSeq || (seat.lastQueuedSeq === 0 && msg.seq > FRESH_SEQ_LIMIT)) return false;
     if (seat.queue.length >= MAX_QUEUE) return false;
     seat.lastQueuedSeq = msg.seq;
@@ -312,6 +316,7 @@ export class Match {
     let text: string;
     try {
       const w = this.world;
+      this.listener.beforeFrame?.();
       const events = w.drainEvents();
       const delta = this.encoder.delta(events);
       const msg: ServerMessage = { t: 'state', frame: { tick: w.tick, time: w.time, acks: this.acks, delta, events } };

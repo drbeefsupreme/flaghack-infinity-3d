@@ -30,8 +30,12 @@ export interface NetSession {
   readonly reconnecting: boolean;
   /** Host notices ("The host is shutting down"), newest last. */
   readonly notices: readonly string[];
+  /** Requested camp while waiting for the authoritative handoff snapshot. */
+  readonly pendingBossTakeover: FactionId | null;
+  readonly bossTakeoverError: string | null;
 
   setSeat(seat: FactionId | null): void;
+  requestBossTakeover(seat: FactionId): void;
   setReady(ready: boolean): void;
   /** Leader only. */
   setSettings(settings: Partial<LobbySettings>): void;

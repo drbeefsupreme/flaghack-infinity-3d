@@ -58,12 +58,18 @@ describe('configurable matches', () => {
   it.each([NaN, Infinity, -Infinity, undefined, null, '50000'])('uses default boss health for invalid value %s', (bossHp) => {
     expect(normalizeMatch({ bossHp } as never).bossHp).toBe(50000);
   });
-  it('defaults to original jump height, 40 Signifiers, and no structure blocking', () => {
-    expect(normalizeMatch()).toMatchObject({ jumpHeight: 1, maxSignifiers: 40, structuresBlockFlagPlacement: false });
+  it('defaults to triple jump height, 200 Signifiers, and no structure blocking', () => {
+    expect(normalizeMatch()).toMatchObject({ jumpHeight: 3, maxSignifiers: 200, structuresBlockFlagPlacement: false });
     expect(normalizeMatch({ jumpHeight: -1, maxSignifiers: 2.9, startingSignifiers: 12 })).toMatchObject({
       jumpHeight: 0.1, maxSignifiers: 2, startingSignifiers: 0,
     });
     expect(normalizeMatch({ jumpHeight: 99, maxSignifiers: 999 })).toMatchObject({ jumpHeight: 5, maxSignifiers: 200 });
+  });
+  it('creates the default shared population without explicit match settings', () => {
+    const w = createMatch({ seed: 'default-population', difficulty: 'normal', humans: [0], mode: 'standard' });
+    expect(w.hippies.size).toBe(200);
+    for (const f of FACTION_IDS) expect(w.hippiesOf(f)).toHaveLength(6);
+    expect(normalizeMatch({ jumpHeight: 1, maxSignifiers: 40 })).toMatchObject({ jumpHeight: 1, maxSignifiers: 40 });
   });
   it.each([0, 2, 40, 60, 200])('keeps all camps and neutrals within one shared population of %i', (maxSignifiers) => {
     const w = createMatch(options({ maxSignifiers, startingSignifiers: 12 }));

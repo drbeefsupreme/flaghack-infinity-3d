@@ -51,7 +51,7 @@ describe('live boss encounter vertical slice', () => {
     if (world.bossOutcome!.kind === 'victory') {
       expect(hpZeroSeen).toBe(true); expect(world.time - deathAt!).toBeGreaterThanOrEqual(12);
       expect(world.boss!.action).toBe('dead'); expect(world.bossOutcome!.winners.length).toBeGreaterThan(0);
-    } else expect(world.options.humans.every(f => !world.factions[f].alive)).toBe(true);
+    } else expect(world.factions.every(f => f.hearthIds.length === 0)).toBe(true);
     console.log(JSON.stringify({ bossCompletion: { result: world.bossOutcome, hp: world.boss!.hp, deathAt, endedAt: world.time } }));
   }, 30000);
 

@@ -3,6 +3,8 @@
  * and the seat chooser: who holds a seat, who leads, how good a ping is, who may take a camp
  * mid-burn. Pure reads of the NetSession and World state.
  */
+import { bossTakeoverSeats, isBossTakeoverActive } from '../sim/bossTakeover';
+import { FACTION_IDS } from '../sim/types';
 import type { AppApi } from '../game/app';
 import type { LobbyPlayer, LobbyState } from '../net/protocol';
 import type { FactionId } from '../sim/types';
@@ -39,6 +41,7 @@ export function leaderName(lobby: LobbyState | null): string | null {
 export function watchingOnline(app: AppApi, world: World): boolean {
   const s = app.session;
   if (!app.net || !matchScreen(s.screen)) return false;
+  if (isBossTakeoverActive(world)) return canRecoverBossCamp(app, world);
   return s.spectator || !(world.factions[s.playerFaction]?.alive ?? false);
 }
 
@@ -48,6 +51,27 @@ export function watchingOnline(app: AppApi, world: World): boolean {
  */
 export function takeableSeat(world: World, lobby: LobbyState | null, f: FactionId): boolean {
   if (lobby?.phase !== 'playing' || !(world.factions[f]?.alive ?? false)) return false;
+  if (isBossTakeoverActive(world)) return lobby.seats.some((seat) => seat.faction === f && seat.playerId === null);
   const holder = seatPlayer(lobby, f);
   return !holder || !holder.connected;
+}
+
+/** Only an eliminated participant gets the encounter's second chance; joining as a watcher never does. */
+export function canRecoverBossCamp(app: AppApi, world: World): boolean {
+  const s = app.session;
+  return isBossTakeoverActive(world) && !s.spectator &&
+    world.options.humans.includes(s.playerFaction) && !world.factions[s.playerFaction].alive &&
+    (!app.net || app.net.seat === s.playerFaction);
+}
+
+/** Available choices for either the encounter recovery or the ordinary online camp picker. */
+export function campChoices(app: AppApi, world: World): FactionId[] {
+  if (isBossTakeoverActive(world)) {
+    if (!canRecoverBossCamp(app, world)) return [];
+    const aiSeats = app.net
+      ? app.net.lobby?.seats.filter((seat) => seat.playerId === null).map((seat) => seat.faction) ?? []
+      : FACTION_IDS.filter((f) => !world.options.humans.includes(f));
+    return bossTakeoverSeats(world, app.session.playerFaction, aiSeats);
+  }
+  return watchingOnline(app, world) ? FACTION_IDS.filter((f) => takeableSeat(world, app.net?.lobby ?? null, f)) : [];
 }

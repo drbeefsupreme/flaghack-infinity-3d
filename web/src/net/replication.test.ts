@@ -280,8 +280,8 @@ describe('replication', () => {
 
   for (const seed of ['net-a', 'net-b']) {
     it(`keeps mirrors equal to the host through a scripted burn (${seed})`, () => {
-      // This long scripted scenario relies on the original AI routes with building corners reserved.
-      const host = new Host({ ...optionsFor(seed), match: normalizeMatch({ structuresBlockFlagPlacement: true }) });
+      // This long scripted scenario relies on the original population, jump height, and AI routes with building corners reserved.
+      const host = new Host({ ...optionsFor(seed), match: normalizeMatch({ structuresBlockFlagPlacement: true, maxSignifiers: 40, jumpHeight: 1 }) });
       const w = host.world;
       const client = new LockstepClient(host.options, host.encoder.full());
       expect(differences(w, client.mirror.world, { doomedPieces: true })).toEqual([]);

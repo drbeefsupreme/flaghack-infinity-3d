@@ -19,7 +19,7 @@ import { dawnLead } from './dawn';
 import { button, el, fmtClock, html, setClass, show } from './dom';
 import { iconSvg } from './icons';
 import { DEFEAT_LINES, VICTORY_LINES } from './lore';
-import { leaderName } from './online';
+import { canRecoverBossCamp, leaderName } from './online';
 import { sigilSvg } from './title';
 import { matchSettings } from '../sim/matchSettings';
 
@@ -96,6 +96,9 @@ export class EndScreen implements UiPart {
       this.eliminated = true;
       this.eliminatedBy = world.factions[s.playerFaction].eliminatedBy;
     }
+    if (world?.factions[s.playerFaction]?.alive) {
+      this.eliminated = false; this.eliminatedBy = null; this.spectating = false;
+    }
     if (world && s.screen === 'ended') {
       if (this.endedAt === 0) this.endedAt = now;
       // A dawn crowning lets its banner play over the live burn before the cards come up.
@@ -105,7 +108,7 @@ export class EndScreen implements UiPart {
       }
     } else {
       this.endedAt = 0;
-      if (world && s.screen === 'playing' && this.eliminated && !this.spectating) mode = 'eliminated';
+      if (world && s.screen === 'playing' && this.eliminated && !this.spectating && !canRecoverBossCamp(this.host.app, world)) mode = 'eliminated';
     }
     show(this.root, mode !== 'hidden' && !s.panels.codex && !s.panels.settings);
     if (mode !== this.mode) {
@@ -141,19 +144,19 @@ export class EndScreen implements UiPart {
       const survivors = outcome.winners.map((f) => factionName(world, f, names)).join(', ');
       if (outcome.kind === 'defeat') {
         title = 'THE EFFIGY ENDURES';
-        sub = 'Every player camp has fallen. The burn belongs to the Effigy.';
+        sub = 'Every altar has fallen. The burn belongs to the Effigy.';
       } else if (win || mode === 'over') {
         title = 'THE EFFIGY HAS FALLEN';
         sub = win ? 'Your camp survived. The remaining camps share the victory.' : 'The surviving camps share the victory.';
         verdict = `Survivors: ${survivors}.`;
       } else {
         title = 'YOUR CAMP HAS FALLEN';
-        sub = 'The Effigy was defeated, but your camp did not survive.';
+        sub = 'The surviving camps share victory over the Effigy. Your camp did not survive.';
         verdict = `Survivors: ${survivors}.`;
       }
-    } else if (mode === 'eliminated' && world.effigyRevealedAt !== null) {
+    } else if (mode === 'eliminated' && world.boss !== null) {
       title = 'YOUR CAMP HAS FALLEN';
-      sub = 'No altar remains. You can watch the surviving camps face the Effigy.';
+      sub = 'Your altars have fallen. Choose a surviving AI camp to rejoin the fight, or watch the remaining camps face the Effigy.';
     } else if (dawn) {
       title = 'DAWN OVER THE BURN';
       sub = win ? 'The Survey is completed. Your Survey stands dominant.' : `${winner}'s Survey stands dominant.`;

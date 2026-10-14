@@ -1,6 +1,6 @@
 /** All presentation clocks are sampled from authoritative match time, never integrated. */
-import { EFFIGY_BOSS_REVEAL_AT } from '../../../../sim/effigyBurn';
-export const BOSS_CHARGE_START = EFFIGY_BOSS_REVEAL_AT - 5;
+import { EFFIGY_BOSS_REVEAL_AT, EFFIGY_BOSS_RISE_SECONDS } from '../../../../sim/effigyBurn';
+export const BOSS_CHARGE_START = EFFIGY_BOSS_REVEAL_AT - EFFIGY_BOSS_RISE_SECONDS;
 export const BOSS_EMERGED_AT = EFFIGY_BOSS_REVEAL_AT;
 export function smooth(e0: number, e1: number, x: number): number {
   const k = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BossHud } from './bossHud';
 import { BOSS_AWAKENING_SECONDS } from '../sim/bossPresentation';
+import { bossFixture } from '../../tests/bossFixture';
+import { BOSS_TIMING } from '../sim/boss';
 import type { World } from '../sim/world';
 
 /** Minimal DOM contract test; actual browser layout is a separate integration check. */
@@ -21,7 +23,7 @@ function setup() {
   vi.stubGlobal('document', { createElement: () => new Node() });
   const root = new Node(), timer = new Node(); timer.className = 'clock plaque'; root.appendChild(timer);
   const hud = new BossHud(root as unknown as HTMLElement, timer as unknown as HTMLElement);
-  const world = { time: 0, effigyRevealedAt: null, options: { mode: 'standard' }, boss: { hp: 4300, maxHp: 5000, action: 'idle', deathAt: null } } as unknown as World;
+  const world = { time: 0, phase: 'playing', effigyRevealedAt: null, options: { mode: 'standard' }, boss: { ...bossFixture(), hp: 4300, maxHp: 5000, action: 'idle', deathAt: null } } as unknown as World;
   return { root, timer, hud, world, node: hud.element as unknown as Node, announcement: hud.announcement as unknown as Node };
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -160,5 +162,49 @@ describe('authoritative awakening announcement', () => {
     }
     hud.dispose();
     expect(root.children).toEqual([timer]);
+  });
+});
+
+
+describe('compact authoritative attack warning row', () => {
+  it.each([
+    ['swipe', 'SWIPE · WINDUP', BOSS_TIMING.swipeHit],
+    ['stomp', 'STOMP · WINDUP', BOSS_TIMING.stompHit],
+    ['grab', 'GRAB · REACHING', BOSS_TIMING.grasp],
+  ] as const)('describes %s within the existing status footprint and stops at contact', (action, label, duration) => {
+    const { hud, world, node } = setup(), b = world.boss!, status = node.children[2];
+    b.action = action; b.held = null; world.time = b.actionAt + duration / 2;
+    hud.update(world, true);
+    expect(node.children).toHaveLength(3);
+    expect(status.textContent).toBe(label);
+    expect(status.classList.contains('boss-hud-warning')).toBe(true);
+    expect(Number(status.properties.get('--boss-attack-progress'))).toBeCloseTo(.5);
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    world.time = b.actionAt + duration; hud.update(world, true);
+    expect(status.classList.contains('boss-hud-warning')).toBe(false);
+    expect(status.properties.get('--boss-attack-progress')).toBe('0');
+  });
+
+  it('does not repeat text or progress writes at a frozen simulation time', () => {
+    const { hud, world, node } = setup(), status = node.children[2];
+    world.boss!.action = 'stomp'; world.time = world.boss!.actionAt + .4; hud.update(world, true);
+    const style = vi.spyOn(status.style, 'setProperty'); let text = status.textContent;
+    const writeText = vi.fn((value: string) => { text = value; });
+    Object.defineProperty(status, 'textContent', { get: () => text, set: writeText });
+    for (let frame = 0; frame < 100; frame++) hud.update(world, true);
+    expect(style).not.toHaveBeenCalled(); expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('clears warning classes, progress, accessible text and dying styles on cancellation, menus, end or reset', () => {
+    const { hud, world, node } = setup(), status = node.children[2];
+    const start = () => { world.boss = bossFixture(); world.boss.action = 'stomp'; world.phase = 'playing'; world.time = world.boss.actionAt + .4; hud.update(world, true); };
+    const clear = () => { expect(status.classList.contains('boss-hud-warning')).toBe(false); expect(status.properties.get('--boss-attack-progress')).toBe('0'); };
+    start(); world.boss!.action = 'recoil'; hud.update(world, true); clear();
+    start(); world.phase = 'ended'; hud.update(world, true); clear();
+    start(); world.boss!.hp = 0; world.boss!.deathAt = world.time; hud.update(world, true); clear();
+    expect(status.textContent).toBe('THE EFFIGY FALLS');
+    hud.update(world, false); clear(); expect(status.textContent).toBe(''); expect(node.classList.contains('boss-hud-dying')).toBe(false);
+    start(); hud.update(null, true); clear(); expect(status.textContent).toBe('');
+    start(); world.boss = null; hud.update(world, true); clear(); expect(status.textContent).toBe('');
   });
 });

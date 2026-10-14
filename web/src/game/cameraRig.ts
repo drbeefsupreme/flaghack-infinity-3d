@@ -12,6 +12,7 @@ import type { V2 } from '../sim/math';
 import { isCollapsed } from '../sim/systems/buildings';
 import type { Avatar, Building, FactionId } from '../sim/types';
 import type { World } from '../sim/world';
+import { effigyCameraTarget } from './effigyCamera';
 import type { CameraState } from './session';
 
 const DEG = Math.PI / 180;
@@ -127,6 +128,10 @@ export class CameraRig {
   readonly origin = new THREE.Vector3();
   readonly dir = new THREE.Vector3();
 
+  private effigyLocked = false;
+  private effigyTurn = 0;
+  private effigyYaw = 0;
+  private effigyPitch = 0;
   private mode: RigMode | null = null;
   private hasPose = false;
   private from = newPose();
@@ -165,11 +170,13 @@ export class CameraRig {
   setMode(mode: RigMode, dur: number): void {
     if (mode === this.mode) return;
     this.mode = mode;
+    this.effigyLocked = false;
     this.startTransition(dur);
   }
 
   /** New world: drop smoothing state that refers to the old one (the on-screen pose is kept). */
   resetFollow(): void {
+    this.effigyLocked = false;
     this.pivotReady = false;
     this.focusReady = false;
     this.wasDown = false;
@@ -256,6 +263,12 @@ export class CameraRig {
     sprinting: boolean,
     dt: number,
   ): void {
+    const focus = effigyCameraTarget(world);
+    if (!focus && this.effigyLocked) {
+      this.effigyLocked = false;
+      // Command/Flagless views return to their own pose; action retains the focused heading.
+      this.startTransition(0.65);
+    }
     const down = av.koUntil > world.time;
     if (down !== this.wasDown) {
       this.wasDown = down;
@@ -280,6 +293,38 @@ export class CameraRig {
       } else blendPose(this.near, this.far, ease(blend), this.base);
     }
     this.finish(dt);
+    if (focus) {
+      const p = this.pose;
+      if (!this.effigyLocked) {
+        this.effigyLocked = true;
+        this.effigyTurn = 0;
+        this.effigyYaw = p.yaw;
+        this.effigyPitch = p.pitch;
+        // The emergence owns orientation until release, including an interrupted mode blend.
+        this.transDur = 0;
+      }
+      this.effigyTurn += Math.max(0, dt);
+      // Rotate at the current camera location; do not teleport the player's viewpoint.
+      const cp = Math.cos(p.pitch);
+      const cx = p.tx - Math.sin(p.yaw) * cp * p.dist;
+      const cy = p.ty - Math.sin(p.pitch) * p.dist;
+      const cz = p.tz - Math.cos(p.yaw) * cp * p.dist;
+      const dx = focus.x - cx, dy = focus.y - cy, dz = focus.z - cz;
+      const yaw = Math.atan2(dx, dz), pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      let arc = (yaw - this.effigyYaw) % (2 * Math.PI);
+      if (arc > Math.PI) arc -= 2 * Math.PI;
+      if (arc < -Math.PI) arc += 2 * Math.PI;
+      const turn = ease(this.effigyTurn / 1.1);
+      p.yaw = this.effigyYaw + arc * turn;
+      p.pitch = this.effigyPitch + (pitch - this.effigyPitch) * turn;
+      p.tx = cx + Math.sin(p.yaw) * Math.cos(p.pitch) * p.dist;
+      p.ty = cy + Math.sin(p.pitch) * p.dist;
+      p.tz = cz + Math.cos(p.yaw) * Math.cos(p.pitch) * p.dist;
+      if (!down && blend === 0) {
+        cam.yaw = p.yaw;
+        cam.pitch = -p.pitch;
+      }
+    }
   }
 
   /** Write the pose (plus trauma shake) into the three.js camera. */

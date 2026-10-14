@@ -30,7 +30,7 @@ export function isDrugActive(world: World, f: FactionId, d: DrugId): boolean {
 }
 
 /** Doses on the shelf plus doses queued or brewing in the faction's labs. */
-function dosesOwnedOrPending(world: World, f: FactionId, d: DrugId): number {
+export function dosesOwnedOrPending(world: World, f: FactionId, d: DrugId): number {
   let n = world.factions[f].drugs[d];
   for (const b of world.buildings.values()) {
     if (b.faction !== f || !b.lab) continue;
@@ -38,6 +38,32 @@ function dosesOwnedOrPending(world: World, f: FactionId, d: DrugId): number {
     for (const q of b.lab.queue) if (q === d) n++;
   }
   return n;
+}
+
+/**
+ * Idle labs favor scarce drugs, without making the choice predictable. Each eligible drug
+ * has weight 1 / (1 + doses owned or pending). Count the whole faction's shelves, queues
+ * and active batches so other labs cannot reserve the same last shelf space. Only the
+ * authoritative simulation calls this, once an idle lab can afford its next batch.
+ */
+export function pickAutoBrew(world: World, f: FactionId): DrugId | null {
+  const choices: { drug: DrugId; weight: number }[] = [];
+  let total = 0;
+  for (const drug of DRUGS) {
+    const doses = dosesOwnedOrPending(world, f, drug);
+    if (doses >= DRUG_MAX) continue;
+    const weight = 1 / (1 + doses);
+    choices.push({ drug, weight });
+    total += weight;
+  }
+  if (choices.length === 0) return null;
+  let roll = world.rng.next() * total;
+  for (const { drug, weight } of choices) {
+    roll -= weight;
+    if (roll < 0) return drug;
+  }
+  // Floating-point rounding at the top of the range still chooses an eligible dose.
+  return choices[choices.length - 1].drug;
 }
 
 /** Why this brew can't be queued ('' = it can). */

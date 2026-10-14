@@ -12,6 +12,7 @@ import { burnTime, dayClock } from "../../sim/matchSettings";
  * Owner: RenderWorld agent (post slice).
  */
 import * as THREE from 'three';
+import { postInstability } from './uvWarp';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -47,12 +48,6 @@ const SUN_CORE_RADIUS = 0.02;
 const BURN_FADE = 0.6;
 /** Share of the Burn grade daylight takes back: by day the fire lights its surroundings, not the sky. */
 const BURN_DAYLIGHT_FALLOFF = 0.75;
-/**
- * Facet instability is a gameplay value; its shimmer and moire start just before the 0.35
- * Flag Psychosis threshold and are full by the 0.65 crystal discharges.
- */
-const INSTABILITY_VISIBLE = 0.25;
-const INSTABILITY_FULL = 0.7;
 
 export class PostFx {
   private ctx: RenderContext;
@@ -131,7 +126,7 @@ export class PostFx {
     const fx = ctx.shared.fx;
     if (fx) {
       u.uFxA.value.set(fx.dust, fx.acid, fx.saffron, fx.crash);
-      const instability = smoothstep(fx.instability, INSTABILITY_VISIBLE, INSTABILITY_FULL);
+      const instability = postInstability(fx.instability);
       u.uFxB.value.set(fx.damage, fx.command, instability, fx.flash);
     } else {
       u.uFxA.value.set(0, 0, 0, 0);

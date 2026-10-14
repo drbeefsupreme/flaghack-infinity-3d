@@ -227,6 +227,7 @@ export class NetMirror {
       this.factionRows[f] = row.slice();
       writeRow(FACTION_FIELDS, fac, w, row, FACTION_MASK_ALL);
     });
+    this.syncHumanSeats();
     this.worldRow = snap.w.slice();
     writeRow(WORLD_FIELDS, w, w, this.worldRow, WORLD_MASK_ALL);
     this.loadSurvey(snap.survey);
@@ -286,7 +287,10 @@ export class NetMirror {
       const ed = d.ents?.[kind];
       if (ed) this.applyKind(kind, ed, newPieces);
     }
-    if (d.fac) this.applyFactions(d.fac);
+    if (d.fac) {
+      this.applyFactions(d.fac);
+      this.syncHumanSeats();
+    }
     if (d.w) this.applyWorld(d.w);
     if (d.survey) this.applySurvey(d.survey);
 
@@ -297,6 +301,11 @@ export class NetMirror {
     syncEffigy(w);
     syncScenery(w);
     for (const e of frame.events) w.emit(e);
+  }
+
+  /** Durable faction ownership updates controls/visibility on existing peers as well as late joiners. */
+  private syncHumanSeats(): void {
+    this.world.options.humans = this.world.factions.filter((f) => f.isPlayer).map((f) => f.id);
   }
 
   /** Segment bookkeeping after frames applied (entities hold authoritative values). */

@@ -19,7 +19,7 @@ describe('original boss synthesis recipes', () => {
     expect(stops.every(t => t > 10 && t <= 10 + BOSS_CUE_DURATION[cue] + .07)).toBe(true);
     expect(scheduled.every(Number.isFinite)).toBe(true);
   });
-  it.each(['charge', 'beam'] as const)('trims %s to its remaining authoritative window', cue => {
+  it.each(['swipeWindup', 'stompWindup', 'grabWindup', 'charge', 'beam'] as const)('trims %s to its remaining authoritative window', cue => {
     const { ctx, out, stops } = context(), age = .25;
     synthBoss(ctx, out, {} as AudioBuffer, {} as AudioBuffer, cue, 10, age);
     expect(Math.max(...stops)).toBeCloseTo(10 + BOSS_CUE_DURATION[cue] - age + .05);

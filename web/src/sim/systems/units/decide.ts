@@ -19,6 +19,7 @@ import {
   buildingNeedingHands,
   claimDrumSlot,
   criticalFlags,
+  deliveryHearth,
   findIntruder,
   hearthWithStock,
   intruderFlags,
@@ -57,11 +58,13 @@ const CLEARERS_PER_CAMP = 1;
 const scratch: V2 = { x: 0, z: 0 };
 
 /** Tasks that may be re-decided mid-way (to answer pings, intruders, new work). */
-export function needsDecision(world: World, b: Brain): boolean {
+export function needsDecision(world: World, b: Brain, h: Hippie): boolean {
   switch (b.task) {
     case 'none':
     case 'wander':
       return true;
+    case 'respond':
+      return h.job === 'defend' && !h.order && world.time >= b.nextThinkAt;
     case 'idle':
     case 'patrol':
     case 'build':
@@ -128,7 +131,13 @@ function decideSurvey(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fac
     return;
   }
   if (node >= 0 && startFetch(world, sys, h, b, f, node)) return;
-  if (!clearPlanBlocker(world, sys, h, b, f)) startIdle(world, h, b, f);
+  if (clearPlanBlocker(world, sys, h, b, f)) return;
+  // Recover spare Flags after the plan is complete, rather than leaving them on the ground.
+  const loose = nearestLooseFlag(world, sys, h, b, f, HIPPIE_AI.fetchRadius);
+  if (loose && deliveryHearth(world, h, b, f)) {
+    beginTask(world, h, b, 'pickup');
+    claimFlag(sys, h, b, loose.id);
+  } else startIdle(world, h, b, f);
 }
 
 /**
@@ -147,7 +156,7 @@ function clearPlanBlocker(world: World, sys: UnitsState, h: Hippie, b: Brain, f:
 
 /** Go for a Flag (Hearth stock or a nearby loose one, whichever is closer) for `node`. */
 function startFetch(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, node: number): boolean {
-  const hearth = hearthWithStock(world, sys, f, h.pos.x, h.pos.z);
+  const hearth = hearthWithStock(world, sys, f, h.pos.x, h.pos.z, b);
   const loose = nearestLooseFlag(world, sys, h, b, f, HIPPIE_AI.fetchRadius);
   if (loose) {
     const dl = Math.hypot(loose.pos.x - h.pos.x, loose.pos.z - h.pos.z);
@@ -266,14 +275,24 @@ function rivalStructureNear(world: World, f: FactionId, x: number, z: number, r:
  * plan when the camp has no raiders (home), else patrol.
  */
 function guard(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, ax: number, az: number, home: boolean): void {
-  const ping = pingToAnswer(world, sys, h, b, f, true);
-  if (ping >= 0) {
-    startRespond(world, sys, h, b, ping);
-    return;
+  // A live capture threat at home takes priority over distant pings and maintenance.
+  // An explicit defend order still guards only its ordered anchor.
+  if (home) {
+    const critical = pickFlag(world, sys, h, b, f, criticalFlags(world, sys, f), Infinity, CRITICAL_RANK_PENALTY);
+    if (critical >= 0) {
+      startPull(world, sys, h, b, critical);
+      return;
+    }
   }
   const foe = home ? findIntruder(world, sys, h, f) : nearestRivalUnit(world, sys, f, ax, az, ORDER_GUARD_RADIUS);
   if (foe >= 0) {
     startEngage(world, h, b, foe, ax, az);
+    return;
+  }
+  const ping = home ? pingToAnswer(world, sys, h, b, f, true) : -1;
+  if (ping >= 0) {
+    if (b.task === 'respond' && b.target === ping) return;
+    startRespond(world, sys, h, b, ping);
     return;
   }
   const fl = home
@@ -314,7 +333,8 @@ function pingToAnswer(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fac
   for (const p of world.pings.values()) {
     if (p.faction !== f || p.until <= world.time || p.bornAt <= b.answeredAt) continue;
     if (p.kind === 'sos') {
-      if (!sos || p.from === h.id || (sys.responders.get(p.id) ?? 0) >= HIPPIE_AI.sosResponders) continue;
+      if (!sos || p.from === h.id || ((sys.responders.get(p.id) ?? 0) >= HIPPIE_AI.sosResponders &&
+          !(b.task === 'respond' && b.target === p.id))) continue;
     } else if (p.kind !== 'rally') continue;
     const d2 = (p.pos.x - h.pos.x) ** 2 + (p.pos.z - h.pos.z) ** 2;
     if (d2 < bestD) {
@@ -336,13 +356,15 @@ function decideOrder(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fact
       const fl = world.flags.get(order.flagId);
       if (!fl || (fl.state !== 'planted' && fl.state !== 'loose')) finishOrder(world, h, b);
       else if (h.carryingLumber > 0) startDeliver(world, h, b, f, 'haul');
-      else if (fl.state === 'loose' && h.carryingFlag !== -1) startDeliver(world, h, b, f, 'stow');
+      else if (h.carryingFlag !== -1) startDeliver(world, h, b, f, 'stow');
+      else if (claimedByOther(sys.flagClaims, fl.id, h.id)) startIdle(world, h, b, f);
       else startPull(world, sys, h, b, fl.id);
       return;
     }
     case 'plant': {
       const node = order.node;
       if (world.survey.nodeFlag[node] >= 0 || !canPlantAt(world, node, f)) finishOrder(world, h, b);
+      else if (claimedByOther(sys.nodeReservations, node, h.id)) startIdle(world, h, b, f);
       else if (h.carryingLumber > 0) startDeliver(world, h, b, f, 'haul');
       else if (h.carryingFlag !== -1) startPlant(world, sys, h, b, node);
       else if (!startFetch(world, sys, h, b, f, node)) finishOrder(world, h, b);
@@ -357,7 +379,9 @@ function decideOrder(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fact
       return;
     }
     case 'defend':
-      guard(world, sys, h, b, f, order.at.x, order.at.z, false);
+      if (h.carryingFlag !== -1) startDeliver(world, h, b, f, 'stow');
+      else if (h.carryingLumber > 0) startDeliver(world, h, b, f, 'haul');
+      else guard(world, sys, h, b, f, order.at.x, order.at.z, false);
       return;
     case 'attack': {
       const id = order.target;
@@ -367,19 +391,19 @@ function decideOrder(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fact
         if (owner === f) finishOrder(world, h, b);
         else startTear(world, h, b, id);
       } else if (fl) {
-        if ((fl.state === 'planted' || fl.state === 'loose') && fl.owner !== f) startPull(world, sys, h, b, fl.id);
+        if ((fl.state === 'planted' || fl.state === 'loose') && fl.owner !== f) {
+          if (h.carryingLumber > 0) startDeliver(world, h, b, f, 'haul');
+          else if (h.carryingFlag !== -1) startDeliver(world, h, b, f, 'stow');
+          else if (claimedByOther(sys.flagClaims, fl.id, h.id)) startIdle(world, h, b, f);
+          else startPull(world, sys, h, b, fl.id);
+        }
         else finishOrder(world, h, b);
       } else if (rivalUnitPos(world, f, id, scratch)) startEngage(world, h, b, id, NaN, NaN);
       else finishOrder(world, h, b);
       return;
     }
     case 'follow':
-      if (b.task !== 'follow') {
-        // Keep the formation slot assigned when the hippie was rallied.
-        const slot = b.slot;
-        beginTask(world, h, b, 'follow');
-        b.slot = slot;
-      }
+      if (b.task !== 'follow') beginTask(world, h, b, 'follow');
       return;
     case 'push':
       beginTask(world, h, b, 'push');
@@ -392,6 +416,11 @@ function decideOrder(world: World, sys: UnitsState, h: Hippie, b: Brain, f: Fact
 export function finishOrder(world: World, h: Hippie, b: Brain): void {
   h.order = null;
   releaseTask(world, h, b);
+}
+
+function claimedByOther(claims: Map<number, EntityId>, target: number, id: EntityId): boolean {
+  const claim = claims.get(target);
+  return claim !== undefined && claim !== id;
 }
 
 function claimFlag(sys: UnitsState, h: Hippie, b: Brain, flagId: EntityId): void {
@@ -439,8 +468,20 @@ function startPull(world: World, sys: UnitsState, h: Hippie, b: Brain, flagId: E
 /** Head home to stow a carried Flag ('stow') or deliver lumber ('haul'). */
 function startDeliver(world: World, h: Hippie, b: Brain, f: FactionId, task: 'stow' | 'haul'): void {
   beginTask(world, h, b, task);
-  const home = nearestHearth(world, f, h.pos);
-  if (!home) return;
+  const home = deliveryHearth(world, h, b, f);
+  if (!home) {
+    // Keep the cargo while routes are unavailable; retry after the failed home's cooldown.
+    if (nearestHearth(world, f, h.pos)) {
+      startIdle(world, h, b, f);
+      let retryAt = Infinity;
+      for (const id of world.factions[f].hearthIds) {
+        const until = b.avoidBuildings.get(id);
+        if (until !== undefined && until > world.time) retryAt = Math.min(retryAt, until);
+      }
+      b.waitUntil = b.nextThinkAt = Number.isFinite(retryAt) ? retryAt : world.time + 1;
+    }
+    return;
+  }
   b.target = home.id;
   setRim(b, home, h);
 }

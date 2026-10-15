@@ -1,4 +1,7 @@
-# Fork iteration: configurable matches and controls
+# Match settings and controls
+
+This guide describes the game in the original
+[Flaghack Infinity repository](https://github.com/drbeefsupreme/flaghack-infinity-3d).
 
 ## Match setup
 

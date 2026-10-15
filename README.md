@@ -1,5 +1,8 @@
 # Flaghack Infinity
 
+This is the original Flaghack Infinity repository, maintained at
+[drbeefsupreme/flaghack-infinity-3d](https://github.com/drbeefsupreme/flaghack-infinity-3d).
+
 **FLAGHACK ∞ — Survey Flags** is a fast 3D 1v1v1v1 vexillomantic action-strategy game
 that runs in the browser (three.js + TypeScript). You are a vexillomancer at a burn. You
 throw, plant, pull and steal yellow Survey Flags on an invisible aperiodic **Ley Lattice**,
@@ -11,9 +14,9 @@ friends join from their browsers with a password.
 
 > Under no conditions should you attempt to play a game that claims to be Flaghack.
 
-## This fork
+## Match settings and controls
 
-This iteration adds camp toggles, 0–5 days or Unlimited, advanced match settings, gamepad input and customizable controls. Zero days starts at The Burn. See [the fork guide](docs/fork-iteration.md).
+The game supports camp toggles, 0–5 days or Unlimited, advanced match settings, gamepad input and customizable controls. Zero days starts at The Burn. See [the match settings and controls guide](docs/match-settings-and-controls.md).
 
 ## Play
 

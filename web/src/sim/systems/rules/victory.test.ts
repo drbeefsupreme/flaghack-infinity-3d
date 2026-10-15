@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BURN_TIME,
-  DAWN_TIME,
   DAWN_WARNING,
   SUDDEN_DEATH_ESCALATE_EVERY,
   SUDDEN_DEATH_PRESSURE_MULT,
   TIDE_INTERVAL_SUDDEN_DEATH,
 } from '../../constants';
+import { burnTime, endTime, normalizeMatch } from '../../matchSettings';
 import type { GameEvent } from '../../events';
 import type { World } from '../../world';
 import { captureHearth } from '../capture';
@@ -19,7 +18,7 @@ import { eventsOf, flagProblems, freeFocus, loopAround, must, newMatch, plantFre
 function runAt(world: World, t: number): GameEvent[] {
   world.time = t;
   const events = runRules(world, 1);
-  // Jumping past BURN_TIME starts The Burn, which schedules a tide: keep the Crystal still.
+  // Jumping past the configured Burn time starts The Burn, which schedules a tide: keep the Crystal still.
   world.tide.nextAt = Infinity;
   return events;
 }
@@ -39,9 +38,10 @@ function stripRings(world: World): void {
 }
 
 describe('The Burn', () => {
-  it('starts sudden death at BURN_TIME, quickens the tides and escalates on a clock', () => {
+  it('starts sudden death at the configured Burn time, quickens the tides and escalates on a clock', () => {
     const world = newMatch('burn-a');
-    world.time = BURN_TIME - 0.5;
+    world.options.match = normalizeMatch({ bossMode: false });
+    world.time = burnTime(world.options) - 0.5;
     world.tide.nextAt = world.time + 70;
     expect(suddenDeathMult(world)).toBe(1);
     let events = runRules(world, 1);
@@ -60,7 +60,7 @@ describe('The Burn', () => {
 
     // Each SUDDEN_DEATH_ESCALATE_EVERY seconds the multiplier steps up by one, announced once.
     for (let step = 1; step <= 2; step++) {
-      world.time = BURN_TIME + step * SUDDEN_DEATH_ESCALATE_EVERY - 0.5;
+      world.time = burnTime(world.options) + step * SUDDEN_DEATH_ESCALATE_EVERY - 0.5;
       expect(suddenDeathMult(world)).toBe(SUDDEN_DEATH_PRESSURE_MULT + step - 1);
       events = runRules(world, 1);
       expect(suddenDeathMult(world)).toBe(SUDDEN_DEATH_PRESSURE_MULT + step);
@@ -80,7 +80,7 @@ describe('Victory', () => {
     expect(world.phase).toBe('playing');
     captureHearth(world, must(world.hearthOf(0), 'hearth 0'), 2);
     const events = runRules(world, 0.05);
-    expect(world.time).toBeLessThan(DAWN_TIME);
+    expect(world.time).toBeLessThan(endTime(world.options));
     expect(world.phase).toBe('ended');
     expect(world.winner).toBe(2);
     expect(eventsOf(events, 'victory')).toEqual([{ t: 'victory', faction: 2, reason: 'conquest' }]);
@@ -90,6 +90,7 @@ describe('Victory', () => {
 
   it('Dawn crowns the camp holding the most Hearths, warned a minute ahead, eliminating nobody', () => {
     const world = newMatch('dawn-a');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.tide.nextAt = Infinity;
     // Dr. Crow overwrites President Jaguar before dawn: two Hearths to everyone else's one.
     captureHearth(world, must(world.hearthOf(3), 'hearth 3'), 1);
@@ -100,12 +101,12 @@ describe('Victory', () => {
     expect(size[2]).toBeGreaterThan(Math.max(size[0], size[1]));
     expect(dominanceOrder(world)).toEqual([1, 2, 0]);
 
-    let events = runAt(world, DAWN_TIME - DAWN_WARNING - 0.5);
+    let events = runAt(world, endTime(world.options) - DAWN_WARNING - 0.5);
     expect(dawnWarnings(events)).toHaveLength(1);
     expect(dawnWarnings(runRules(world, 1))).toEqual([]);
     expect(world.phase).toBe('playing');
 
-    events = runAt(world, DAWN_TIME - 0.5);
+    events = runAt(world, endTime(world.options) - 0.5);
     expect(world.phase).toBe('ended');
     expect(world.winner).toBe(1);
     expect(eventsOf(events, 'victory')).toEqual([{ t: 'victory', faction: 1, reason: 'dawn' }]);
@@ -121,6 +122,7 @@ describe('Victory', () => {
 
   it('Dawn breaks a tie on Hearths by Survey size, then C.M.I., then the lowest faction id', () => {
     const world = newMatch('dawn-b');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.tide.nextAt = Infinity;
     stripRings(world);
     runRules(world, 0.1);
@@ -144,7 +146,7 @@ describe('Victory', () => {
     expect(world.factions[2].stats.cmi).toBeLessThan(world.factions[3].stats.cmi);
     expect(dominanceOrder(world)).toEqual([2, 3, 0, 1]);
 
-    const events = runAt(world, DAWN_TIME - 0.5);
+    const events = runAt(world, endTime(world.options) - 0.5);
     expect(world.winner).toBe(2);
     expect(eventsOf(events, 'victory')).toEqual([{ t: 'victory', faction: 2, reason: 'dawn' }]);
     expect(eventsOf(events, 'eliminated')).toEqual([]);

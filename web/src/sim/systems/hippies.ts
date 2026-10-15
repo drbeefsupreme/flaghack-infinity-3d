@@ -8,16 +8,17 @@
  * act.ts (doing it), move.ts (getting there), targets.ts (what matters).
  * Owner: Units agent.
  */
+import { damageMelee } from './meleeImpact';
+import { BOSS_RADIUS } from '../boss';
 import { AVATAR, BUILDINGS, HIPPIE, HIPPIE_AI, MAP_HALF } from '../constants';
 import type { CommandOf } from '../commands';
-import { TAU } from '../math';
 import type { V2 } from '../math';
 import { FACTION_IDS, NEUTRAL } from '../types';
 import type { EntityId, FactionId, Hippie, HippieOrder } from '../types';
 import type { World } from '../world';
-import { damageEntity, knockback } from './combat';
+import { knockback } from './combat';
 import { isDrugActive } from './drugs';
-import { isHoarding } from './economy';
+import { isHoarding, popCap } from './economy';
 import { hasEffect, pruneEffects, speedMultiplier } from './effects';
 import { canPlantAt } from './flags';
 import { act, becomeDistracted, pickWanderSpot, wander } from './units/act';
@@ -25,7 +26,8 @@ import { beginTask, brainOf, releaseTask, setStatus } from './units/brain';
 import type { Brain } from './units/brain';
 import { decide, needsDecision, startEngage, startFlee } from './units/decide';
 import { allocateJobs } from './units/jobs';
-import { locomote, servicePathQueue, slide } from './units/move';
+import { faceEffigy, prepareEffigyAudience, watchEffigy } from './units/effigySpectators';
+import { moveTo, locomote, servicePathQueue, slide } from './units/move';
 import { unitsState } from './units/state';
 import type { UnitsState } from './units/state';
 import { rivalUnitPos, structureOwner } from './units/targets';
@@ -36,10 +38,10 @@ const SWEEP_INTERVAL = 1;
 const PLANT_SNAP = 2.5;
 /** Vexillomancers standing higher than this (on decks) are out of shoving reach. */
 const SHOVE_Y = 1.2;
-/** Respawn ring around the Hearth's edge, and scatter around a neutral spawn. */
-const RESPAWN_GAP_MIN = 2;
-const RESPAWN_GAP_MAX = 5;
+/** Scatter around a shared neutral spawn. */
 const NEUTRAL_SCATTER = 3;
+/** Automatic boss combat stays local to the unit and its ordered guard/leader anchor. */
+const BOSS_AUTO_RADIUS = 22;
 
 const scratch: V2 = { x: 0, z: 0 };
 
@@ -67,6 +69,7 @@ function orderValid(world: World, f: FactionId, o: HippieOrder): boolean {
     case 'gather':
       return world.piles.has(o.pileId);
     case 'attack': {
+      if (world.boss?.id === o.target && world.boss.hp > 0) return true;
       const owner = structureOwner(world, o.target);
       if (owner !== undefined) return owner !== f;
       const fl = world.flags.get(o.target);
@@ -95,7 +98,7 @@ function giveOrder(world: World, h: Hippie, order: HippieOrder | null): void {
 function assignFollowerSlots(world: World, avatarId: EntityId): void {
   let k = 0;
   for (const h of world.hippies.values()) {
-    if (h.order && h.order.kind === 'follow' && h.order.avatarId === avatarId) brainOf(h).slot = k++;
+    if (h.order && h.order.kind === 'follow' && h.order.avatarId === avatarId) brainOf(h).followSlot = k++;
   }
 }
 
@@ -188,7 +191,8 @@ export function updateHippies(world: World, dt: number): void {
     sys.nextAllocAt[f] = world.time + HIPPIE_AI.jobInterval;
     allocateJobs(world, sys, f);
   }
-  for (const h of world.hippies.values()) updateHippie(world, sys, h, dt);
+  const audience = prepareEffigyAudience(world);
+  for (const h of world.hippies.values()) updateHippie(world, sys, h, dt, audience);
 }
 
 function bump(m: Map<EntityId, number>, key: EntityId): void {
@@ -205,11 +209,14 @@ function census(world: World, sys: UnitsState): void {
   sys.responders.clear();
   sys.raiders.fill(0);
   sys.clearers.fill(0);
+  sys.overCap.clear();
+  for (const members of sys.campMembers) members.length = 0;
   for (const h of world.hippies.values()) {
     if (h.status === 'ko') continue;
     active.push(h);
     const b = brainOf(h);
     if (h.faction !== NEUTRAL) {
+      sys.campMembers[h.faction].push(h);
       if (h.job === 'raid') sys.raiders[h.faction]++;
       if (b.clearing) sys.clearers[h.faction]++;
     }
@@ -218,6 +225,11 @@ function census(world: World, sys: UnitsState): void {
     else if (b.task === 'build' || b.task === 'repair') bump(sys.helpers, b.target);
     else if (b.task === 'chop') bump(sys.choppers, b.target);
     else if (b.task === 'respond') bump(sys.responders, b.target);
+  }
+  for (const f of FACTION_IDS) {
+    const members = sys.campMembers[f];
+    members.sort((a, b) => a.recruitedAt - b.recruitedAt || a.id - b.id);
+    for (let i = popCap(world, f); i < members.length; i++) sys.overCap.add(members[i].id);
   }
   sys.hash.rebuild(active);
 
@@ -229,7 +241,7 @@ function census(world: World, sys: UnitsState): void {
   }
   for (const f of FACTION_IDS) {
     let stock = 0;
-    for (const id of world.factions[f].hearthIds) stock += sys.stockByHearth.get(id) ?? 0;
+    for (const building of world.buildings.values()) if (building.faction === f) stock += sys.stockByHearth.get(building.id) ?? 0;
     sys.stockByFaction[f] = stock;
     // Hoarding is villainy (the cold is the lack of activity); Acid Cop paranoia doubles it.
     let drain = HIPPIE.attentionDrain;
@@ -258,12 +270,19 @@ function sweepClaims(world: World, sys: UnitsState): void {
   });
 }
 
-function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number): void {
+function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number, audience: boolean): void {
   const b = brainOf(h);
+  if (stepHippieAirborne(world, h, dt)) return;
   if (b.faction !== h.faction) convert(world, h, b);
   if (h.status === 'ko') {
     if (world.time >= h.koUntil) respawn(world, h, b);
     return;
+  }
+  // Excess recruits lose attention even while idle, resting or stunned. At zero they take
+  // a distraction break; those still above capacity can leave at the dance camp.
+  if (sys.overCap.has(h.id) && b.task !== 'distracted') {
+    h.attention = Math.max(0, h.attention - HIPPIE.overCapAttentionDrain * dt);
+    if (h.attention === 0) becomeDistracted(world, h, b);
   }
   pruneEffects(world, h);
   if (hasEffect(world, h, 'knockback')) {
@@ -278,9 +297,16 @@ function updateHippie(world: World, sys: UnitsState, h: Hippie, dt: number): voi
     b.moving = false;
     return;
   }
+  if (fightBoss(world, sys, h, b, dt)) return;
   const f = h.faction;
   if (f === NEUTRAL) {
-    // Neutrals wander between sound camps and spawns; they never fight.
+    // The audience uses normal movement; recruitment, KO and boss combat take priority.
+    if (audience && watchEffigy(world, sys, h, b)) {
+      locomote(world, sys, h, b, dt);
+      faceEffigy(world, h, b);
+      return;
+    }
+    // Outside the final Burn, neutrals wander between sound camps and spawns.
     if (b.task !== 'wander') {
       beginTask(world, h, b, 'wander');
       pickWanderSpot(world, h, b);
@@ -300,9 +326,9 @@ function live(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId, 
     }
   } else if (b.hurt && b.task !== 'distracted') react(world, h, b, f);
   b.hurt = false;
-  if (!overstim && needsDecision(world, b)) decide(world, sys, h, b, f);
+  if (!overstim && needsDecision(world, b, h)) decide(world, sys, h, b, f);
   act(world, sys, h, b, f, dt);
-  if (!overstim && b.task !== 'distracted') shove(world, sys, h, b, f);
+  if (h.faction === f && !overstim && b.task !== 'distracted') shove(world, sys, h, b, f);
 }
 
 /**
@@ -317,7 +343,7 @@ function attend(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId
       return;
     case 'none':
     case 'idle':
-      if (h.attention < 100 && restingAtHome(world, sys, h, f)) {
+      if (!sys.overCap.has(h.id) && h.attention < 100 && restingAtHome(world, sys, h, f)) {
         h.attention = Math.min(100, h.attention + HIPPIE.attentionRecover * dt);
       }
       return;
@@ -386,7 +412,7 @@ function shove(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId)
     }
   }
   for (const av of world.avatars.values()) {
-    if (av.faction === f || av.koUntil > 0 || av.pos.y > SHOVE_Y) continue;
+    if (av.faction === f || av.koUntil > 0 || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > SHOVE_Y) continue;
     const d = Math.hypot(av.pos.x - h.pos.x, av.pos.z - h.pos.z) - AVATAR.radius;
     if (d < bestD) {
       bestD = d;
@@ -398,11 +424,10 @@ function shove(world: World, sys: UnitsState, h: Hippie, b: Brain, f: FactionId)
   if (target < 0) return;
   b.nextShoveAt = world.time + HIPPIE.shoveInterval / Math.max(0.25, speedMultiplier(world, h));
   h.facing = Math.atan2(tx - h.pos.x, tz - h.pos.z);
-  damageEntity(world, target, HIPPIE.shoveDamage, h.id);
-  knockback(world, target, h.pos, HIPPIE.shoveKnockback);
+  if (damageMelee(world, target, HIPPIE.shoveDamage, h.id)) knockback(world, target, h.pos, HIPPIE.shoveKnockback);
 }
 
-/** Gift, Dialectics or capture changed the hippie's faction: it starts over with the new camp. */
+/** Recruitment, Dialectics or capture changed the hippie's faction: it starts over with the new camp. */
 function convert(world: World, h: Hippie, b: Brain): void {
   releaseTask(world, h, b);
   b.faction = h.faction;
@@ -416,23 +441,15 @@ function convert(world: World, h: Hippie, b: Brain): void {
   if (h.status !== 'ko') setStatus(h, 'idle');
 }
 
-/** Wake at the own Hearth, or as a neutral at a neutral spawn once the camp is gone. */
+/** Every knockout returns the same individual to the shared neutral population. */
 function respawn(world: World, h: Hippie, b: Brain): void {
-  let home = h.faction === NEUTRAL ? undefined : world.hearthOf(h.faction);
-  if (h.faction !== NEUTRAL && (!home || !world.factions[h.faction].alive)) {
-    h.faction = NEUTRAL;
-    h.job = null;
-    h.order = null;
-    home = undefined;
-  }
+  h.faction = NEUTRAL;
+  h.recruitedAt = 0;
+  h.job = null;
+  h.order = null;
   let x = h.pos.x;
   let z = h.pos.z;
-  if (home) {
-    const a = world.rng.range(0, TAU);
-    const r = BUILDINGS.hearth.radius + world.rng.range(RESPAWN_GAP_MIN, RESPAWN_GAP_MAX);
-    x = home.pos.x + Math.sin(a) * r;
-    z = home.pos.z + Math.cos(a) * r;
-  } else if (world.map.neutralSpawns.length > 0) {
+  if (world.map.neutralSpawns.length > 0) {
     const s = world.rng.pick(world.map.neutralSpawns);
     x = s.x + world.rng.range(-NEUTRAL_SCATTER, NEUTRAL_SCATTER);
     z = s.z + world.rng.range(-NEUTRAL_SCATTER, NEUTRAL_SCATTER);
@@ -453,5 +470,55 @@ function respawn(world: World, h: Hippie, b: Brain): void {
   b.faction = h.faction;
   releaseTask(world, h, b);
   setStatus(h, 'idle');
-  world.emit({ t: 'respawn', id: h.id, kind: 'hippie', faction: h.faction, pos: { x, y: 0, z } });
+  world.emit({ t: 'respawn', id: h.id, kind: 'hippie', faction: h.faction, pos: { x, y: world.collision.groundHeight(x, z), z } });
+}
+
+/** Host ballistic flight with the same geometry used by avatars. */
+export function stepHippieAirborne(world: World, h: Hippie, dt: number): boolean {
+  const air = h.airborne;
+  if (!air) return false;
+  const pos = { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + air.y, z: h.pos.z };
+  const vel = { x: h.vel.x, y: air.vy - AVATAR.gravity * dt, z: h.vel.z };
+  const hit = world.collision.moveCharacter(pos, vel, dt, HIPPIE.radius, 1.8, 0.2);
+  h.pos.x = pos.x; h.pos.z = pos.z; h.vel.x = vel.x; h.vel.z = vel.z;
+  air.y = pos.y - world.collision.groundHeight(pos.x, pos.z); air.vy = vel.y;
+  if (hit.onGround) { h.airborne = undefined; h.vel.x *= 0.35; h.vel.z *= 0.35; }
+  return true;
+}
+
+function fightBoss(world: World, sys: UnitsState, h: Hippie, b: Brain, dt: number): boolean {
+  const boss = world.boss;
+  if (!boss || boss.hp <= 0 || h.faction < 0 || !world.factions[h.faction].alive) return false;
+  const d = Math.hypot(h.pos.x - boss.pos.x, h.pos.z - boss.pos.z);
+  const order = h.order;
+  let fighter = order?.kind === 'attack' && order.target === boss.id;
+  if (!fighter && h.carryingFlag === -1 && h.carryingLumber === 0) {
+    if (order?.kind === 'follow') {
+      const av = world.avatars.get(order.avatarId);
+      fighter = !!av && av.faction === h.faction && av.koUntil <= 0 && d < BOSS_AUTO_RADIUS &&
+        Math.hypot(av.pos.x - boss.pos.x, av.pos.z - boss.pos.z) < BOSS_AUTO_RADIUS;
+    } else if (order?.kind === 'defend') {
+      fighter = d < BOSS_AUTO_RADIUS &&
+        Math.hypot(order.at.x - boss.pos.x, order.at.z - boss.pos.z) < BOSS_AUTO_RADIUS;
+    } else if (!order) {
+      fighter = !world.factions[h.faction].isPlayer ||
+        (d < BOSS_AUTO_RADIUS && (h.job === 'defend' || h.job === 'raid'));
+    }
+  }
+  // Explicit work/move orders and return trips retain priority. Followers disengage as
+  // soon as their leader leaves, rather than being dragged away by a moving boss.
+  if (!fighter) {
+    if (b.task === 'engage' && b.target === boss.id) releaseTask(world, h, b);
+    return false;
+  }
+  if (b.task !== 'engage' || b.target !== boss.id) { beginTask(world, h, b, 'engage'); b.target = boss.id; }
+  h.status = 'fighting'; h.statusTarget = boss.pos;
+  h.facing = Math.atan2(boss.pos.x - h.pos.x, boss.pos.z - h.pos.z);
+  const reach = BOSS_RADIUS + HIPPIE.shoveReach;
+  if (moveTo(world, sys, h, b, boss.pos.x, boss.pos.z, reach) && world.time >= b.nextShoveAt) {
+    damageMelee(world, boss.id, HIPPIE.shoveDamage, h.id);
+    b.nextShoveAt = world.time + HIPPIE.shoveInterval / Math.max(0.25, speedMultiplier(world, h));
+  }
+  locomote(world, sys, h, b, dt);
+  return true;
 }

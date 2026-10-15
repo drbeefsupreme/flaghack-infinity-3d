@@ -5,6 +5,7 @@ import type { AiController } from '../ai';
 import { SIM_HZ, TIDE_WARNING } from '../sim/constants';
 import { spawnFlag, spawnHippie } from '../sim/factory';
 import { planEnclosure } from '../sim/lattice/planner';
+import { normalizeMatch } from '../sim/matchSettings';
 import { createMatch } from '../sim/setup';
 import { Simulation } from '../sim/simulation';
 import { canPlaceBuilding } from '../sim/systems/buildings';
@@ -77,11 +78,15 @@ function doomed(world: World, p: Piece): boolean {
 }
 
 /** Collision and nav answers the client relies on, probed at one spot. */
-function probe(world: World, x: number, y: number, z: number): string {
+function probe(world: World, x: number, y: number, z: number) {
   const hit = world.collision.raycast(x, y + 6, z, 0, -1, 0, 12);
-  const hitText = hit ? `${hit.tag}@${hit.y.toFixed(4)}` : 'miss';
   const blocked = world.collision.blockedCircle(x, z, 0.3, Math.max(0, y - 0.5), y + 0.5);
-  return `${hitText} ${blocked} ${world.nav.isWalkable(x, z)}`;
+  return { tag: hit?.tag, y: hit?.y ?? 0, blocked, walkable: world.nav.isWalkable(x, z) };
+}
+
+/** Millimetre wire quantization in XZ perturbs a domed anchor height by <0.1 mm. */
+function sameProbe(a: ReturnType<typeof probe>, b: ReturnType<typeof probe>): boolean {
+  return a.tag === b.tag && Math.abs(a.y - b.y) < .001 && a.blocked === b.blocked && a.walkable === b.walkable;
 }
 
 /** Every replicated difference between the host world and a mirror (empty: equal). */
@@ -157,7 +162,7 @@ function differences(host: World, mirror: World, opts: { doomedPieces: boolean }
   for (const b of host.buildings.values()) {
     const a = probe(host, b.pos.x, 1, b.pos.z);
     const m = probe(mirror, b.pos.x, 1, b.pos.z);
-    if (a !== m) note(`building ${b.id} (${b.kind}) collision/nav: host ${a} mirror ${m}`);
+    if (!sameProbe(a, m)) note(`building ${b.id} (${b.kind}) collision/nav: host ${JSON.stringify(a)} mirror ${JSON.stringify(m)}`);
   }
   for (const p of host.pieces.values()) {
     if (!opts.doomedPieces && doomed(host, p)) continue;
@@ -166,7 +171,7 @@ function differences(host: World, mirror: World, opts: { doomedPieces: boolean }
     if (!at || !mp) continue;
     const a = probe(host, at.x, at.y, at.z);
     const m = probe(mirror, at.x, at.y, at.z);
-    if (a !== m) note(`piece ${p.id} (${p.kind} L${p.level}) collision/nav: host ${a} mirror ${m}`);
+    if (!sameProbe(a, m)) note(`piece ${p.id} (${p.kind} L${p.level}) collision/nav: host ${JSON.stringify(a)} mirror ${JSON.stringify(m)}`);
   }
   return out;
 }
@@ -251,9 +256,32 @@ function stageSiege(world: World, attacker: FactionId, victim: FactionId): void 
 }
 
 describe('replication', () => {
+  it('replicates sprint-to-throw pose intent with customized match settings', () => {
+    const options = { ...optionsFor('throw-mode-wire'), match: normalizeMatch({ jumpHeight: 2, maxSignifiers: 3 }) };
+    const world = createMatch(options);
+    const sim = new Simulation(world);
+    const input = { moveX: 0, moveZ: 1, jump: false, sprint: true, throwMode: false, yaw: 0, pitch: 0 };
+    world.submit({ t: 'avatarInput', faction: 0, input });
+    sim.step();
+    const encoder = new SnapshotEncoder(world);
+    const client = new LockstepClient(options, encoder.full());
+    expect(client.mirror.world.options.match).toEqual(options.match);
+    expect(client.mirror.world.avatarOf(0).input.sprint).toBe(true);
+    expect(differences(world, client.mirror.world, { doomedPieces: false })).toEqual([]);
+    world.drainEvents();
+
+    world.submit({ t: 'avatarInput', faction: 0, input: { ...input, throwMode: true } });
+    sim.step();
+    const events = world.drainEvents();
+    client.take(overTheWire({ tick: world.tick, time: world.time, acks: {}, delta: encoder.delta(events), events }));
+    expect(client.mirror.world.avatarOf(0).input).toMatchObject({ sprint: false, throwMode: true });
+    expect(differences(world, client.mirror.world, { doomedPieces: false })).toEqual([]);
+  });
+
   for (const seed of ['net-a', 'net-b']) {
     it(`keeps mirrors equal to the host through a scripted burn (${seed})`, () => {
-      const host = new Host(optionsFor(seed));
+      // This long scripted scenario relies on the original population, jump height, and AI routes with building corners reserved.
+      const host = new Host({ ...optionsFor(seed), match: normalizeMatch({ structuresBlockFlagPlacement: true, maxSignifiers: 40, jumpHeight: 1 }) });
       const w = host.world;
       const client = new LockstepClient(host.options, host.encoder.full());
       expect(differences(w, client.mirror.world, { doomedPieces: true })).toEqual([]);

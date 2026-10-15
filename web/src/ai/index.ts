@@ -19,6 +19,7 @@ import { SIM_HZ } from '../sim/constants';
 import { FACTION_IDS } from '../sim/types';
 import type { FactionId } from '../sim/types';
 import type { World } from '../sim/world';
+import { pilotBoss } from './boss';
 import { Brain } from './brain';
 import { manageBuilds } from './builder';
 import { direct } from './director';
@@ -49,7 +50,7 @@ const PHASE_BASE = 3;
 const PHASE_STEP = Math.floor(PERCEIVE_TICKS / FACTION_IDS.length);
 
 export function createAi(world: World, factions: readonly FactionId[]): AiController {
-  const brains = factions.map((f) => {
+  const brains = factions.filter(f=>world.factions[f].alive).map((f) => {
     const b = new Brain(world, f, PHASE_BASE + f * PHASE_STEP);
     b.nextPerceiveTick = alignedTick(world.tick, PERCEIVE_TICKS, b.phase);
     b.nextDecideTick = alignedTick(world.tick, b.decideTicks, b.phase + 1);
@@ -77,6 +78,7 @@ function alignedTick(from: number, period: number, phase: number): number {
 function think(b: Brain, sched: Scheduler): void {
   const world = b.world;
   if (!world.factions[b.f].alive) return;
+  if (pilotBoss(world, b.f)) return;
   const tick = world.tick;
   if (tick >= b.nextPerceiveTick) {
     b.nextPerceiveTick = alignedTick(tick + 1, PERCEIVE_TICKS, b.phase);

@@ -37,8 +37,11 @@ export interface SharedRender {
   unitAnchors?: Map<number, THREE.Vector3>;
   /** Set by structures: the GCC tabletop map texture size/updates use this canvas/texture. */
   gccTableTexture?: THREE.Texture;
-  /** Set by env: sample terrain decoration height (visual only; gameplay ground is y = 0). */
+  /** Set by env: authoritative gameplay dome plus decorative hills beyond the arena.
+   * Add only to ground-relative V2 objects; V3 simulation positions are already absolute. */
   groundOffset?: (x: number, z: number) => number;
+  /** Set by Survey: screen-sized marked-node symbols, drawn after the final map grade. */
+  commandOverlay?: THREE.Scene;
   /** Post-processing drive values, written by the orchestrator, read by post. */
   fx?: PostFxState;
   /** Camera trauma 0..1: VFX adds on impacts/captures; controls applies and decays it. */

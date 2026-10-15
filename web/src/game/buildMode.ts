@@ -49,7 +49,8 @@ export class BuildGhost {
     const lat = world.lattice;
     this.aimPoint(av, hit, ox, oy, oz, dx, dy, dz);
     // The level you stand on is the floor: from a deck you keep building at deck height.
-    const standLevel = Math.floor((av.pos.y + 0.4) / LEVEL_HEIGHT);
+    const standLevel = Math.floor((av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) + 0.4) / LEVEL_HEIGHT);
+    this.qy -= world.collision.groundHeight(this.qx, this.qz);
     const g = this.ghost;
     g.kind = kind;
     g.edge = -1;

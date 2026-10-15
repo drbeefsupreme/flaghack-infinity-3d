@@ -44,6 +44,22 @@ function scratchOf(world: World): CaptureScratch {
 }
 
 export function updateCapture(world: World, dt: number): void {
+  // The encounter turns surviving camps into allies. Cancel even an overwrite that was
+  // already counting down at reveal so it cannot eliminate a new ally during boss combat.
+  if (world.effigyRevealedAt !== null) {
+    for (const b of world.buildings.values()) {
+      const hs = b.hearth;
+      if (!hs || !isFactionId(b.faction)) continue;
+      const prev = hs.stage;
+      hs.stage = 'safe';
+      hs.attacker = null;
+      hs.overwriteAt = 0;
+      for (const f of FACTION_IDS) hs.pressure[f] = 0;
+      if (prev !== 'safe') world.emit({ t: 'hearthStage', hearthId: b.id, faction: b.faction,
+        stage: 'safe', prev, attacker: null });
+    }
+    return;
+  }
   const sc = scratchOf(world);
   for (const b of world.buildings.values()) {
     const hs = b.hearth;
@@ -69,6 +85,7 @@ export function updateCapture(world: World, dt: number): void {
 export function captureHearth(world: World, hearth: Building, to: FactionId): void {
   const hs = hearth.hearth;
   const from = hearth.faction;
+  if (world.effigyRevealedAt !== null && isFactionId(from)) return;
   if (hearth.kind !== 'hearth' || !hs || from === to || !world.factions[to].alive) return;
 
   // The Hearth becomes the captor's outpost; its founder is remembered.
@@ -114,6 +131,7 @@ export function captureHearth(world: World, hearth: Building, to: FactionId): vo
   for (const b of world.buildings.values()) {
     if (b.faction !== from || b.kind === 'hearth' || b.kind === 'gcc' || !inCamp(b.pos.x, b.pos.z)) continue;
     b.faction = to;
+    for (const fl of world.flags.values()) if (fl.state === 'stock' && fl.holder === b.id) fl.owner = to;
     disableBuilding(world, b);
   }
   if (remaining.length === 0) {

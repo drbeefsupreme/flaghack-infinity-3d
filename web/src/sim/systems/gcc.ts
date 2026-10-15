@@ -1,6 +1,6 @@
 /**
- * Geomantic Command Center: passives (Geomantic Advice reveal/observe radius, Flag Repair),
- * actives (Flag Gifts, Flagellian Dialectics, Flag Simulacra), being pushed, destruction and
+ * Geomantic Command Center: passives (automatic recruitment, Geomantic Advice reveal/observe radius, Flag Repair),
+ * being pushed, destruction and
  * rebuild at the Hearth.
  * Owner: Economy agent.
  *
@@ -9,28 +9,15 @@
  * buildings.moveBuilding; collapse is buildings.collapseGcc.
  */
 import type { CommandOf } from '../commands';
-import { BUILDING_HEIGHT, BUILDINGS, GCC, GCC_REACH, GCC_REPAIR_SNAP, GCC_SIMULACRA_RANGE } from '../constants';
+import { BUILDING_HEIGHT, BUILDINGS, GCC, GCC_REPAIR_SNAP } from '../constants';
 import { facetYaw } from '../factory';
 import { FACTION_IDS } from '../types';
-import type { AvatarAction, Building, FactionId, GccAction, Hippie } from '../types';
+import type { Building, FactionId } from '../types';
 import type { World } from '../world';
 import { isCollapsed, moveBuilding, repairBuilding } from './buildings';
 import { econ } from './econ/state';
-import { nearestHearth, popCap, population } from './economy';
-import { canPlantAt, dropLoose, giveFlag, nearestPlantableNode, plantFlag, plantSimulacrum, takeFromStock } from './flags';
+import { nearestPlantableNode, plantFlag } from './flags';
 import { pieceAt, piecePosition, repairPiece } from './pieces';
-
-export const GCC_ACTION_NAMES: Record<GccAction, string> = {
-  gift: 'Flag Gifts',
-  dialectics: 'Flagellian Dialectics',
-  simulacra: 'Flag Simulacra',
-};
-
-const GCC_COOLDOWN: Record<GccAction, number> = {
-  gift: GCC.giftCooldown,
-  dialectics: GCC.dialecticsCooldown,
-  simulacra: GCC.simulacraCooldown,
-};
 
 /** A rebuilt cart parks this far from its Hearth, toward the centre of the burn (as at the start). */
 const PARK_DISTANCE = 9;
@@ -45,183 +32,9 @@ export function gccActive(world: World, f: FactionId): boolean {
   return !!g && g.gcc !== null && !isCollapsed(g);
 }
 
-/** Why the faction can't work its Command Table right now ('' = it can). UI and AI use this. */
-export function gccBlocker(world: World, f: FactionId, action: GccAction): string {
-  const fac = world.factions[f];
-  if (!fac.alive) return 'Your camp has fallen.';
-  const g = world.gccOf(f);
-  if (!g || !g.gcc) return 'You have no Geomantic Command Center.';
-  if (isCollapsed(g)) return 'The Command Center lies in pieces; it is being rebuilt at your Hearth.';
-  const av = world.avatarOf(f);
-  if (av.koUntil > world.time) return 'Flagless: wait for your vexillomancer to return.';
-  const reach = GCC_REACH + BUILDINGS.gcc.radius;
-  if ((av.pos.x - g.pos.x) ** 2 + (av.pos.z - g.pos.z) ** 2 > reach * reach) return `Stand at your Command Center (within ${GCC_REACH} m).`;
-  // channelUntil is set for exactly as long as the Dialectics run (tendDialectics clears it),
-  // and unlike economy scratch it replicates, so mirrors give the same answer.
-  if (g.gcc.channelUntil > world.time) return 'The Dialectics are in session.';
-  // Gifts and simulacra are instant; the Dialectics channel cannot start over another channel.
-  if (action === 'dialectics' && (av.action.kind === 'align' || av.action.kind === 'channel')) return 'Already channelling: finish it first.';
-  const ready = fac.cooldowns[action];
-  if (ready > world.time) return `${GCC_ACTION_NAMES[action]} recharging (${Math.ceil(ready - world.time)} s).`;
-  return '';
-}
-
+/** Retired command tombstone: legacy/replayed clients cannot execute removed GCC powers. */
 export function cmdGcc(world: World, c: CommandOf<'gcc'>): void {
-  const f = c.faction;
-  const g = world.gccOf(f);
-  let why = gccBlocker(world, f, c.action);
-  if (!why && g) {
-    if (c.action === 'gift') why = giftFlag(world, f, g, c.target);
-    else if (c.action === 'dialectics') why = beginDialectics(world, f, g);
-    else why = castSimulacrum(world, f, g, c.nodes);
-  }
-  if (why) world.emit({ t: 'rejected', faction: f, reason: why });
-}
-
-/** Cooldown + presentation event for a completed Command Table action. */
-function completeAction(world: World, f: FactionId, g: Building, action: GccAction): void {
-  world.factions[f].cooldowns[action] = world.time + GCC_COOLDOWN[action];
-  world.emit({ t: 'gccAction', faction: f, action, gccId: g.id, pos: { x: g.pos.x, z: g.pos.z } });
-}
-
-/** A hippie joins the camp: fresh orders, a D.E.G.E.N. beacon on the faction's mesh. */
-function enlist(h: Hippie, f: FactionId): void {
-  h.faction = f;
-  h.order = null;
-  h.job = null;
-  h.status = 'idle';
-  h.statusTarget = null;
-  h.beacon = true;
-}
-
-function announceRecruit(world: World, h: Hippie, f: FactionId, via: 'gift' | 'dialectics'): void {
-  world.factions[f].stats.hippiesRecruited++;
-  world.emit({ t: 'recruited', hippieId: h.id, faction: f, via });
-}
-
-/** Flag Gifts: one Flag (Hearth stock first, else the quiver) into a neutral hippie's hands recruits it. */
-function giftFlag(world: World, f: FactionId, g: Building, target: number): string {
-  const h = world.hippies.get(target);
-  if (!h || h.faction !== -1) return 'Flag Gifts go to unaffiliated Signifiers (neutral hippies).';
-  if (h.koUntil > world.time) return 'That Signifier is out cold.';
-  if (h.carryingFlag !== -1 || h.carryingLumber > 0) return 'That Signifier has its hands full.';
-  if ((h.pos.x - g.pos.x) ** 2 + (h.pos.z - g.pos.z) ** 2 > GCC.giftRadius * GCC.giftRadius) {
-    return `Too far: gifts reach ${GCC.giftRadius} m from the Command Center.`;
-  }
-  if (population(world, f) >= popCap(world, f)) return 'Your camp is full: raise a Drum Circle to make room.';
-  const av = world.avatarOf(f);
-  const hearth = nearestHearth(world, f, g.pos, true);
-  if (!hearth && av.carried.length === 0) return 'No Flag to give: your quiver and stock are empty.';
-  // A neutral hippie cannot hold a Flag: it joins first, then receives the gift.
-  enlist(h, f);
-  const given = hearth ? takeFromStock(world, hearth.id, h.id) !== null : giveFlag(world, av.carried[av.carried.length - 1], h.id);
-  if (!given) {
-    h.faction = -1;
-    h.beacon = false;
-    return 'The gift slipped: no Flag changed hands.';
-  }
-  announceRecruit(world, h, f, 'gift');
-  completeAction(world, f, g, 'gift');
-  return '';
-}
-
-/** Flagellian Dialectics: a rooted GCC.dialecticsChannel channel at the cart; converts on completion. */
-function beginDialectics(world: World, f: FactionId, g: Building): string {
-  const gc = g.gcc;
-  if (!gc) return 'You have no Geomantic Command Center.';
-  const action: AvatarAction = { kind: 'channel', what: 'dialectics', t: world.time, dur: GCC.dialecticsChannel };
-  world.avatarOf(f).action = action;
-  gc.channelUntil = world.time + GCC.dialecticsChannel;
-  econ(world).dialectics[f] = { action, gccId: g.id };
-  return '';
-}
-
-/** Up to GCC.dialecticsMax nearest enemy hippies around the cart change sides, dropping what they carry. */
-function concludeDialectics(world: World, f: FactionId, g: Building): void {
-  const ids = econ(world).idBuf;
-  ids.length = 0;
-  const r2 = GCC.dialecticsRadius * GCC.dialecticsRadius;
-  for (const h of world.hippies.values()) {
-    if (h.faction === f || h.faction === -1 || h.koUntil > world.time) continue;
-    if ((h.pos.x - g.pos.x) ** 2 + (h.pos.z - g.pos.z) ** 2 <= r2) ids.push(h.id);
-  }
-  const d2 = (id: number): number => {
-    const h = world.hippies.get(id);
-    return h ? (h.pos.x - g.pos.x) ** 2 + (h.pos.z - g.pos.z) ** 2 : Infinity;
-  };
-  ids.sort((a, b) => d2(a) - d2(b) || a - b);
-  let converted = 0;
-  for (const id of ids) {
-    if (converted >= GCC.dialecticsMax) break;
-    const h = world.hippies.get(id);
-    if (!h) continue;
-    if (h.carryingFlag !== -1) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: 0, z: h.pos.z });
-    enlist(h, f);
-    announceRecruit(world, h, f, 'dialectics');
-    converted++;
-  }
-  ids.length = 0;
-  if (converted > 0) completeAction(world, f, g, 'dialectics');
-  else world.emit({ t: 'notify', faction: f, text: `The Dialectics found no enemy ears within ${GCC.dialecticsRadius} m.`, severity: 'info', pos: { x: g.pos.x, z: g.pos.z } });
-}
-
-/**
- * Finish or drop dialectics channels. A replaced action means the avatar acted, was hit or fell
- * (the avatar systems ended it); a collapsed cart or KO still holding the channel ends it here.
- */
-function tendDialectics(world: World): void {
-  const st = econ(world);
-  for (const f of FACTION_IDS) {
-    const ch = st.dialectics[f];
-    if (!ch) continue;
-    const av = world.avatarOf(f);
-    const g = world.buildings.get(ch.gccId);
-    const act = av.action;
-    const replaced = act !== ch.action || act.kind !== 'channel';
-    if (replaced || !g || !g.gcc || isCollapsed(g) || av.koUntil > world.time) {
-      st.dialectics[f] = null;
-      if (g && g.gcc) g.gcc.channelUntil = 0;
-      if (!replaced) av.action = { kind: 'idle' };
-      continue;
-    }
-    if (world.time - act.t < act.dur) continue;
-    st.dialectics[f] = null;
-    g.gcc.channelUntil = 0;
-    av.action = { kind: 'idle' };
-    concludeDialectics(world, f, g);
-  }
-}
-
-/**
- * Flag Simulacra: one Flag (quiver first, else Hearth stock) planted superposed on two free
- * nodes, both within GCC_SIMULACRA_RANGE of the cart. Collapse on observation is the survey's.
- */
-function castSimulacrum(world: World, f: FactionId, g: Building, nodes: number[]): string {
-  const lat = world.lattice;
-  if (nodes.length !== 2) return 'Choose two Ley Nodes for the simulacrum.';
-  const a = nodes[0];
-  const b = nodes[1];
-  for (const n of nodes) {
-    if (!Number.isInteger(n) || n < 0 || n >= lat.nodes.length) return 'Choose two Ley Nodes for the simulacrum.';
-  }
-  if (a === b) return 'A simulacrum needs two different nodes.';
-  const range2 = GCC_SIMULACRA_RANGE * GCC_SIMULACRA_RANGE;
-  for (const n of nodes) {
-    const node = lat.nodes[n];
-    if ((node.x - g.pos.x) ** 2 + (node.z - g.pos.z) ** 2 > range2) return `Both nodes must lie within ${GCC_SIMULACRA_RANGE} m of the Command Center.`;
-  }
-  if (!canPlantAt(world, a, f) || !canPlantAt(world, b, f)) return 'Both nodes must be free and plantable.';
-  const av = world.avatarOf(f);
-  let flagId = av.carried.length > 0 ? av.carried[av.carried.length - 1] : -1;
-  if (flagId === -1) {
-    const hearth = nearestHearth(world, f, g.pos, true);
-    const fl = hearth ? takeFromStock(world, hearth.id, av.id) : null;
-    if (!fl) return 'No Flag to spend: your quiver and stock are empty.';
-    flagId = fl.id;
-  }
-  if (!plantSimulacrum(world, flagId, a, b, f, av.id)) return 'The simulacrum would not take.';
-  completeAction(world, f, g, 'simulacra');
-  return '';
+  world.emit({ t: 'rejected', faction: c.faction, reason: 'The Command Center no longer has active abilities.' });
 }
 
 /** Flag Repair: re-plant the nearest own loose Flag in range that has a free node close by. */
@@ -298,7 +111,7 @@ function parkingFacet(world: World, hearth: Building, g: Building): number {
         break;
       }
     }
-    if (!clear || world.collision.blockedCircle(fc.cx, fc.cz, r, 0.2, BUILDING_HEIGHT.gcc)) continue;
+    if (!clear || world.collision.blockedCircle(fc.cx, fc.cz, r, world.collision.groundHeight(fc.cx, fc.cz) + 0.2, world.collision.groundHeight(fc.cx, fc.cz) + BUILDING_HEIGHT.gcc)) continue;
     best = id;
     bestD = d;
   }
@@ -326,8 +139,12 @@ function rebuild(world: World, f: FactionId, g: Building): void {
 }
 
 export function updateGcc(world: World, dt: number): void {
-  tendDialectics(world);
   for (const f of FACTION_IDS) {
+    // Old snapshots can carry an in-flight retired channel. Cancel it without a conversion.
+    const av = world.avatarOf(f);
+    if (av?.action.kind === 'channel' && av.action.what === 'dialectics') av.action = { kind: 'idle' };
+    const legacyCart = world.gccOf(f);
+    if (legacyCart?.gcc) legacyCart.gcc.channelUntil = 0;
     if (!world.factions[f].alive) continue;
     const g = world.gccOf(f);
     if (!g || !g.gcc) continue;

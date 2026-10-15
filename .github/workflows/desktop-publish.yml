@@ -1,0 +1,50 @@
+name: Publish approved iteration desktop
+
+# One exact authorized push only. Ordinary pushes do not publish releases.
+# Commit iteration-desktop-approval.json only after the pinned build is verified.
+on:
+  push:
+    branches: [iteration]
+
+permissions: {}
+
+# Serialize every desktop-iteration feed writer across versions/reruns.
+concurrency:
+  group: publish-desktop-iteration
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'elmorei/flaghack-infinity-3d' &&
+      github.ref == 'refs/heads/iteration' &&
+      github.event_name == 'push' &&
+      github.event.head_commit.message ==
+        'Publish verified iteration desktop 0.1.2-iteration.1 [release:20261012]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out the exact approved publication helper
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node 24 for production updater acceptance
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Test publication guards without network or credentials
+        run: python3 .github/scripts/test-publish-iteration-desktop.py
+      - name: Test the live acceptance harness with local fixtures
+        run: node --test .github/scripts/test-live-game-updater.cjs
+      - name: Verify both public game feeds with the production updater before publishing
+        timeout-minutes: 11
+        run: node .github/scripts/verify-live-game-updater.cjs
+      - name: Verify and advance the iteration feed with the immutable Windows artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: elmorei/flaghack-infinity-3d
+        run: python3 .github/scripts/publish-iteration-desktop.py --publish

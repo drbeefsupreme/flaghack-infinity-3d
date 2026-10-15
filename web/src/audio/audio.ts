@@ -1,5 +1,5 @@
 /**
- * Procedural WebAudio (no asset files): festival soundscape, generative pentatonic music with
+ * WebAudio with licensed cached boss vocals and procedural synthesis: festival soundscape, generative pentatonic music with
  * tension layers, positional event SFX (plant chimes, pulls, throws, swings, ley hums,
  * crystal choir, phason glass glitches, discharges, capture alarms, Burn fireworks, UI blips).
  * Owner: Audio agent.
@@ -14,6 +14,7 @@ import type { ChatLine } from '../net/protocol';
 import type { GameEvent } from '../sim/events';
 import type { World } from '../sim/world';
 import { Ambience } from './ambience';
+import { BossAudio } from './boss';
 import { Cues } from './cues';
 import { AudioEngine } from './engine';
 import { MENTOR_CHARS_PER_SEC, MentorVoice } from './mentor';
@@ -45,6 +46,7 @@ export interface AudioStats {
 interface Parts {
   engine: AudioEngine;
   sfx: Sfx;
+  boss: BossAudio;
   music: Music;
   ambience: Ambience;
   mentor: MentorVoice;
@@ -83,9 +85,9 @@ export class GameAudio {
   constructor(app: AppApi) {
     this.app = app;
     const onGesture = (): void => {
+      // Browser interruptions and rejected autoplay resumes can suspend audio again.
+      // Keep the gesture path available; unlock is a no-op while already running.
       this.unlock();
-      window.removeEventListener('pointerdown', onGesture, true);
-      window.removeEventListener('keydown', onGesture, true);
     };
     window.addEventListener('pointerdown', onGesture, true);
     window.addEventListener('keydown', onGesture, true);
@@ -98,6 +100,7 @@ export class GameAudio {
       this.parts = {
         engine,
         sfx: new Sfx(engine),
+        boss: new BossAudio(engine),
         music: new Music(engine),
         ambience: new Ambience(engine),
         mentor: new MentorVoice(engine),
@@ -105,7 +108,7 @@ export class GameAudio {
       };
     }
     const ctx = this.parts.engine.ctx;
-    if (ctx.state !== 'running') void ctx.resume();
+    if (ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume().catch(() => { /* Retry on the next gesture. */ });
   }
 
   onEvents(events: GameEvent[]): void {
@@ -115,6 +118,8 @@ export class GameAudio {
     const t0 = performance.now();
     this.syncWorld(w, parts);
     for (const e of events) parts.sfx.play(e, w, this.perspective);
+    const screen = this.app.session.screen;
+    if (screen === 'playing' || screen === 'ended') parts.boss.onEvents(events);
     this.jsMs += performance.now() - t0;
   }
 
@@ -132,8 +137,10 @@ export class GameAudio {
     engine.setListener(cam.position.x, cam.position.y, cam.position.z, cam.matrixWorld.elements);
 
     const w = this.app.world;
+    if (!w || session.screen === 'title' || session.screen === 'lobby' || session.screen === 'paused') parts.boss.tracker.reset();
     if (w) {
       this.syncWorld(w, parts);
+      if (!title && session.screen !== 'paused') parts.boss.tracker.update(w.boss, w.time, w.phase === 'playing');
       this.measureTimer -= dt;
       if (this.measureTimer <= 0) {
         this.measureTimer = MEASURE_INTERVAL;
@@ -178,6 +185,7 @@ export class GameAudio {
     if (w !== this.world) {
       this.world = w;
       parts.music.reset();
+      parts.boss.tracker.reset();
       this.measureTimer = 0;
       this.fireworkTimer = 2;
     }

@@ -12,7 +12,10 @@
  * Owner: NetCore agent.
  */
 import { createMatch } from '../sim/setup';
+import type { BossState } from '../sim/boss';
 import { registerBuildingShape } from '../sim/systems/buildings';
+import { syncEffigy } from '../sim/systems/effigy';
+import { syncScenery } from '../sim/systems/scenery';
 import { attachPiece, detachPiece } from '../sim/systems/pieces';
 import type { Avatar, EntityId, MatchOptions } from '../sim/types';
 import type { World } from '../sim/world';
@@ -21,6 +24,7 @@ import { Motion, PlaybackClock } from './interp';
 import type { StateFrame } from './protocol';
 import {
   blankAvatar,
+  bossFromWire,
   CODECS,
   ENTITY_KINDS,
   FACTION_FIELDS,
@@ -41,6 +45,7 @@ export type AvatarKinematics = Pick<
 >;
 
 const AVATARS = CODECS.avatars;
+const BOSS_FIELD = WORLD_FIELDS.findIndex(field => field.key === 'boss');
 
 function maskOf(codec: EntityCodec, keys: readonly string[]): number {
   let m = 0;
@@ -74,6 +79,8 @@ export class NetMirror {
   /** Avatar rows as of the newest pushed frame (prediction runs ahead of playback). */
   private readonly newestAvatars = new Map<EntityId, Wire[]>();
   private newestAcks: Record<string, number> = {};
+  /** Prediction collides with the latest host body, not the delayed render pose. */
+  private newestBoss: BossState | null = null;
   private newestTick: number;
   private newestTime: number;
   private appliedTick: number;
@@ -94,6 +101,7 @@ export class NetMirror {
     this.newestTick = this.appliedTick = snapshot.tick;
     this.newestTime = this.appliedTime = snapshot.time;
     this.load(snapshot);
+    this.newestBoss = bossFromWire(snapshot.w[BOSS_FIELD]);
     for (const [id, row] of this.rows.avatars) this.newestAvatars.set(id, row.slice());
     this.clock.note(snapshot.time, clockMs() / 1000);
     this.settle();
@@ -111,6 +119,12 @@ export class NetMirror {
     this.newestTick = d.tick;
     this.newestTime = d.time;
     this.newestAcks = frame.acks;
+    const fields = d.w;
+    if (fields && typeof fields[0] === 'number' && (fields[0] & (1 << BOSS_FIELD))) {
+      let at = 1;
+      for (let i = 0; i < BOSS_FIELD; i++) if (fields[0] & (1 << i)) at++;
+      this.newestBoss = bossFromWire(fields[at]);
+    }
     const avatars = d.ents?.avatars;
     if (avatars) applyRows(this.newestAvatars, AVATARS.fieldCount, avatars);
     this.queue.push(frame);
@@ -168,6 +182,9 @@ export class NetMirror {
     return this.kinematics;
   }
 
+  /** Latest authoritative boss for local collision, ahead of visual playback. */
+  latestBoss(): BossState | null { return this.newestBoss; }
+
   /** Last input seq the host consumed for a player as of the newest pushed frame (0 if none). */
   latestAck(playerId: string): number {
     return this.newestAcks[playerId] ?? 0;
@@ -210,11 +227,14 @@ export class NetMirror {
       this.factionRows[f] = row.slice();
       writeRow(FACTION_FIELDS, fac, w, row, FACTION_MASK_ALL);
     });
+    this.syncHumanSeats();
     this.worldRow = snap.w.slice();
     writeRow(WORLD_FIELDS, w, w, this.worldRow, WORLD_MASK_ALL);
     this.loadSurvey(snap.survey);
     w.tick = snap.tick;
     w.time = snap.time;
+    syncEffigy(w);
+    syncScenery(w);
   }
 
   private loadSurvey(sv: SurveySnapshot): void {
@@ -267,7 +287,10 @@ export class NetMirror {
       const ed = d.ents?.[kind];
       if (ed) this.applyKind(kind, ed, newPieces);
     }
-    if (d.fac) this.applyFactions(d.fac);
+    if (d.fac) {
+      this.applyFactions(d.fac);
+      this.syncHumanSeats();
+    }
     if (d.w) this.applyWorld(d.w);
     if (d.survey) this.applySurvey(d.survey);
 
@@ -275,7 +298,14 @@ export class NetMirror {
     this.appliedTime = d.time;
     w.tick = d.tick;
     w.time = d.time;
+    syncEffigy(w);
+    syncScenery(w);
     for (const e of frame.events) w.emit(e);
+  }
+
+  /** Durable faction ownership updates controls/visibility on existing peers as well as late joiners. */
+  private syncHumanSeats(): void {
+    this.world.options.humans = this.world.factions.filter((f) => f.isPlayer).map((f) => f.id);
   }
 
   /** Segment bookkeeping after frames applied (entities hold authoritative values). */

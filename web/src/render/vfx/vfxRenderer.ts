@@ -18,17 +18,21 @@ import type { Building, Hippie, Owner, Ping, Projectile, Zone } from '../../sim/
 import type { RenderContext, RenderModule } from '../context';
 import { ATLAS_RECTS, type AtlasKey } from './atlas';
 import { Billboards } from './billboards';
+import { BarrierShatter } from './barrierShatter';
 import { Bolts } from './bolts';
+import { BossLightningFx } from './bossLightningFx';
 import { Bursts } from './bursts';
 import { ColumnStyle, Columns } from './columns';
 import { Domes } from './domes';
 import { Fireworks } from './fireworks';
+import { ImpactFireworks } from '../env/burn/boss/impactFx';
 import type { SharedUniforms } from './glsl';
 import { GroundFx, RingStyle } from './groundFx';
 import * as P from './palette';
 import { ParticlePool } from './particles';
 import { Prng, hashString } from './prng';
 import { ShockWalls } from './shockWalls';
+import { SceneryEruptions } from './sceneryEruptions';
 import { SwingArcs } from './swingArcs';
 
 const TAU = Math.PI * 2;
@@ -80,10 +84,15 @@ export class VfxRenderer implements RenderModule {
   private readonly walls: ShockWalls;
   private readonly arcs: SwingArcs;
   private readonly bolts: Bolts;
+  private readonly bossLightning = new BossLightningFx(ORDER.bolts);
+  private readonly lightningGroundY = (x: number, z: number): number => this.groundY(x, z);
   private readonly domes: Domes;
   private readonly columns: Columns;
   private readonly boards: Billboards;
   private readonly fireworks: Fireworks;
+  private readonly meleeImpacts: ImpactFireworks;
+  private readonly sceneryEruptions: SceneryEruptions;
+  private readonly barrierShatter: BarrierShatter;
   private readonly fx: Bursts;
   private readonly factionColors: THREE.Color[] = [];
   private readonly neutral = new THREE.Color(NEUTRAL_COLOR);
@@ -115,6 +124,10 @@ export class VfxRenderer implements RenderModule {
     this.domes = new Domes(12, this.shared, ORDER.domes);
     this.columns = new Columns(64, this.shared, ORDER.columns);
     this.boards = new Billboards(64, this.shared, ctx.renderer, ORDER.boards);
+    this.sceneryEruptions = new SceneryEruptions(this.shared, ORDER.grime, density);
+    this.barrierShatter = new BarrierShatter(this.shared, ORDER.light, density);
+    this.meleeImpacts = new ImpactFireworks(ctx, true);
+    ctx.scene.add(this.meleeImpacts.group);
     this.fireworks = new Fireworks(this.light, this.rng, ctx.camera, density);
     this.fx = new Bursts(this.light, this.grime, this.ground, this.walls, this.rng, density);
     for (let i = 0; i < BANNERS; i++) {
@@ -126,8 +139,11 @@ export class VfxRenderer implements RenderModule {
       this.columns.mesh,
       this.walls.mesh,
       this.grime.mesh,
+      this.sceneryEruptions.mesh,
+      this.barrierShatter.mesh,
       this.arcs.mesh,
       this.bolts.mesh,
+      this.bossLightning.group,
       this.light.mesh,
       this.boards.mesh,
     );
@@ -208,32 +224,35 @@ export class VfxRenderer implements RenderModule {
 
   onEvent(e: GameEvent): void {
     this.syncClock();
+    if (e.t === 'sceneryDestroyed') { this.sceneryEruptions.onEvent(e, this.ctx.time); return; }
+    if (e.t === 'bossBarrierShattered') { this.barrierShatter.onEvent(e, this.ctx.time); return; }
+    if (e.t === 'meleeImpact') { this.meleeImpacts.onEvent(e); return; }
     const w = this.ctx.world;
     const fx = this.fx;
     switch (e.t) {
       case 'flagPlanted': {
         if (!this.spend(1)) break;
-        fx.plant(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z, this.color(e.faction));
+        fx.plant(e.pos.x, e.pos.y, e.pos.z, this.color(e.faction));
         break;
       }
       case 'flagPulled': {
         if (!this.spend(1)) break;
-        fx.pull(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z, this.color(e.prevOwner));
+        fx.pull(e.pos.x, e.pos.y, e.pos.z, this.color(e.prevOwner));
         break;
       }
       case 'flagThrown': {
         if (!this.spend(1)) break;
-        fx.throwLaunch(e.from.x, e.from.y + this.groundY(e.from.x, e.from.z), e.from.z, e.vel.x, e.vel.y, e.vel.z);
+        fx.throwLaunch(e.from.x, e.from.y, e.from.z, e.vel.x, e.vel.y, e.vel.z);
         break;
       }
       case 'flagLanded': {
         if (!this.spend(1)) break;
-        fx.landed(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z);
+        fx.landed(e.pos.x, e.pos.y, e.pos.z);
         break;
       }
       case 'flagDecohered': {
         if (!this.spend(2)) break;
-        fx.glassGlitch(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1.2, e.pos.z, 1);
+        fx.glassGlitch(e.pos.x, e.pos.y + 1.2, e.pos.z, 1);
         break;
       }
       case 'simulacrumCollapsed': {
@@ -269,9 +288,16 @@ export class VfxRenderer implements RenderModule {
         this.shake(e.pos.x, e.pos.z, 0.45, 12, 60);
         break;
       }
+      case 'crystalLightning':
+      case 'wardLightning': {
+        const fy = e.from.y;
+        const ty = e.to.y;
+        this.bolts.strike(this.ctx.time, e.from.x, fy, e.from.z, e.to.x, ty, e.to.z);
+        break;
+      }
       case 'discharge': {
-        const fy = e.from.y + this.groundY(e.from.x, e.from.z);
-        const ty = e.to.y + this.groundY(e.to.x, e.to.z);
+        const fy = e.from.y;
+        const ty = e.to.y;
         this.bolts.strike(this.ctx.time, e.from.x, fy, e.from.z, e.to.x, ty, e.to.z);
         fx.dischargeImpact(e.to.x, ty, e.to.z);
         this.shake(e.to.x, e.to.z, 0.35, 8, 45);
@@ -298,7 +324,7 @@ export class VfxRenderer implements RenderModule {
       }
       case 'burn': {
         const ef = w.map.effigy;
-        this.fireworks.start(this.ctx.time, ef.x, ef.z);
+        this.fireworks.start(this.ctx.time, ef.x, ef.z, this.lightningGroundY);
         fx.burnStart(ef.x, this.groundY(ef.x, ef.z), ef.z);
         this.shake(ef.x, ef.z, 0.6, 60, 260, 0.25);
         break;
@@ -309,21 +335,23 @@ export class VfxRenderer implements RenderModule {
         const c = av ? this.color(av.faction) : P.WARM_WHITE;
         // Alternate the tilt so consecutive swings sweep forehand / backhand.
         const tilt = this.swingCount++ % 2 === 0 ? 0.55 : -0.55;
-        this.arcs.spawn(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1.1, e.pos.z, e.yaw, tilt, 2.7, 0.28, c, 2.2);
+        this.arcs.spawn(e.pos.x, e.pos.y + 1.1, e.pos.z, e.yaw, tilt, 2.7, 0.28, c, 2.2);
         break;
       }
       case 'hit': {
         const toPlayer = this.isPlayerAvatar(e.target);
         const byPlayer = e.by >= 0 && this.isPlayerAvatar(e.by);
         if (!toPlayer && !byPlayer && !this.spend(1)) break;
-        fx.hit(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z) + 1, e.pos.z, toPlayer);
+        // Boss hit facts use a bookkeeping point between its legs, not a surface contact.
+        // Its meleeImpact/bossImpact events already render the actual contact fireworks.
+        if (e.target !== w.boss?.id) fx.hit(e.pos.x, e.pos.y + 1, e.pos.z, toPlayer);
         if (toPlayer) this.shake(e.pos.x, e.pos.z, 0.3 + Math.min(0.4, e.amount / 100), 1000, 2000);
         else if (byPlayer) this.shake(e.pos.x, e.pos.z, 0.12, 1000, 2000);
         break;
       }
       case 'ko': {
         if (!this.spend(2)) break;
-        const gy = e.pos.y + this.groundY(e.pos.x, e.pos.z);
+        const gy = e.pos.y;
         const anchor = this.ctx.shared.unitAnchors?.get(e.id);
         const headY = anchor ? anchor.y : gy + (e.kind === 'avatar' ? 1.85 : 1.6);
         fx.ko(e.pos.x, gy, e.pos.z, headY);
@@ -343,12 +371,12 @@ export class VfxRenderer implements RenderModule {
       }
       case 'pieceBuilt': {
         if (!this.spend(1)) break;
-        fx.dust(e.pos.x, e.pos.y + this.groundY(e.pos.x, e.pos.z), e.pos.z, 8, 1.2, 0.8);
+        fx.dust(e.pos.x, e.pos.y, e.pos.z, 8, 1.2, 0.8);
         break;
       }
       case 'pieceDestroyed': {
         if (!this.spend(2)) break;
-        const gy = e.pos.y + this.groundY(e.pos.x, e.pos.z);
+        const gy = e.pos.y;
         fx.splinters(e.pos.x, gy + 1, e.pos.z, 22);
         fx.dust(e.pos.x, gy, e.pos.z, 8, 1.4, 1);
         this.shake(e.pos.x, e.pos.z, 0.18, 6, 25);
@@ -388,14 +416,14 @@ export class VfxRenderer implements RenderModule {
       case 'meshTapped': {
         if (e.faction !== this.ctx.session.playerFaction) break;
         const av = w.avatars.get(w.factions[e.faction].avatarId);
-        if (av) fx.meshGlitch(av.pos.x, av.pos.y + this.groundY(av.pos.x, av.pos.z), av.pos.z);
+        if (av) fx.meshGlitch(av.pos.x, av.pos.y, av.pos.z);
         break;
       }
       case 'retransmit': {
         if (e.faction !== this.ctx.session.playerFaction) break;
         const av = w.avatars.get(w.factions[e.faction].avatarId);
         if (!av) break;
-        const gy = av.pos.y + this.groundY(av.pos.x, av.pos.z);
+        const gy = av.pos.y;
         fx.takeShot(av.pos.x, gy, av.pos.z);
         this.banner('takeShot', av.pos.x, gy + 3.2, av.pos.z, P.PING_COLORS.shot, 1.3, 30, 1.8, 3);
         w.hippies.forEach(this.wobbleIfMine);
@@ -459,7 +487,7 @@ export class VfxRenderer implements RenderModule {
 
   private readonly trailProjectile = (p: Projectile): void => {
     const x = p.pos.x;
-    const y = p.pos.y + this.groundY(p.pos.x, p.pos.z);
+    const y = p.pos.y;
     const z = p.pos.z;
     let slot = -1;
     for (let i = 0; i < TRAIL_SLOTS; i++) {
@@ -639,7 +667,11 @@ export class VfxRenderer implements RenderModule {
     this.drawBanners(now);
 
     this.bolts.update(now);
+    this.bossLightning.update(w, now, this.lightningGroundY);
     this.fireworks.update(now);
+    this.meleeImpacts.update(now);
+    this.sceneryEruptions.update(now);
+    this.barrierShatter.update(now);
 
     this.light.flush();
     this.grime.flush();
@@ -653,12 +685,16 @@ export class VfxRenderer implements RenderModule {
   }
 
   dispose(): void {
+    this.meleeImpacts.dispose();
+    this.sceneryEruptions.dispose();
+    this.barrierShatter.dispose();
     this.light.dispose();
     this.grime.dispose();
     this.ground.dispose();
     this.walls.dispose();
     this.arcs.dispose();
     this.bolts.dispose();
+    this.bossLightning.dispose();
     this.domes.dispose();
     this.columns.dispose();
     this.boards.dispose();

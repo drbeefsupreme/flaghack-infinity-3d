@@ -9,6 +9,8 @@ export interface Env {
   h?: number;
   d: number;
   peak?: number;
+  /** Sustained heavy bodies may use a linear fade; ordinary synth voices keep the original exponential tail. */
+  curve?: 'exponential' | 'linear';
 }
 
 /** Apply an AHD envelope to a gain param; returns the time it reaches silence. */
@@ -20,7 +22,8 @@ export function envelope(g: AudioParam, t: number, e: Env): number {
   g.linearRampToValueAtTime(peak, t + a);
   if (h > 0) g.setValueAtTime(peak, t + a + h);
   const end = t + a + h + e.d;
-  g.exponentialRampToValueAtTime(0.0001, end);
+  if (e.curve === 'linear') g.linearRampToValueAtTime(0, end);
+  else g.exponentialRampToValueAtTime(0.0001, end);
   g.setValueAtTime(0, end + 0.01);
   return end;
 }

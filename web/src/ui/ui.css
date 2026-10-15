@@ -1510,7 +1510,7 @@
 }
 .plan-tools {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
 }
 .plan-btn {
@@ -1983,12 +1983,38 @@
 
 /* Title screen */
 .title {
+  --title-subtitle-size: 25px;
+  --title-edition-size: calc(2 * var(--title-subtitle-size));
   position: absolute;
   inset: 0;
   transition: opacity 0.3s;
 }
 .title.dimmed {
   opacity: 0.25;
+}
+.title-edition {
+  --edition-width: 570px;
+  position: absolute;
+  /* Rotating around the upper right raises the left edge by width * sin(15deg).
+     Compensate for that rise so the entire label stays inside the viewport. */
+  top: calc(24px + var(--edition-width) * 0.258819);
+  right: 28px;
+  width: var(--edition-width);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: var(--title-edition-size);
+  font-weight: 400;
+  line-height: 1.08;
+  text-align: right;
+  white-space: nowrap;
+  transform: rotate(15deg);
+  transform-origin: top right;
+  /* A fine highlight and a dark lower edge give the white lettering a light bevel. */
+  text-shadow: -0.6px -0.6px 0 #fff, 0.8px 1px 0 #9b9b9b,
+    1.5px 2px 0 #454545, 0 3px 5px rgba(0, 0, 0, 0.8);
+}
+#ui .fh-root .title-edition {
+  pointer-events: none;
 }
 .title-shade {
   position: absolute;
@@ -2046,36 +2072,20 @@
   filter: drop-shadow(0 0 3px rgba(255, 60, 60, 0.8));
 }
 .logo {
-  margin: 0;
-  font: 700 92px/1 var(--font-ornate);
-  letter-spacing: 0.02em;
-  color: var(--flag);
-  text-shadow: 0 0 18px rgba(255, 212, 0, 0.55), 0 0 46px rgba(255, 170, 0, 0.3), 0 3px 0 #6b4800, 0 6px 16px rgba(0, 0, 0, 0.7);
-  white-space: nowrap;
+  width: 100%;
+  min-width: 0;
+  /* Absorb the artboard's transparent glow padding into the vertical stack.
+     Percentages follow the wordmark width, so the whole lockup scales together. */
+  margin: -9.184% 0 calc(18px - 6.505%);
+  line-height: 0;
+  flex: none;
+}
+.title-wordmark {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The SVG viewBox includes the full lettering, infinity, rule and glow. */
   animation: fh-glow 4s ease-in-out infinite;
-}
-.logo .inf {
-  display: inline-block;
-  font-family: var(--font-display);
-  font-weight: 400;
-  color: #fff6c2;
-  animation: fh-inf 6s ease-in-out infinite;
-}
-.subtitle {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 4px 0 18px 4px;
-  font: 700 25px var(--font-stencil);
-  letter-spacing: 0.5em;
-  color: var(--cream);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7);
-}
-.subtitle::after {
-  content: '';
-  width: 120px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--flag), transparent);
 }
 .quote {
   min-height: 76px;
@@ -4067,17 +4077,6 @@
     filter: brightness(1.12);
   }
 }
-@keyframes fh-inf {
-  0%,
-  100% {
-    transform: rotate(0deg) scale(1);
-    text-shadow: 0 0 18px rgba(255, 240, 160, 0.7);
-  }
-  50% {
-    transform: rotate(-6deg) scale(1.06);
-    text-shadow: 0 0 34px rgba(255, 240, 160, 1);
-  }
-}
 @keyframes fh-begin {
   0%,
   100% {
@@ -4096,3 +4095,59 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Fork setup and controls remain usable on short screens. */
+.title-col { max-height: 100vh; overflow-y: auto; }
+.settings-box { max-height: 90vh; overflow-y: auto; }
+.match-setup { margin: 10px 0; }
+.setup-field { display: flex; align-items: center; gap: 16px; margin: 12px 0; }
+.setup-field > span { flex: 1; min-width: 0; }
+.setup-field .field-in { width: 170px; flex: none; }
+.setup-hint { display: block; margin-top: 4px; color: var(--cream-dim); font-size: 12px; font-weight: normal; }
+.setup-field .setup-seed { width: 240px; }
+.lobby-box { max-width: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; }
+.lobby-head, .lobby-seats, .lobby-lower { flex-shrink: 0; }
+.local-lobby .lobby-lower { grid-template-columns: 1fr; }
+.local-lobby .lobby-rules { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+.local-lobby .lobby-rules > .panel-title { grid-column: 1 / -1; }
+.local-lobby .lobby-go { justify-content: center; }
+.seat-top { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.seat-number { color: var(--cream-dim); font: 700 11px var(--font-display); text-transform: uppercase; letter-spacing: .08em; }
+.seat-toggle { min-width: 56px; }
+.seat-toggle:disabled, .seat-action:disabled, .advanced-settings :disabled { cursor: default; opacity: .55; }
+.seat-identity { display: flex; flex-direction: column; align-items: center; width: 100%; }
+.seat-card.mine::after { top: 53px; }
+.seat-off { flex: 1; min-height: 168px; display: flex; flex-direction: column; justify-content: center; gap: 12px; color: var(--cream-dim); }
+.seat-off strong { font: 700 26px var(--font-display); letter-spacing: .1em; text-transform: uppercase; }
+.seat-off span { font-size: 12px; }
+.seat-card.disabled-seat { border-top-color: #655b4f; background: rgba(18, 14, 10, .94); box-shadow: none; }
+.advanced-settings { z-index: 40; }
+.advanced-box { width: min(740px, calc(100% - 32px)); height: min(760px, calc(100% - 40px)); padding: 20px; display: flex; flex-direction: column; min-height: 0; }
+.advanced-box > .modal-head, .advanced-box > .modal-foot { flex-shrink: 0; }
+.advanced-box > .modal-head { padding-bottom: 12px; border-bottom: 1px solid rgba(200, 151, 63, .3); }
+.advanced-box > .modal-foot { padding-top: 12px; border-top: 1px solid rgba(200, 151, 63, .3); }
+.advanced-box > .modal-foot .btn:first-child { margin-left: 0; }
+.advanced-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 14px; }
+.advanced-section { padding: 8px 0 12px; border-bottom: 1px solid rgba(200, 151, 63, .2); }
+.advanced-section:last-child { border-bottom: 0; }
+.advanced-section h3 { margin: 6px 0 14px; color: var(--flag); font: 700 15px var(--font-display); letter-spacing: .07em; text-transform: uppercase; }
+@media (max-width: 800px) {
+  .lobby-seats { grid-template-columns: repeat(2, 1fr); }
+  .lobby-head { flex-wrap: wrap; }
+  .lobby-tools { flex-wrap: wrap; }
+  .lobby-lower, .local-lobby .lobby-rules { grid-template-columns: 1fr; }
+  .advanced-box .modal-head h2 { font-size: 18px; }
+}
+@media (max-width: 480px) {
+  .advanced-box { padding: 12px; }
+  .advanced-settings .setup-field { flex-wrap: wrap; }
+  .advanced-settings .setup-field > span { flex-basis: 100%; }
+  .advanced-settings .setup-field .field-in { width: 100%; }
+}
+.control-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.control-table td, .control-table th { padding: 5px; text-align: left; }
+.control-table .field-in { width: 120px; font-size: 11px; }
+.control-settings { overflow-x: auto; margin-top: 15px; }
+
+/* Enclose keeps its home-expansion preset together with target enclosure. */
+.enclose-options { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 6px; padding-left: 8px; border-left: 2px solid rgba(255, 226, 122, .35); }

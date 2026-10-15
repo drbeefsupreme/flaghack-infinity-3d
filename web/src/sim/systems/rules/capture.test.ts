@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BURN_TIME,
   CAPTURE,
   IMPLIED_MAX_ORDER,
   OUTPOST_PRESSURE_MULT,
@@ -12,6 +11,7 @@ import { spawnBuilding, spawnHippie } from '../../factory';
 import { criticalNodes } from '../../lattice/geometry';
 import { planEnclosure } from '../../lattice/planner';
 import { NEUTRAL } from '../../types';
+import { burnTime, normalizeMatch } from '../../matchSettings';
 import type { CaptureStage, FactionId } from '../../types';
 import type { World } from '../../world';
 import { isCollapsed } from '../buildings';
@@ -199,6 +199,7 @@ describe('Hearth capture', () => {
 
   it('applies defender (floored), Ward and escalating sudden-death modifiers to the pressure rate', () => {
     const world = newMatch('capture-e');
+    world.options.match = normalizeMatch({ bossMode: false });
     world.tide.nextAt = Infinity;
     exposeHearth(world, 0);
     const hearth = must(world.hearthOf(0), 'hearth');
@@ -239,7 +240,7 @@ describe('Hearth capture', () => {
     // The Burn multiplies it, and burns hotter by one every SUDDEN_DEATH_ESCALATE_EVERY seconds.
     world.suddenDeath = true;
     expect(rate()).toBeCloseTo(warded * SUDDEN_DEATH_PRESSURE_MULT, 3);
-    world.time = BURN_TIME + 2 * SUDDEN_DEATH_ESCALATE_EVERY + 1;
+    world.time = burnTime(world.options) + 2 * SUDDEN_DEATH_ESCALATE_EVERY + 1;
     expect(suddenDeathMult(world)).toBe(SUDDEN_DEATH_PRESSURE_MULT + 2);
     expect(rate()).toBeCloseTo(warded * (SUDDEN_DEATH_PRESSURE_MULT + 2), 3);
   });

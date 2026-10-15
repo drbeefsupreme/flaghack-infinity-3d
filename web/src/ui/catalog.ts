@@ -1,6 +1,6 @@
 /**
  * Player-facing names, short rule summaries and icon choices for every game noun the UI
- * shows (chakras, drugs, tools, buildings, GCC actions, plan tools, jobs, hippie statuses,
+ * shows (chakras, drugs, tools, buildings, plan tools, jobs, hippie statuses,
  * Hearth stages, difficulty, keymap). Numbers come from sim/constants so tooltips never
  * drift from the rules; prose lives here so panels stay layout-only.
  */
@@ -18,15 +18,16 @@ import {
   DRUG_MAX,
   DRUM_RITUAL_PER_SEC,
   DRUMMERS_PER_CIRCLE,
-  GCC,
   HIPPIE,
   HIPPIE_AI,
+  LIGHTNING_PULL_MULT,
   PIECE,
   RECRUIT_INTERVAL,
-  RECRUIT_LUMBER,
+  RECRUIT_RADIUS,
   RETRANSMIT_ATTENTION,
   RETRANSMIT_COOLDOWN,
   WARD_OBSERVE_RADIUS,
+  WARD_FLAG_RADIUS,
   WARD_PULSE_INTERVAL,
   WARD_PULSE_RADIUS,
   WARD_RADIUS,
@@ -36,14 +37,12 @@ import {
 import { ABILITY_NAMES, CHAKRA_NAMES } from '../sim/systems/abilities';
 import { BUILDING_NAMES } from '../sim/systems/buildings';
 import { DRUG_NAMES } from '../sim/systems/drugs';
-import { GCC_ACTION_NAMES } from '../sim/systems/gcc';
 import type {
   AbilityId,
   CaptureStage,
   ChakraId,
   Difficulty,
   DrugId,
-  GccAction,
   HippieStatus,
   JobKind,
 } from '../sim/types';
@@ -170,7 +169,7 @@ export const DRUG_INFO: Record<DrugId, DrugInfo> = {
     key: '7',
     name: DRUG_NAMES.dust,
     duration: DRUG.duration.dust,
-    effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points, strain and enemy Simulacra. Your throws snap to nodes up to ${AVATAR.throwSnapRadiusDust} m away.`,
+    effect: `For ${DRUG.duration.dust} s the whole lattice shows: focus points and strain. Your throws snap to nodes up to ${AVATAR.throwSnapRadiusDust} m away.`,
     risk: `The screen distorts, the minimap fills with noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} False Flags appear that are not there.`,
     icon: 'dust',
     target: 'drug-7',
@@ -200,25 +199,25 @@ export const BUILD_INFO: Record<CampBuildingKind, BuildInfo> = {
   workshop: {
     name: BUILDING_NAMES.workshop,
     cost: BUILDINGS.workshop.cost,
-    effect: `Crafts +1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber each.`,
+    effect: `Crafts +1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber each. Holds 10 for pickup here; overflow goes to the altar. Adds 10 to the camp hoarding threshold.`,
     icon: 'workshop',
   },
   drumcircle: {
     name: BUILDING_NAMES.drumcircle,
     cost: BUILDINGS.drumcircle.cost,
-    effect: `Recruits a Signifier every ${RECRUIT_INTERVAL} s (1 Flag + ${RECRUIT_LUMBER} lumber) and raises the pop cap by ${HIPPIE.popCapPerDrumCircle}. Up to ${DRUMMERS_PER_CIRCLE} drummers make +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
+    effect: `Recruits a nearby neutral every ${RECRUIT_INTERVAL} s within ${RECRUIT_RADIUS} m and raises attention capacity by ${HIPPIE.popCapPerDrumCircle}. Recruitment can exceed capacity; excess recruits lose attention and can become neutral after a dance-camp break. Up to ${DRUMMERS_PER_CIRCLE} drummers make +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
     icon: 'drumcircle',
   },
   ward: {
     name: BUILDING_NAMES.ward,
     cost: BUILDINGS.ward.cost,
-    effect: `Enemy pressure on Hearths within ${WARD_RADIUS} m drops by ${Math.round((1 - CAPTURE.wardMult) * 100)}%. Observes ${WARD_OBSERVE_RADIUS} m. Every ${WARD_PULSE_INTERVAL} s a vibe check stuns enemy Signifiers within ${WARD_PULSE_RADIUS} m.`,
+    effect: `Enemy pressure on Hearths within ${WARD_RADIUS} m drops by ${Math.round((1 - CAPTURE.wardMult) * 100)}%. Observes ${WARD_OBSERVE_RADIUS} m. Lightning makes enemy pulls of your planted Flags within ${WARD_FLAG_RADIUS} m take ${LIGHTNING_PULL_MULT}× as long. Every ${WARD_PULSE_INTERVAL} s a vibe check stuns enemy Signifiers within ${WARD_PULSE_RADIUS} m.`,
     icon: 'ward',
   },
   druglab: {
     name: BUILDING_NAMES.druglab,
     cost: BUILDINGS.druglab.cost,
-    effect: `Brews one dose every ${BREW_TIME} s (${BREW_COST} lumber). Holds up to ${DRUG_MAX} doses of each drug.`,
+    effect: `Automatically brews a random drug every ${BREW_TIME} s (${BREW_COST} lumber), favoring low stock. Queued orders take priority after the current batch. Holds up to ${DRUG_MAX} doses of each drug.`,
     icon: 'druglab',
   },
 };
@@ -242,39 +241,6 @@ export const TOOL_INFO: readonly ToolInfo[] = [
   { tool: 'demolish', key: 'V', name: 'Demolish', cost: -PIECE.refund, icon: 'demolish', target: 'tool-demolish' },
   { tool: 'building', key: 'B', name: 'Camp building', cost: 0, icon: 'workshop', target: 'tool-building' },
 ];
-
-export interface GccInfo {
-  name: string;
-  cooldown: number;
-  effect: string;
-  icon: IconName;
-  /** Training Burn highlight id of its Command Table button. */
-  target: TutorialTarget;
-}
-
-export const GCC_INFO: Record<GccAction, GccInfo> = {
-  gift: {
-    name: GCC_ACTION_NAMES.gift,
-    cooldown: GCC.giftCooldown,
-    effect: `At your cart: spend 1 Flag to recruit the selected neutral Signifier within ${GCC.giftRadius} m.`,
-    icon: 'gift',
-    target: 'gcc-gift',
-  },
-  dialectics: {
-    name: GCC_ACTION_NAMES.dialectics,
-    cooldown: GCC.dialecticsCooldown,
-    effect: `At your cart: a ${GCC.dialecticsChannel} s debate converts up to ${GCC.dialecticsMax} enemy Signifiers within ${GCC.dialecticsRadius} m.`,
-    icon: 'dialectics',
-    target: 'gcc-dialectics',
-  },
-  simulacra: {
-    name: GCC_ACTION_NAMES.simulacra,
-    cooldown: GCC.simulacraCooldown,
-    effect: `At your cart: spend 1 Flag to plant it on two nodes at once. When an enemy comes within ${GCC.simulacraObserveRadius} m of either, it collapses onto one.`,
-    icon: 'simulacra',
-    target: 'gcc-simulacra',
-  },
-};
 
 export const RETRANSMIT_INFO = {
   name: 'TAKE A SHOT',
@@ -311,7 +277,7 @@ export const PLAN_TOOLS: readonly PlanToolInfo[] = [
     icon: 'pentacle',
     target: 'plan-pentacle',
   },
-  { tool: 'ring', key: 'R', name: 'Ring', hint: 'Plan a wider ring around your home Survey.', icon: 'ring', target: 'plan-ring' },
+  { tool: 'ring', key: 'R', name: 'Expand home', hint: 'Enclose: plan a wider ring around your home Survey.', icon: 'ring', target: 'plan-ring' },
   { tool: 'clear', key: '⌫', name: 'Clear', hint: 'Erase your whole Survey plan.', icon: 'clear' },
 ];
 
@@ -438,7 +404,7 @@ export const KEYMAP: readonly KeyGroup[] = [
       ['Q', 'Throw a Flag'],
       ['RMB hold', 'Aim a throw (LMB throws)'],
       ['E', 'Plant · hold to pull · tap a Beacon'],
-      ['E at GCC', 'Command Table (hold to push the cart)'],
+      ['Hold E at GCC', 'Push the cart'],
     ],
   },
   {
@@ -471,7 +437,7 @@ export const KEYMAP: readonly KeyGroup[] = [
       ['Wheel', 'Zoom'],
       ['LMB drag', 'Box-select Signifiers (Shift adds)'],
       ['RMB', 'Context order · Ctrl+RMB defend here'],
-      ['N E P R', 'Node · Enclose · Pentacle · Ring'],
+      ['N E P R', 'Node · Enclose · Pentacle · Expand home'],
       ['Backspace', 'Clear the Survey plan'],
       ['Esc', 'Select tool · back to action'],
     ],

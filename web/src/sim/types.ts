@@ -33,7 +33,8 @@ export const JOBS: readonly JobKind[] = ['survey', 'gather', 'defend', 'raid', '
 
 export type BuildingKind = 'hearth' | 'workshop' | 'drumcircle' | 'ward' | 'druglab' | 'gcc';
 export type PieceKind = 'wall' | 'floor' | 'ramp';
-export type GccAction = 'gift' | 'dialectics' | 'simulacra';
+/** Retired actions: retained for legacy command/event and snapshot decoding only. */
+export type GccAction = 'dialectics' | 'simulacra';
 export type PingKind = 'rally' | 'attack' | 'flag' | 'sos' | 'shot';
 
 // ── Status effects ───────────────────────────────────────────────────────────
@@ -115,7 +116,7 @@ export interface Flag {
   state: FlagState;
   /** Controlling faction: planter / carrier / stock holder. NEUTRAL for orphaned Flags. */
   owner: Owner;
-  /** Entity holding the Flag (avatar/hippie when carried, hearth when stock, projectile id when flying). */
+  /** Entity holding the Flag (avatar/hippie when carried, Hearth/Workshop when stock, projectile id when flying). */
   holder: EntityId | -1;
   /** Node id when planted, else -1. */
   node: number;
@@ -137,6 +138,8 @@ export interface AvatarInput {
   moveZ: number;
   jump: boolean;
   sprint: boolean;
+  /** Held throw/aim mode. Scripted inputs may omit it (false). Takes priority over sprint. */
+  throwMode?: boolean;
   /** Facing / aim yaw (0 = +z) and pitch (radians, + up). */
   yaw: number;
   pitch: number;
@@ -211,6 +214,10 @@ export interface Hippie {
   type: 'hippie';
   faction: Owner;
   name: string;
+  /** Ballistic height/vertical velocity during a giant launch. */
+  airborne?: { y: number; vy: number };
+  /** Time of joining the current camp; newest recruits occupy excess soft-cap places. */
+  recruitedAt: number;
   /** Appearance seed (presentation only). */
   look: number;
   pos: V2;
@@ -301,6 +308,8 @@ export interface Pile {
 }
 
 export interface Crystal {
+  /** Uniform linear size, fixed at manifestation and replicated to every peer. */
+  scale: number;
   id: EntityId;
   type: 'crystal';
   node: number;
@@ -381,6 +390,7 @@ export type MatchMode = 'standard' | 'tutorial';
 
 /** Plain data (serializable): the host sends it to every client to rebuild the static world. */
 export interface MatchOptions {
+  match?: import("./matchSettings").MatchSettings;
   seed: string;
   difficulty: Difficulty;
   /** Human-controlled factions. Every other faction is AI (empty: attract mode / headless tests). */

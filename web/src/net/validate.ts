@@ -1,3 +1,4 @@
+import { MATCH_RANGES, isMatchDays, normalizeMatch } from "../sim/matchSettings";
 /**
  * Host-side validation of untrusted client messages: JSON parse, exact shape and type checks for
  * every ClientMessage and every Command variant (numbers finite and in range, ids integers,
@@ -18,7 +19,6 @@ import type {
   Difficulty,
   DrugId,
   FactionId,
-  GccAction,
   HippieOrder,
   JobKind,
   PieceKind,
@@ -45,8 +45,6 @@ const MAX_INDEX = 0x7fffffff;
 /** Above the pile of every node on the map, so a whole-Survey 'set' always fits. */
 const MAX_PLAN_NODES = 4096;
 const MAX_ORDER_HIPPIES = 512;
-/** A simulacrum names two nodes; gifts and dialectics name none. */
-const MAX_GCC_NODES = 2;
 const MAX_BUILD_LEVEL_INDEX = 64;
 
 type Rec = Record<string, unknown>;
@@ -107,7 +105,6 @@ const BUILDING_KINDS: Record<BuildingKind, true> = {
 const ABILITIES: Record<AbilityId, true> = { beacon: true, march: true, stabilize: true, phason: true, omega: true };
 const CHAKRA_IDS: Record<ChakraId, true> = { hoist: true, fly: true, canton: true, field: true, finial: true };
 const DRUG_IDS: Record<DrugId, true> = { saffron: true, dust: true, acidcop: true };
-const GCC_ACTIONS: Record<GccAction, true> = { gift: true, dialectics: true, simulacra: true };
 const PING_KINDS: Record<PingKind, true> = { rally: true, attack: true, flag: true, sos: true, shot: true };
 const JOB_KINDS: Record<JobKind, true> = { survey: true, gather: true, defend: true, raid: true, ritual: true };
 const PLAN_OPS: Record<CommandOf<'plan'>['op'], true> = { add: true, remove: true, set: true, clear: true };
@@ -130,12 +127,17 @@ function intList(v: unknown, min: number, maxLength: number): number[] | null {
 }
 
 const INPUT_KEYS = ['moveX', 'moveZ', 'jump', 'sprint', 'yaw', 'pitch'];
+const THROW_INPUT_KEYS = [...INPUT_KEYS, 'throwMode'];
 
 function avatarInput(v: unknown): AvatarInput | null {
-  if (!exact(v, INPUT_KEYS)) return null;
+  if (!exact(v, INPUT_KEYS) && !exact(v, THROW_INPUT_KEYS)) return null;
   const { moveX, moveZ, jump, sprint, yaw, pitch } = v;
   if (!isNum(moveX) || !isNum(moveZ) || !isNum(yaw) || !isNum(pitch)) return null;
   if (typeof jump !== 'boolean' || typeof sprint !== 'boolean') return null;
+  if (Object.hasOwn(v, 'throwMode')) {
+    if (typeof v.throwMode !== 'boolean') return null;
+    return { moveX, moveZ, jump, sprint, yaw, pitch, throwMode: v.throwMode };
+  }
   return { moveX, moveZ, jump, sprint, yaw, pitch };
 }
 
@@ -158,6 +160,16 @@ function settingsPatch(v: unknown): Partial<LobbySettings> | null {
       const d = v.difficulty;
       if (!isKeyOf(DIFFICULTIES, d)) return null;
       out.difficulty = d;
+    } else if(k === 'match') {
+      const m=v.match; if(!isRec(m))return null;
+      if(!Array.isArray(m.active)||m.active.length<1||m.active.length>4||m.active.some(f=>!Number.isInteger(f)||f<0||f>3)||new Set(m.active).size!==m.active.length)return null;
+      if(!isMatchDays(m.days))return null;
+      for(const key of Object.keys(MATCH_RANGES) as (keyof typeof MATCH_RANGES)[]){const n=m[key];const [min,max]=MATCH_RANGES[key];if(typeof n!=='number'||!Number.isFinite(n)||n<min||n>max)return null;}
+      if(typeof m.bossMode !== 'boolean')return null;
+      if(typeof m.structuresBlockFlagPlacement !== 'boolean')return null;
+      if(!Number.isInteger(m.maxSignifiers)||!Number.isInteger(m.startingSignifiers)||!Number.isInteger(m.bossHp)||!Number.isInteger(m.hoardThreshold))return null;
+      if(Object.keys(m).some(key=>!['active','days','bossMode','structuresBlockFlagPlacement',...Object.keys(MATCH_RANGES)].includes(key)))return null;
+      out.match=normalizeMatch(m);
     } else if (k === 'seed') {
       const s = v.seed;
       if (s !== null && !isText(s, RAW_SEED)) return null;
@@ -254,6 +266,10 @@ const COMMANDS: { [K in CommandType]: CommandEntry<CommandOf<K>> } = {
     keys: ['t', 'faction', 'flagId'],
     parse: ({ flagId }, faction) => (isInt(flagId, -1) ? { t: 'pull', faction, flagId } : null),
   },
+  handFlag: {
+    keys: ['t', 'faction', 'hippieId'],
+    parse: ({ hippieId }, faction) => isInt(hippieId, 0) ? { t: 'handFlag', faction, hippieId } : null,
+  },
   swing: {
     keys: ['t', 'faction'],
     parse: (_m, faction) => ({ t: 'swing', faction }),
@@ -341,11 +357,8 @@ const COMMANDS: { [K in CommandType]: CommandEntry<CommandOf<K>> } = {
   },
   gcc: {
     keys: ['t', 'faction', 'action', 'target', 'nodes'],
-    parse: (m, faction) => {
-      const { action, target } = m;
-      const nodes = intList(m.nodes, 0, MAX_GCC_NODES);
-      return nodes && isKeyOf(GCC_ACTIONS, action) && isInt(target, -1) ? { t: 'gcc', faction, action, target, nodes } : null;
-    },
+    // Keep the legacy discriminator reserved, but never admit either removed power.
+    parse: () => null,
   },
   pushGcc: {
     keys: ['t', 'faction', 'on'],
@@ -395,6 +408,10 @@ const MESSAGES: { [K in MessageType]: Entry<Extract<ClientMessage, { t: K }>> } 
     keys: ['t', 'seat'],
     parse: ({ seat }) => (seat === null || isFaction(seat) ? { t: 'seat', seat } : null),
   },
+  bossTakeover: {
+    keys: ['t', 'seat'],
+    parse: ({ seat }) => (isFaction(seat) ? { t: 'bossTakeover', seat } : null),
+  },
   ready: {
     keys: ['t', 'ready'],
     parse: ({ ready }) => (typeof ready === 'boolean' ? { t: 'ready', ready } : null),
@@ -419,11 +436,11 @@ const MESSAGES: { [K in MessageType]: Entry<Extract<ClientMessage, { t: K }>> } 
     parse: ({ text }) => (isText(text, RAW_CHAT) ? { t: 'chat', text } : null),
   },
   input: {
-    keys: ['t', 'seq', 'input', 'cmds'],
+    keys: ['t', 'inputEpoch', 'seq', 'input', 'cmds'],
     parse: (m) => {
-      const { seq, cmds } = m;
+      const { inputEpoch, seq, cmds } = m;
       const input = avatarInput(m.input);
-      if (!input || !isInt(seq, 1, Number.MAX_SAFE_INTEGER) || !Array.isArray(cmds) || cmds.length > MAX_FRAME_COMMANDS) {
+      if (!input || !isInt(inputEpoch, 1, Number.MAX_SAFE_INTEGER) || !isInt(seq, 1, Number.MAX_SAFE_INTEGER) || !Array.isArray(cmds) || cmds.length > MAX_FRAME_COMMANDS) {
         return null;
       }
       const out: Command[] = [];
@@ -432,7 +449,7 @@ const MESSAGES: { [K in MessageType]: Entry<Extract<ClientMessage, { t: K }>> } 
         if (!cmd) return null;
         out.push(cmd);
       }
-      return { t: 'input', seq, input, cmds: out };
+      return { t: 'input', inputEpoch, seq, input, cmds: out };
     },
   },
   ping: {
@@ -478,8 +495,9 @@ export function fitsLattice(cmd: Command, lat: LatticeSizes): boolean {
       return cmd.edge < lat.edges && cmd.facet < lat.facets;
     case 'placeBuilding':
       return cmd.facet < lat.facets;
-    case 'plan':
     case 'gcc':
+      return false;
+    case 'plan':
       for (const n of cmd.nodes) if (n >= lat.nodes) return false;
       return true;
     case 'order':

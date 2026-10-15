@@ -1,0 +1,8 @@
+# Preserve exact collision-bake input bytes across Linux and Windows checkouts.
+/web/public/models/boss/skeletal-boss.glb -text
+/web/src/render/env/burn/boss/combatPose.ts text eol=lf
+/web/src/render/env/burn/boss/revealPose.ts text eol=lf
+/web/src/render/env/burn/boss/crouchWalkData.ts text eol=lf
+/web/src/render/env/burn/boss/rearFlapPose.ts text eol=lf
+/web/src/render/env/burn/boss/bossModel.ts text eol=lf
+/web/src/sim/bossDimensions.ts text eol=lf

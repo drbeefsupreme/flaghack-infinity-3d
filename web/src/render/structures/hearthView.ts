@@ -15,7 +15,7 @@
  * One point light per Hearth (pooled by the renderer) carries the flame colour into the night.
  */
 import * as THREE from 'three';
-import { HOARD_THRESHOLD } from '../../sim/constants';
+import { isHoarding } from '../../sim/systems/economy';
 import { angleDiff } from '../../sim/math';
 import type { Building } from '../../sim/types';
 import { BuildingView, SMOKE_GREY, type FrameInfo } from './buildingView';
@@ -281,7 +281,7 @@ export class HearthView extends BuildingView {
     const shown = Math.min(RACK_SLOTS, stock);
     const windMoved = Number.isNaN(this.shownWind) || Math.abs(angleDiff(this.shownWind, rel)) > 0.03;
     if (shown !== this.shownStock || windMoved) this.layoutStock(shown, rel);
-    const hoard = stock > HOARD_THRESHOLD;
+    const hoard = b.faction !== -1 && isHoarding(f.world, b.faction);
     // Only the racked stock freezes (its own instanced cloth); the Hearth's great Flag keeps flying.
     const amp = this.mats.uniform('cloth', 'uWaveAmp', true);
     if (amp) amp.value = hoard ? 0.012 : 0.07;

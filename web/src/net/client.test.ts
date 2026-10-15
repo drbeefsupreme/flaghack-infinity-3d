@@ -99,7 +99,7 @@ function inMatch() {
   const t = setup();
   socket(0).open();
   socket(0).receive({ t: 'welcome', protocol: PROTOCOL_VERSION, playerId: 'p1', token: 'tok-1', lobby: lobby('lobby') });
-  socket(0).receive({ t: 'matchStart', options: OPTIONS, seat: 2, snapshot: {} });
+  socket(0).receive({ t: 'matchStart', inputEpoch: 1, options: OPTIONS, seat: 2, snapshot: {} });
   return t;
 }
 
@@ -147,7 +147,7 @@ describe('NetClient', () => {
     socket(2).receive({ t: 'welcome', protocol: PROTOCOL_VERSION, playerId: 'p1', token: 'tok-1', lobby: lobby('playing') });
     expect(client.reconnecting).toBe(false);
     expect(client.status).toBe('match');
-    socket(2).receive({ t: 'matchStart', options: OPTIONS, seat: 2, snapshot: {} });
+    socket(2).receive({ t: 'matchStart', inputEpoch: 1, options: OPTIONS, seat: 2, snapshot: {} });
     expect(calls).toEqual(['lobby:lobby', 'match:2', 'lobby:playing', 'match:2']);
     expect(client.connected).toBe(true);
   });
@@ -212,5 +212,48 @@ describe('NetClient', () => {
     expect(calls[calls.length - 1]).toBe('closed:voluntary');
     vi.advanceTimersByTime(10_000);
     expect(FakeSocket.made.length).toBe(1);
+  });
+
+  it('waits for the takeover snapshot, suppresses stale input, and reports rejected claims', () => {
+    const { client, calls } = inMatch();
+    const input = { moveX: 0, moveZ: 0, jump: false, sprint: false, yaw: 0, pitch: 0 };
+    client.sendInput(40, input, []);
+    expect(socket(0).sent.at(-1)).toMatchObject({ t: 'input', inputEpoch: 1, seq: 40 });
+    client.requestBossTakeover(3);
+    client.requestBossTakeover(1);
+    expect(socket(0).sent.at(-1)).toEqual({ t: 'bossTakeover', seat: 3 });
+    const count = socket(0).sent.length;
+    client.sendInput(41, input, []);
+    expect(socket(0).sent).toHaveLength(count);
+    socket(0).receive({ t: 'bossTakeoverResult', seat: 3, ok: true, reason: null });
+    expect(client.pendingBossTakeover).toBe(3);
+    expect(client.seat).toBe(2);
+    socket(0).receive({ t: 'matchStart', options: { ...OPTIONS, humans: [3] }, seat: 3, inputEpoch: 2, snapshot: {} });
+    expect(client.pendingBossTakeover).toBeNull();
+    expect(client.seat).toBe(3);
+    expect(calls.at(-1)).toBe('match:3');
+    client.sendInput(1, input, []);
+    expect(socket(0).sent.at(-1)).toMatchObject({ t: 'input', inputEpoch: 2, seq: 1 });
+    client.requestBossTakeover(1);
+    socket(0).receive({ t: 'bossTakeoverResult', seat: 1, ok: false, reason: 'That camp is reserved.' });
+    expect(client.pendingBossTakeover).toBeNull();
+    expect(client.bossTakeoverError).toBe('That camp is reserved.');
+    expect(client.seat).toBe(3);
+  });
+
+  it('waits for the new snapshot before resuming input after reconnect, and clears pending claims', () => {
+    const { client } = inMatch();
+    client.requestBossTakeover(3);
+    socket(0).drop();
+    expect(client.pendingBossTakeover).toBeNull();
+    vi.advanceTimersByTime(500);
+    socket(1).open();
+    socket(1).receive({ t: 'welcome', protocol: PROTOCOL_VERSION, playerId: 'p1', token: 'tok-1', lobby: lobby('playing', 3) });
+    const input = { moveX: 0, moveZ: 0, jump: false, sprint: false, yaw: 0, pitch: 0 };
+    client.sendInput(42, input, []);
+    expect(socket(1).sent).toHaveLength(1);
+    socket(1).receive({ t: 'matchStart', options: OPTIONS, seat: 3, inputEpoch: 3, snapshot: {} });
+    client.sendInput(1, input, []);
+    expect(socket(1).sent.at(-1)).toMatchObject({ t: 'input', inputEpoch: 3, seq: 1 });
   });
 });

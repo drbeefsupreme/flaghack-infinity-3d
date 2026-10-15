@@ -17,7 +17,9 @@ import type { HostInfo, LobbyState } from '../net/protocol';
 import type { NetSession } from '../net/session';
 import { GameRenderer } from '../render/renderer';
 import type { Command } from '../sim/commands';
+import { applyBossTakeover, bossTakeoverSeats } from '../sim/bossTakeover';
 import { SIM_DT } from '../sim/constants';
+import { normalizeMatch } from '../sim/matchSettings';
 import type { GameEvent } from '../sim/events';
 import { TRAINING_PLAYER } from '../sim/scenarios/tutorial';
 import { createMatch } from '../sim/setup';
@@ -38,6 +40,7 @@ export interface AppApi {
   readonly sim: Simulation | null;
   readonly fps: number;
   startMatch(opts?: Partial<MatchOptions>): void;
+  openLobby(): void;
   readonly renderer: GameRenderer;
   /** Procedural audio; the UI calls its blips (uiClick, uiHover, uiConfirm, uiBack, uiToggle). */
   readonly audio: GameAudio;
@@ -61,6 +64,8 @@ export interface AppApi {
   readonly tutorial: TutorialRun | null;
   /** Start the Training Burn (tutorial mission). */
   startTutorial(): void;
+  /** Claim a surviving AI camp after elimination during the encounter. No optimistic seat switch online. */
+  takeBossCamp(seat: FactionId): boolean;
 }
 
 /** What boot learned before the App started (main.ts). */
@@ -126,7 +131,7 @@ export class App implements AppApi {
   /** Local vexillomancer prediction while seated online (null with ?predict=0). */
   predictor: AvatarPredictor | null = null;
   private client: NetClient | null = null;
-  private ai: AiController | null = null;
+  private ai = new Map<FactionId, AiController>();
   private acc = 0;
   private last = performance.now();
   private fpsAcc = 0;
@@ -174,11 +179,22 @@ export class App implements AppApi {
     return this.client !== null && this.client.status !== 'closed';
   }
 
+  /** Configure a local burn before creating its world. */
+  openLobby(): void {
+    this.dropClient();
+    if (this.session.screen !== 'title' && this.session.screen !== 'lobby') this.loadAttract();
+    this.session.screen = 'lobby';
+  }
+
   startMatch(opts: Partial<MatchOptions> = {}): void {
     this.dropClient();
     const seed = opts.seed ?? `burn-${Date.now().toString(36)}`;
     const difficulty = opts.difficulty ?? this.session.settings.difficulty;
-    this.load({ seed, difficulty, humans: [LOCAL_SEAT], mode: 'standard' });
+    const match = normalizeMatch(opts.match ?? this.session.settings.match);
+    const requestedSeat = opts.humans?.[0] ?? this.session.playerFaction;
+    const seat = match.active.includes(requestedSeat) ? requestedSeat : match.active[0];
+    this.load({ seed, difficulty, humans: [seat], mode: 'standard', match });
+    this.session.playerFaction = seat;
     this.enterPlay();
   }
 
@@ -238,6 +254,28 @@ export class App implements AppApi {
     else if (this.session.screen === 'paused' && !paused) this.session.screen = 'playing';
   }
 
+  takeBossCamp(seat: FactionId): boolean {
+    const world = this.world, s = this.session;
+    if (!world || s.spectator || !world.options.humans.includes(s.playerFaction)) return false;
+    if (this.mirror) {
+      const client = this.client;
+      if (!client || !client.connected || client.status !== 'match' || client.pendingBossTakeover !== null) return false;
+      const aiSeats = client.lobby?.seats.filter((slot) => slot.playerId === null).map((slot) => slot.faction) ?? [];
+      if (!bossTakeoverSeats(world, s.playerFaction, aiSeats).includes(seat)) return false;
+      client.requestBossTakeover(seat);
+      return true;
+    }
+    if (!applyBossTakeover(world, s.playerFaction, seat, [...this.ai.keys()])) return false;
+    this.ai.delete(seat);
+    s.playerFaction = seat;
+    s.campChoiceOpen = false;
+    this.tickCmds.length = 0;
+    this.tickFresh = false;
+    this.acc = 0;
+    this.controls.resetForSeat();
+    return true;
+  }
+
   submit(cmd: Command): void {
     if (!this.mirror) {
       this.world?.submit(cmd);
@@ -251,6 +289,7 @@ export class App implements AppApi {
       dst.moveZ = src.moveZ;
       dst.jump = src.jump;
       dst.sprint = src.sprint;
+      dst.throwMode = src.throwMode === true;
       dst.yaw = src.yaw;
       dst.pitch = src.pitch;
       this.tickFresh = true;
@@ -266,7 +305,7 @@ export class App implements AppApi {
     if (!this.sim || !this.world || this.mirror) return;
     const steps = Math.round(seconds / SIM_DT);
     for (let i = 0; i < steps && this.world.phase === 'playing'; i++) {
-      this.ai?.update();
+      for (const ai of this.ai.values()) ai.update();
       this.sim.step();
       if ((i & 255) === 255) this.world.drainEvents();
     }
@@ -275,7 +314,7 @@ export class App implements AppApi {
 
   /** Title screen and online lobby: an all-AI burn plays out behind the menus. */
   private loadAttract(): void {
-    this.load({ seed: `attract-${Math.floor(Math.random() * 1e6)}`, difficulty: 'normal', humans: [], mode: 'standard' });
+    this.load({ seed: `attract-${Math.floor(Math.random() * 1e6)}`, difficulty: 'normal', humans: [], mode: 'standard', match: normalizeMatch({ bossMode: false }) });
   }
 
   private enterPlay(): void {
@@ -293,12 +332,13 @@ export class App implements AppApi {
     this.tutorial = null;
     this.session.markers = [];
     const world = createMatch(options);
+    this.session.playerFaction = options.humans[0] ?? LOCAL_SEAT;
     this.world = world;
     this.sim = new Simulation(world);
     // The Training Burn's rivals are scripted by the tutorial director, not the AI.
     const aiFactions: FactionId[] =
       options.mode === 'tutorial' ? [] : FACTION_IDS.filter((f) => !options.humans.includes(f));
-    this.ai = createAi(world, aiFactions);
+    this.ai = new Map(aiFactions.map((f) => [f, createAi(world, [f])]));
     this.renderer.attach(world, this.session);
     this.acc = 0;
   }
@@ -319,9 +359,11 @@ export class App implements AppApi {
     this.seq = 0;
     this.tickCmds = [];
     this.tickFresh = false;
+    Object.assign(this.tickInput, { moveX: 0, moveZ: 0, jump: false, sprint: false, throwMode: false, yaw: 0, pitch: 0 });
     const s = this.session;
-    s.playerFaction = LOCAL_SEAT;
+    s.playerFaction = this.world?.options.humans[0] ?? LOCAL_SEAT;
     s.spectator = false;
+    s.campChoiceOpen = false;
     s.followFaction = null;
     s.playerNames = {};
   }
@@ -348,9 +390,10 @@ export class App implements AppApi {
   }
 
   private enterOnline(client: NetClient, options: MatchOptions, seat: FactionId | null, snapshot: FullSnapshot): void {
+    const previousScreen = this.mirror ? this.session.screen : null;
     this.tutorial?.dispose();
     this.tutorial = null;
-    this.ai = null;
+    this.ai.clear();
     this.sim = null;
     const mirror = NetMirror.create(options, snapshot);
     const world = mirror.world;
@@ -359,7 +402,7 @@ export class App implements AppApi {
     this.world = world;
     const s = this.session;
     s.markers = [];
-    s.playerFaction = seat ?? 0;
+    s.playerFaction = seat ?? options.match?.active[0] ?? 0;
     s.spectator = seat === null;
     s.playerNames = client.lobby ? seatNames(client.lobby) : {};
     this.acc = 0;
@@ -374,6 +417,8 @@ export class App implements AppApi {
     mirror.setPredicted(this.predictor ? this.predictor.avatarId : null);
     this.renderer.attach(world, s);
     this.enterPlay();
+    if (previousScreen === 'paused') s.screen = 'paused';
+    this.controls.resetForSeat();
     // Building the mirror blocks for a few hundred ms: that is not play time. Counting it would
     // send a burst of inputs the host then has to queue (standing input latency).
     this.last = performance.now();
@@ -414,6 +459,7 @@ export class App implements AppApi {
       input.moveZ = 0;
       input.jump = false;
       input.sprint = false;
+      input.throwMode = false;
     }
     this.seq++;
     // The host drops a frame carrying more than MAX_FRAME_COMMANDS whole: surplus rides the next tick.
@@ -434,6 +480,7 @@ export class App implements AppApi {
     input.moveZ = 0;
     input.jump = false;
     input.sprint = false;
+    input.throwMode = false;
     this.seq++;
     client.sendInput(this.seq, input, []);
     this.predictor?.tick(this.seq, input);
@@ -450,7 +497,7 @@ export class App implements AppApi {
     while (this.acc >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
       this.controls.tick();
       this.tutorial?.tick();
-      this.ai?.update();
+      for (const ai of this.ai.values()) ai.update();
       this.sim.step();
       this.acc -= SIM_DT;
       steps++;

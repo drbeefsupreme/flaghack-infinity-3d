@@ -538,13 +538,13 @@ export function paintBannerFront(w: number, h: number): HTMLCanvasElement {
   g.lineWidth = 1.5;
   for (const fx of [0.1, 0.5, 0.9]) paintStar(g, w * fx, h * 0.355, h * 0.03);
   const sub = Math.round(h * 0.118);
-  paintLettering(g, 'FLAG REPAIR \u2013 FLAG GIFTS', bungee, sub, w / 2, h * 0.47, w * 0.8, rnd);
+  paintLettering(g, 'FLAG REPAIR \u2013 RECRUITMENT', bungee, sub, w / 2, h * 0.47, w * 0.8, rnd);
   paintLettering(g, 'GEOMANTIC ADVICE', bungee, sub, w / 2, h * 0.625, w * 0.8, rnd);
-  paintLettering(g, 'FLAGELLIAN DIALECTICS', bungee, sub, w / 2, h * 0.78, w * 0.8, rnd);
+  paintLettering(g, 'NODE OBSERVATION', bungee, sub, w / 2, h * 0.78, w * 0.8, rnd);
   return c;
 }
 
-/** Back of the banner, seen while pushing the cart: COMMAND CENTER / FLAG SIMULACRA. */
+/** Back of the banner, seen while pushing the cart: COMMAND CENTER / GEOMANTIC ADVICE. */
 export function paintBannerBack(w: number, h: number): HTMLCanvasElement {
   const [c, g] = makeCanvas(w, h);
   const rnd = seededRandom(2017);
@@ -581,7 +581,7 @@ export function paintBannerBack(w: number, h: number): HTMLCanvasElement {
   g.moveTo(w / 2 + h * 0.12, h * 0.53);
   g.lineTo(w * 0.86, h * 0.53);
   g.stroke();
-  paintLettering(g, 'FLAG SIMULACRA', '400 {s}px "Bungee"', Math.round(h * 0.19), w / 2, h * 0.76, w - 160, rnd);
+  paintLettering(g, 'GEOMANTIC ADVICE', '400 {s}px "Bungee"', Math.round(h * 0.19), w / 2, h * 0.76, w - 160, rnd);
   return c;
 }
 

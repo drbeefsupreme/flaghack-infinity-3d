@@ -40,7 +40,7 @@ export class NavGrid {
   readonly w: number;
   readonly h: number;
   readonly half: number;
-  /** Increments whenever dynamic blocking changes (lets callers invalidate cached paths). */
+  /** Increments whenever static or dynamic blocking changes (lets callers invalidate cached paths). */
   version = 0;
 
   /** 1 = blocked by the map (obstacles, water, border ring). */
@@ -120,6 +120,24 @@ export class NavGrid {
     for (const o of map.obstacles) grid.stampObstacle(o);
     for (const water of map.water) grid.stampWater(water);
     return grid;
+  }
+
+  /** Rebuild terrain blocking in place while retaining every dynamic blocker registration. */
+  rebuildStatic(map: Pick<MapLayout, 'obstacles' | 'water'>): void {
+    this.staticBlocked.fill(0);
+    this.staticCompDirty = true;
+    for (let c = 0; c < this.solid.length; c++) this.setSolid(c, this.cellHead[c] >= 0 ? 1 : 0);
+    for (let i = 0; i < this.w; i++) {
+      this.markStatic(i);
+      this.markStatic((this.h - 1) * this.w + i);
+    }
+    for (let j = 0; j < this.h; j++) {
+      this.markStatic(j * this.w);
+      this.markStatic(j * this.w + this.w - 1);
+    }
+    for (const obstacle of map.obstacles) this.stampObstacle(obstacle);
+    for (const water of map.water) this.stampWater(water);
+    this.version++;
   }
 
   /** Register a dynamic circular blocker (building). `r` is the raw footprint radius. */

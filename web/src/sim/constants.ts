@@ -83,7 +83,6 @@ export const START_STOCK_FLAGS = 14;
 export const START_CARRIED_FLAGS = 6;
 export const START_HIPPIES = 6;
 export const START_HOME_RING_RADIUS = 13; // home loop planted around the Hearth at t=0
-export const NEUTRAL_HIPPIES = 18;
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
 export const AVATAR = {
@@ -159,6 +158,7 @@ export const HIPPIE = {
   gatherAmount: 10,
   respawnTime: 14,
   attentionDrain: 1,
+  overCapAttentionDrain: 2,
   attentionRecover: 4,
   distractedTime: 10,
   distractedRecoverTo: 60,
@@ -166,7 +166,6 @@ export const HIPPIE = {
   sosRespondRadius: 60,
   popCapBase: 12,
   popCapPerDrumCircle: 6,
-  popCapMax: 40,
   pickupTime: 0.3,
   /** Reach from a building's edge for stock pickup, delivery and deposits. */
   interactReach: 2.5,
@@ -242,12 +241,19 @@ export const HEARTH_FLAG_COST = 4;
 export const WORKSHOP_FLAG_INTERVAL = 5;
 export const WORKSHOP_FLAG_COST = 3;
 export const RECRUIT_INTERVAL = 14;
-export const RECRUIT_LUMBER = 10;
+export const RECRUIT_RADIUS = 15;
+export const RECRUIT_ATTRACT_RADIUS = 60;
 export const HOARD_THRESHOLD = 24;
+/** Each working Flag Workshop holds its own pickup stock. */
+export const WORKSHOP_FLAG_CAPACITY = 10;
 export const WARD_RADIUS = 30;
 export const WARD_OBSERVE_RADIUS = 26;
 export const WARD_PULSE_INTERVAL = 4;
 export const WARD_PULSE_RADIUS = 14;
+/** Friendly planted Flags within this radius resist enemy pulls. */
+export const WARD_FLAG_RADIUS = 14;
+export const LIGHTNING_PULL_MULT = 2;
+export const PULL_LIGHTNING_INTERVAL = 0.2;
 export const HEARTH_OBSERVE_RADIUS = 22;
 export const DRUM_RITUAL_PER_SEC = 0.1; // per drummer: a full circle (4) earns a level-1 alignment in ~75 s
 export const DRUMMERS_PER_CIRCLE = 4;
@@ -269,20 +275,12 @@ export const GCC = {
   repairRadius: 20,
   repairInterval: 3,
   repairHps: 15,
-  giftRadius: 15,
-  giftCooldown: 3,
-  dialecticsRadius: 14,
-  dialecticsCooldown: 40,
-  dialecticsChannel: 3,
-  dialecticsMax: 3,
-  simulacraCooldown: 20,
+  /** Legacy superposed Flags still collapse normally when observed. */
   simulacraObserveRadius: 10,
   rebuildTime: 45,
 } as const;
-/** The vexillomancer must stand within this of its GCC to work the Command Table. */
+/** Tutorial arrival distance from the GCC cart edge. */
 export const GCC_REACH = 6;
-/** Both simulacrum nodes must lie within this of the GCC. */
-export const GCC_SIMULACRA_RANGE = 60;
 /** Flag Repair re-plants a loose Flag onto a free node within this of where it lies. */
 export const GCC_REPAIR_SNAP = 6;
 
@@ -300,6 +298,7 @@ export const TIDE_INTERVAL_SUDDEN_DEATH = 40;
 export const TIDE_WARNING = 10;
 export const TIDE_FRACTION = 0.05;
 export const CRYSTAL_GROW_TIME = 3;
+export const CRYSTAL_HEIGHT = 7.5;
 export const CRYSTAL_RITUAL_PER_SEC = 0.08;
 export const CRYSTAL_PRESSURE_RADIUS = 45;
 export const CRYSTAL_PRESSURE_BONUS = 1.15;

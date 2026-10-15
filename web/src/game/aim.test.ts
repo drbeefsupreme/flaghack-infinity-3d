@@ -1,3 +1,6 @@
+import { CollisionWorld } from "../sim/physics/collision";
+import { cmdThrow } from "../sim/systems/avatars";
+import { updateProjectiles } from "../sim/systems/projectiles";
 import { describe, expect, it } from 'vitest';
 import { AVATAR, SIM_DT } from '../sim/constants';
 import type { V3 } from '../sim/math';
@@ -60,6 +63,36 @@ describe('throw aim', () => {
     expect(landed?.node).toBe(aim.node);
     if (aim.node < 0 && landed && aim.landing) {
       expect(Math.hypot(landed.pos.x - aim.landing.x, landed.pos.z - aim.landing.z)).toBeLessThan(0.05);
+    }
+  });
+});
+
+
+describe('domed terrain throw preview', () => {
+  it.each([-Math.PI / 2, Math.PI / 2])('matches the authoritative uphill/downhill landing at yaw %s', yaw => {
+    const world = createMatch({ seed: 'terrain-arc', difficulty: 'normal', humans: [0], mode: 'standard' });
+    world.collision = new CollisionWorld(world.map.half, true);
+    world.hippies.clear();
+    const av = world.avatarOf(0);
+    av.pos = { x: 70, y: world.collision.groundHeight(70, 0), z: 0 };
+    av.input.yaw = yaw; av.input.pitch = .15;
+    const aim: AimInfo = { active: true, arc: [], landing: null, node: -1 };
+    new ThrowPredictor().predict(world, av, 0, yaw, av.input.pitch, aim);
+    expect(aim.landing!.y).toBeCloseTo(world.collision.groundHeight(aim.landing!.x, aim.landing!.z), 7);
+    const id = av.carried.at(-1)!;
+    cmdThrow(world, { t: 'throw', faction: 0 });
+    let landing: { node: number; pos: V3 } | undefined;
+    for (let i = 0; i < 240 && !landing; i++) {
+      world.time += SIM_DT;
+      updateProjectiles(world, SIM_DT);
+      for (const event of world.drainEvents()) if (event.t === 'flagLanded' && event.flagId === id) landing = event;
+    }
+    expect(landing).toBeDefined();
+    expect(landing!.node).toBe(aim.node);
+    expect(landing!.pos.y).toBeCloseTo(world.collision.groundHeight(landing!.pos.x, landing!.pos.z), 7);
+    if (aim.node < 0) {
+      expect(landing!.pos.x).toBeCloseTo(aim.landing!.x, 7);
+      expect(landing!.pos.z).toBeCloseTo(aim.landing!.z, 7);
     }
   });
 });

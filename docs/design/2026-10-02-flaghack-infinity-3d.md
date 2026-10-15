@@ -377,6 +377,14 @@ all-AI play the first alignment lands at ~70–150 s and an L3 near minute 10.
 
 ## 12. Drugs (Drug Lab)
 
+Completed, enabled Drug Labs automatically brew without staff or orders, paying 25 lumber
+per 22-second dose. A seeded random choice favors scarce drugs: each eligible type has
+weight `1 / (1 + doses owned or pending)`, counting the faction's shelves and all labs'
+queued/in-progress doses. Types at the 3-dose cap (including pending doses) are excluded.
+Production waits when lumber is insufficient or every shelf is full/reserved, then resumes
+automatically. A current batch finishes before explicit queued orders, and automatic choices
+resume once that queue is empty. Both automatic and ordered brewing use the same costs and timers.
+
 | Key | Drug | Effect | Risk |
 |---|---|---|---|
 | 6 | **Saffron** (Vexillicrocus tea) | 40 s: all your hippies +50% work & move speed, +0.3 Ritual/s | After: 20 s crash (−30% speed); 25% chance per hippie to wander off "overstimulated" |

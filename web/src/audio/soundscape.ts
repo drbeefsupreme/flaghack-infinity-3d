@@ -4,7 +4,8 @@
  * levels or -1..1 pans unless stated.
  */
 import type { Session } from '../game/session';
-import { BURN_TIME, TIDE_WARNING } from '../sim/constants';
+import { BURN_TIME, DAWN_TIME, TIDE_WARNING } from '../sim/constants';
+import { bossDayClock } from '../sim/dayCycle';
 import type { CaptureStage } from '../sim/types';
 import type { World } from '../sim/world';
 import type { AudioEngine } from './engine';
@@ -82,7 +83,12 @@ export function measure(world: World, session: Session, e: AudioEngine, daylight
   const fx = focusAvatar ? av.pos.x : e.lx;
   const fz = focusAvatar ? av.pos.z : e.lz;
 
-  const clockNight = Math.min(1, Math.max(0, (world.time - DUSK) / (NIGHT - DUSK)));
+  const encounterClock = bossDayClock(world);
+  const clockNight = encounterClock === null
+    ? Math.min(1, Math.max(0, (world.time - DUSK) / (NIGHT - DUSK)))
+    // The renderer normally supplies daylight. Keep headless/no-env audio on the
+    // same encounter phase too; the sky reaches .7 daylight at completed Dawn.
+    : 1 - .7 * Math.max(0, Math.min(1, (encounterClock - (DAWN_TIME - 240)) / 240));
   out.night = daylight === null ? clockNight : 1 - daylight;
   out.burn = world.suddenDeath ? 1 : 0;
 

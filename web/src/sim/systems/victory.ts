@@ -1,3 +1,6 @@
+import { burnTime, endTime, matchSettings } from "../matchSettings";
+import { BOSS_DEATH_DURATION } from '../boss';
+import { hasSurvivingAltar } from '../bossTakeover';
 /**
  * Elimination, match end (conquest: the last camp standing; Dawn: the dominant camp once
  * DAWN_TIME arrives), The Burn (sudden death) timing.
@@ -16,6 +19,7 @@ import { NEUTRAL } from '../types';
 import type { FactionId, Hippie } from '../types';
 import type { World } from '../world';
 import { collapseGcc, isCollapsed } from './buildings';
+import { updateEffigy } from './effigy';
 import { dropLoose, transferFlags } from './flags';
 import { FACTION_SHORT } from './rules/factions';
 
@@ -25,14 +29,15 @@ const QUIVER_SCATTER = 0.9;
 /**
  * A hippie whose camp has fallen wanders off neutral: it drops any carried Flag where it
  * stands, forgets its job and orders, and loses its D.E.G.E.N. beacon (no longer on a mesh).
- * Neutral hippies can be recruited again with Flag Gifts.
+ * Neutral hippies can be recruited again by music or Flags.
  */
 export function neutralizeHippie(world: World, h: Hippie): void {
   if (h.carryingFlag >= 0) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: 0, z: h.pos.z });
   h.faction = NEUTRAL;
+  h.recruitedAt = 0;
   h.job = null;
   h.order = null;
-  h.status = 'idle';
+  if (h.status !== 'ko') h.status = 'idle';
   h.statusTarget = null;
   h.carryingLumber = 0;
   h.beacon = false;
@@ -43,7 +48,7 @@ export function neutralizeHippie(world: World, h: Hippie): void {
  * scattered), its Flags orphan (planted ones stand neutral, pullable by anyone), its hippies
  * wander off neutral, its plan is forgotten and its GCC collapses for ever.
  */
-export function eliminate(world: World, faction: FactionId, by: FactionId | null): void {
+export function eliminate(world: World, faction: FactionId, by: FactionId | null, cause?: 'boss'): void {
   const fac = world.factions[faction];
   if (!fac.alive) return;
   fac.alive = false;
@@ -83,14 +88,46 @@ export function eliminate(world: World, faction: FactionId, by: FactionId | null
   }
   fac.gccId = null;
 
-  world.emit({ t: 'eliminated', faction, by });
+  world.emit({ t: 'eliminated', faction, by, ...(cause ? { cause } : {}) });
   const overwriter = by !== null ? `, overwritten by ${FACTION_SHORT[by]}` : '';
   world.emit({
     t: 'notify',
     faction: 'all',
-    text: `${fac.name} is Flagless${overwriter}. "Losing the flags is the first step to finding them."`,
+    text: cause === 'boss' ? `${fac.name} falls. The Effigy has destroyed its last altar.` : `${fac.name} is Flagless${overwriter}. "Losing the flags is the first step to finding them."`,
     severity: 'epic',
   });
+}
+
+/** Boss consumption uses the same complete faction teardown as ordinary elimination. */
+export function eliminateByBoss(world: World, faction: FactionId): void {
+  if (world.factions[faction].hearthIds.length > 0) return;
+  eliminate(world, faction, null, 'boss');
+}
+
+/**
+ * Resolve only host-authored encounter facts. Every surviving camp's altars keep the
+ * cooperative encounter alive, whether a human or an NPC currently controls that camp.
+ * Eliminated humans can choose an eligible surviving NPC camp without restarting it.
+ */
+export function updateBossOutcome(world: World): void {
+  if (world.phase !== 'playing' || world.effigyRevealedAt === null || world.bossOutcome) return;
+  const active = matchSettings(world.options).active;
+  const survivors = active.filter((id) => hasSurvivingAltar(world, id));
+  const lost = survivors.length === 0;
+  const boss = world.boss;
+  const defeated = boss && boss.hp <= 0 && boss.action === 'dead' && boss.deathAt !== null &&
+    world.time + 1e-6 >= boss.deathAt + BOSS_DEATH_DURATION;
+  if (!lost && !defeated) return;
+  const winners = lost ? [] : survivors;
+  world.bossOutcome = { kind: lost ? 'defeat' : 'victory', winners, at: world.time };
+  world.phase = 'ended';
+  if (boss) boss.lightning = [];
+  // The encounter has several possible winners; the durable outcome is the authority.
+  world.winner = null;
+  world.emit({ t: 'bossEnded', kind: world.bossOutcome.kind, winners: [...winners] });
+  world.emit({ t: 'notify', faction: 'all', severity: 'epic', text: lost
+    ? 'The Effigy endures. Every altar has fallen.'
+    : 'The Effigy has fallen. The surviving camps share the victory.' });
 }
 
 /**
@@ -99,7 +136,7 @@ export function eliminate(world: World, faction: FactionId, by: FactionId | null
  */
 export function suddenDeathMult(world: World): number {
   if (!world.suddenDeath) return 1;
-  return SUDDEN_DEATH_PRESSURE_MULT + Math.max(0, Math.floor((world.time - BURN_TIME) / SUDDEN_DEATH_ESCALATE_EVERY));
+  return SUDDEN_DEATH_PRESSURE_MULT + Math.max(0, Math.floor((world.time - burnTime(world.options)) / SUDDEN_DEATH_ESCALATE_EVERY));
 }
 
 /**
@@ -131,8 +168,15 @@ export function updateVictory(world: World, dt: number): void {
   if (world.phase !== 'playing') return;
   // The Training Burn runs on its lessons' clock; the director stages its Burn and never crowns anyone.
   if (world.options.mode === 'tutorial') return;
-  if (!world.suddenDeath && world.time >= BURN_TIME) startBurn(world);
-  if (world.suddenDeath) announceEscalation(world);
+  if (!world.suddenDeath && world.time >= burnTime(world.options)) startBurn(world);
+  if (world.suddenDeath && world.effigyRevealedAt === null) announceEscalation(world);
+  // A skipped tick can start The Burn after the reveal threshold. Resolve it before wins.
+  updateEffigy(world);
+  // Revealing the boss replaces conquest and Dawn with the shared encounter result.
+  if (world.effigyRevealedAt !== null) {
+    updateBossOutcome(world);
+    return;
+  }
 
   let survivor: FactionId | null = null;
   let survivors = 0;
@@ -141,7 +185,7 @@ export function updateVictory(world: World, dt: number): void {
     survivors++;
     survivor = fac.id;
   }
-  if (survivors === 1 && survivor !== null) {
+  if (survivors === 1 && survivor !== null && matchSettings(world.options).active.length > 1) {
     crown(
       world,
       survivor,
@@ -150,14 +194,14 @@ export function updateVictory(world: World, dt: number): void {
     );
     return;
   }
-  if (survivors < 2) return;
-  if (world.time >= DAWN_TIME) {
+  if (survivors === 0) return;
+  if (world.time >= endTime(world.options)) {
     const dominant = dominanceOrder(world)[0];
     const name = world.factions[dominant].name;
     crown(world, dominant, 'dawn', `Dawn breaks over the burn. The Survey is completed: ${name}'s Survey stands dominant.`);
     return;
   }
-  if (world.time >= DAWN_TIME - DAWN_WARNING && world.scratch.dawnWarned !== true) {
+  if (world.time >= endTime(world.options) - DAWN_WARNING && world.scratch.dawnWarned !== true) {
     world.scratch.dawnWarned = true;
     world.emit({
       t: 'notify',

@@ -10,6 +10,7 @@ import type { V2 } from '../math';
 import { NEUTRAL } from '../types';
 import type { Avatar, EntityId, Hippie } from '../types';
 import type { World } from '../world';
+import { bossEncounterActive, damageBoss } from './boss/damage';
 import { damageBuilding } from './buildings';
 import { applyEffect } from './effects';
 import { dropLoose } from './flags';
@@ -29,6 +30,8 @@ const AVATAR_KNOCK_LIFT = 0.35;
  * for units at 0 HP, ko (dropping carried Flags loose). Returns true if the target took damage.
  */
 export function damageEntity(world: World, target: EntityId, amount: number, by: EntityId | -1): boolean {
+  if (world.boss?.id === target) return damageBoss(world, amount, by);
+  if (friendlyBossDamage(world, target, by)) return false;
   const piece = world.pieces.get(target);
   if (piece) return damagePiece(world, piece, amount, by);
   const b = world.buildings.get(target);
@@ -38,7 +41,7 @@ export function damageEntity(world: World, target: EntityId, amount: number, by:
 
 /** Avatar/hippie damage, KO handling, SOS auto-ping for hippies. */
 export function damageUnit(world: World, target: EntityId, amount: number, by: EntityId | -1): boolean {
-  if (!(amount > 0)) return false;
+  if (!(amount > 0) || friendlyBossDamage(world, target, by)) return false;
   const av = world.avatars.get(target);
   if (av) return damageAvatar(world, av, amount, by);
   const h = world.hippies.get(target);
@@ -64,7 +67,7 @@ function damageHippie(world: World, h: Hippie, amount: number, by: EntityId | -1
   b.lastHurtAt = world.time;
   b.lastHurtBy = by;
   b.hurt = true;
-  world.emit({ t: 'hit', target: h.id, by, amount, pos: { x: h.pos.x, y: 0, z: h.pos.z } });
+  world.emit({ t: 'hit', target: h.id, by, amount, pos: { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0), z: h.pos.z } });
   if (h.faction !== NEUTRAL) sosFrom(world, h);
   if (h.hp <= 0) koHippie(world, h, by);
   return true;
@@ -105,10 +108,11 @@ function koAvatar(world: World, av: Avatar, by: EntityId | -1): void {
  */
 function koHippie(world: World, h: Hippie, by: EntityId | -1): void {
   releaseTask(world, h, brainOf(h));
-  if (h.carryingFlag !== -1) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: 0, z: h.pos.z });
+  if (h.carryingFlag !== -1) dropLoose(world, h.carryingFlag, { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0), z: h.pos.z });
   h.carryingLumber = 0;
-  // Standing orders (follow, defend here) survive the nap; one-shot jobs do not.
-  if (h.order && h.order.kind !== 'follow' && h.order.kind !== 'defend') h.order = null;
+  // Knockouts break allegiance: no old camp orders survive the neutral respawn.
+  h.order = null;
+  h.job = null;
   if (h.faction !== NEUTRAL && h.beacon && world.rng.chance(BEACON_DROP_CHANCE)) {
     spawnBeacon(world, h.faction, h.pos, world.time + BEACON_LIFETIME);
     h.beacon = false;
@@ -120,7 +124,7 @@ function koHippie(world: World, h: Hippie, by: EntityId | -1): void {
   h.vel.x = 0;
   h.vel.z = 0;
   h.effects.length = 0;
-  world.emit({ t: 'ko', id: h.id, kind: 'hippie', faction: h.faction, by, pos: { x: h.pos.x, y: 0, z: h.pos.z } });
+  world.emit({ t: 'ko', id: h.id, kind: 'hippie', faction: h.faction, by, pos: { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0), z: h.pos.z } });
 }
 
 /** Push a unit away from a point (adds 'knockback' effect and velocity). */
@@ -147,4 +151,12 @@ export function knockback(world: World, target: EntityId, from: V2, strength: nu
   h.vel.x = dx * strength;
   h.vel.z = dz * strength;
   applyEffect(world, h, 'knockback', HIPPIE_KNOCK_TIME, strength);
+}
+
+/** All surviving camps ally at reveal; environmental/boss damage stays dangerous. */
+export function friendlyBossDamage(world: World, target: EntityId, by: EntityId | -1): boolean {
+  if (!bossEncounterActive(world) || by === world.boss?.id || by < 0) return false;
+  const source = world.avatars.get(by) ?? world.hippies.get(by) ?? world.buildings.get(by) ?? world.pieces.get(by);
+  const victim = world.avatars.get(target) ?? world.hippies.get(target) ?? world.buildings.get(target) ?? world.pieces.get(target);
+  return !!source && !!victim && source.faction >= 0 && victim.faction >= 0;
 }

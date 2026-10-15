@@ -43,12 +43,12 @@ export const command: LessonScript = {
   id: 'command',
   briefing: [
     saint(
-      'You are not alone. Your camp\'s hippies, the **Signifiers**, do most of the work, and you command them from the **Command Table**: {key:Tab} anywhere, or tap {key:E} at your Command Center.',
+      'You are not alone. Your camp\'s hippies, the **Signifiers**, do most of the work, and you command them from the **Command Table**: {key:Tab} anywhere.',
     ),
     saint('There you set **Camp Priorities** and draw your **Survey Pattern**: ghost Flags your Signifiers fetch from the Hearth and plant for real.'),
   ],
   objectives: [
-    { id: 'open', text: 'Open the Command View: {key:Tab}', hint: 'Tab works anywhere; E at your Command Center dives into its table. Tab again comes back.' },
+    { id: 'open', text: 'Open the Command View: {key:Tab}', hint: 'Tab works anywhere. Tab again comes back.' },
     {
       id: 'priority',
       text: 'Camp Priorities: raise **Survey** to 4',
@@ -163,7 +163,7 @@ export const build: LessonScript = {
     },
   ],
   debrief: [
-    saint('The Workshop crafts a Flag every 5 seconds for 3 lumber. Flags are for moving: hoard more than 24 at a Hearth and your Signifiers lose heart.'),
+    saint('The Workshop crafts a Flag every 5 seconds for 3 lumber. It holds 10 Flags for pickup here and adds 10 to your camp hoarding threshold. Additional Flags go to the altar. The base threshold is adjustable in Advanced Game Settings.'),
     saint('Hoarding is how Tartaria fell. "It\'s not about holding the Flag, it\'s about using the Flag to hold space."'),
   ],
   begin(ctx) {

@@ -1,17 +1,23 @@
 /**
  * Thrown Flags: ballistic flight (gravity), collision via CollisionWorld.raycast against
- * walls/buildings/obstacles, stun on hippie hits, landing → plant on nearest plantable node
+ * walls/buildings/obstacles, recruitment on neutral hits, stun on rival hits, landing → plant on nearest plantable node
  * within AVATAR.throwSnapRadius (or loose). Emits flagLanded.
  * Owner: Units agent.
  */
 import { AVATAR, MAP_HALF, PROJECTILE } from '../constants';
+import { BOSS_FLAG_BODY_DAMAGE, BOSS_FLAG_HEAD_DAMAGE } from '../boss';
 import { clamp } from '../math';
 import type { FactionId, Hippie, Projectile } from '../types';
 import type { World } from '../world';
+import { bossEncounterActive } from './boss/damage';
+import { intersectBossRegions } from './boss/hitRegions';
+import { recordBossFlagThreat } from './boss/eyeThreats';
 import { damageEntity } from './combat';
+import { recruitWithFlag } from './recruitment';
 import { isDrugActive } from './drugs';
 import { applyEffect } from './effects';
-import { dropLoose, nearestPlantableNode, plantFlag } from './flags';
+import { nearestHearth } from './economy';
+import { depositToStock, destroyFlag, dropLoose, nearestPlantableNode, plantFlag } from './flags';
 
 /** Surfaces at least this flat (normal y) catch a Flag; steeper ones knock it down. */
 const WALKABLE_NY = 0.7;
@@ -50,17 +56,39 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
   let t = 1;
   let ground = false;
   if (hit) t = hit.dist / len;
-  else if (oy + dy <= 0) {
-    // Numerical graze past the ground plane: land where the segment crosses y = 0.
+  else if (oy + dy <= world.collision.groundHeight(ox + dx, oz + dz)) {
+    // Numerical graze past terrain: clamp to the local surface.
     ground = true;
-    t = dy < 0 ? clamp(oy / -dy, 0, 1) : 1;
+    t = dy < 0 ? clamp((oy - world.collision.groundHeight(ox + dx, oz + dz)) / -dy, 0, 1) : 1;
   }
-  const victim = hippieOnSegment(world, p, ox, oy, oz, dx, dy, dz, t);
-  if (victim) {
-    bonk(world, p, victim);
+  const impact = world.boss ? intersectBossRegions(world.boss, world.time,
+    { x: ox, y: oy, z: oz }, { x: ox + dx, y: oy + dy, z: oz + dz }, t) : null;
+  // A neutral catching the flag or a physical wall in front of the giant still wins.
+  const victim = hippieOnSegment(world, p, ox, oy, oz, dx, dy, dz, impact ? impact.t : t);
+  if (victim) { bonk(world, p, victim); return; }
+  if (impact && world.boss) {
+    recordBossFlagThreat(world, p.thrower);
+    const amount = impact.headshot ? BOSS_FLAG_HEAD_DAMAGE : BOSS_FLAG_BODY_DAMAGE;
+    damageEntity(world, world.boss.id, amount, p.thrower);
+    const flagId = p.flagId;
+    destroyFlag(world, flagId);
+    world.projectiles.delete(p.id);
+    world.emit({ t: 'bossImpact', bossId: world.boss.id, by: p.thrower, flagId,
+      faction: p.faction, pos: impact.pos, headshot: impact.headshot, amount });
     return;
   }
   if (hit) {
+    const station = world.buildings.get(hit.tag);
+    // Deposit only at our own completed storage. Earlier walls, units and boss hits retain precedence.
+    if (station && station.faction === p.faction && station.built >= 1 &&
+      (station.kind === 'hearth' || station.kind === 'workshop')) {
+      let stored = depositToStock(world, p.flagId, station.id);
+      if (!stored && station.kind === 'workshop') {
+        const altar = nearestHearth(world, p.faction, station.pos);
+        if (altar) stored = depositToStock(world, p.flagId, altar.id);
+      }
+      if (stored) { finish(world, p, -1); return; }
+    }
     if (hit.ny >= WALKABLE_NY) land(world, p, hit.x, Math.max(0, hit.y), hit.z);
     else {
       const fx = hit.x + hit.nx * WALL_STANDOFF;
@@ -70,7 +98,7 @@ function stepProjectile(world: World, p: Projectile, dt: number): void {
     return;
   }
   if (ground) {
-    land(world, p, ox + dx * t, 0, oz + dz * t);
+    land(world, p, ox + dx * t, world.collision.groundHeight(ox + dx * t, oz + dz * t), oz + dz * t);
     return;
   }
   p.pos.x = ox + dx;
@@ -110,7 +138,7 @@ function hippieOnSegment(
   let best: Hippie | null = null;
   let bestT = Infinity;
   for (const h of world.hippies.values()) {
-    if (h.status === 'ko' || h.faction === p.faction) continue;
+    if (h.status === 'ko' || h.faction === p.faction || bossEncounterActive(world) && h.faction >= 0) continue;
     const hx = h.pos.x;
     const hz = h.pos.z;
     if (hx < minX || hx > maxX || hz < minZ || hz > maxZ) continue;
@@ -118,7 +146,7 @@ function hippieOnSegment(
     const cx = ox + dx * t - hx;
     const cz = oz + dz * t - hz;
     if (cx * cx + cz * cz > r * r) continue;
-    const y = oy + dy * t;
+    const y = oy + dy * t - world.collision.groundHeight(hx, hz) - (h.airborne?.y ?? 0);
     if (y < 0 || y > PROJECTILE.hippieHitHeight || t >= bestT) continue;
     bestT = t;
     best = h;
@@ -126,8 +154,12 @@ function hippieOnSegment(
   return best;
 }
 
-/** A Flag to the head: stun + damage, and the Flag drops at the hippie's feet. */
+/** A neutral catches the Flag and joins; a rival takes damage and drops the Flag. */
 function bonk(world: World, p: Projectile, h: Hippie): void {
+  if (recruitWithFlag(world, h, p.faction, p.flagId, 'throw')) {
+    finish(world, p, -1);
+    return;
+  }
   damageEntity(world, h.id, PROJECTILE.hippieDamage, p.thrower);
   if (h.status !== 'ko') applyEffect(world, h, 'stun', PROJECTILE.hippieStun, 1, p.thrower);
   dropLoose(world, p.flagId, { x: h.pos.x, y: 0, z: h.pos.z });

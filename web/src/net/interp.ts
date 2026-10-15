@@ -15,11 +15,12 @@
  * Owner: NetCore agent.
  */
 import { angleDiff } from '../sim/math';
+import type { BossEyeState } from '../sim/boss';
 import type { EntityId } from '../sim/types';
 import type { World } from '../sim/world';
 import type { DeltaSnapshot, EntityDelta } from './codec';
 import { NET_HZ } from './protocol';
-import { CM, CODECS, dequant, MRAD } from './schema';
+import { bossFromWire, CM, CODECS, dequant, MRAD, WORLD_FIELDS } from './schema';
 import type { Wire } from './schema';
 
 const FRAME = 1 / NET_HZ;
@@ -100,6 +101,40 @@ class Track {
   /** Teleport: hold the authoritative pose until the next frame applies. */
   snap = false;
   seen = 0;
+  airborne = false;
+}
+
+/** Keep authoritative eye samples separate from the vectors written for visual playback. */
+type EyeSample = Pick<BossEyeState, 'firedAt' | 'target' | 'origin' | 'direction' | 'impact' | 'impactTag'>;
+const EYE_VECTORS = ['target', 'origin', 'direction', 'impact'] as const;
+function eyeSample(eye: BossEyeState): EyeSample | null {
+  if (eye.firedAt === null) return null;
+  return { firedAt: eye.firedAt, impactTag: eye.impactTag, target: eye.target && { ...eye.target }, origin: eye.origin && { ...eye.origin },
+    direction: eye.direction && { ...eye.direction }, impact: eye.impact && { ...eye.impact } };
+}
+function continuousEyeContact(from: EyeSample, to: EyeSample): boolean {
+  if (from.firedAt !== to.firedAt || !!from.impact !== !!to.impact || from.impactTag !== to.impactTag) return false;
+  // Never draw a contact explosion between two discontinuous occluding surfaces.
+  return !from.impact || !to.impact || Math.hypot(from.impact.x - to.impact.x,
+    from.impact.y - to.impact.y, from.impact.z - to.impact.z) <= TELEPORT;
+}
+function writeEyeSample(eye: BossEyeState, from: EyeSample, to: EyeSample | null, alpha: number): void {
+  for (const key of EYE_VECTORS) {
+    const a = from[key], b = to?.[key];
+    if (!a) { eye[key] = null; continue; }
+    // Existing vectors are reused every rendered frame; allocation is only needed
+    // after a null authoritative field becomes populated by a network sample.
+    const out = eye[key] ?? (eye[key] = { x: 0, y: 0, z: 0 });
+    out.x = a.x + (b ? b.x - a.x : 0) * alpha;
+    out.y = a.y + (b ? b.y - a.y : 0) * alpha;
+    out.z = a.z + (b ? b.z - a.z : 0) * alpha;
+  }
+  if (to && eye.direction) {
+    const direction = eye.direction, origin = eye.origin, impact = eye.impact;
+    if (origin && impact) { direction.x = impact.x - origin.x; direction.y = impact.y - origin.y; direction.z = impact.z - origin.z; }
+    const length = Math.hypot(direction.x, direction.y, direction.z) || 1;
+    direction.x /= length; direction.y /= length; direction.z /= length;
+  }
 }
 
 type MotionKind = 'avatars' | 'hippies' | 'projectiles' | 'flags' | 'buildings';
@@ -126,6 +161,9 @@ const POSE: Record<MotionKind, PoseFields> = {
   flags: { x: CODECS.flags.index('x'), y: CODECS.flags.index('y'), z: CODECS.flags.index('z'), a: -1, p: -1 },
   buildings: { x: CODECS.buildings.index('x'), y: -1, z: CODECS.buildings.index('z'), a: -1, p: -1 },
 };
+
+const BOSS_FIELD = WORLD_FIELDS.findIndex((f) => f.key === 'boss');
+const HIPPIE_AIRBORNE_FIELD = CODECS.hippies.index('airborne');
 
 const MOTION_KINDS: readonly MotionKind[] = ['avatars', 'hippies', 'projectiles', 'flags', 'buildings'];
 
@@ -162,6 +200,9 @@ export class Motion {
     flags: new Map(),
     buildings: new Map(),
   };
+  private boss: Track | null = null;
+  private eyeFrom: EyeSample | null = null;
+  private eyeTo: EyeSample | null = null;
   private stamp = 0;
   /** Times of the last applied frame and of the next queued one (NaN: none queued). */
   private tA = 0;
@@ -201,6 +242,9 @@ export class Motion {
       t.vz = continuing ? dz / dt : 0;
       t.fx = h.pos.x;
       t.fz = h.pos.z;
+      t.fy = h.airborne?.y ?? 0;
+      t.vy = h.airborne?.vy ?? 0;
+      t.airborne = h.airborne !== undefined;
       t.fa = h.facing;
       t.seen = s;
     }
@@ -232,6 +276,22 @@ export class Motion {
       t.fz = b.pos.z;
       t.seen = s;
     }
+    if (world.boss) {
+      const b = world.boss;
+      const t = this.boss?.id === b.id ? this.boss : new Track();
+      const dx = b.pos.x - t.fx, dz = b.pos.z - t.fz;
+      const continuing = t.seen === prev && dt > 0 && dx * dx + dz * dz <= TELEPORT * TELEPORT;
+      const walking = b.hp > 0 && !b.barrier && (b.action === 'walk' || b.action === 'crouchWalk');
+      t.vx = continuing && walking ? dx / dt : 0;
+      t.vz = continuing && walking ? dz / dt : 0;
+      t.id = b.id;
+      t.fx = b.pos.x;
+      t.fz = b.pos.z;
+      t.fa = b.yaw;
+      t.fp = b.stride;
+      t.seen = s;
+      this.boss = t; this.eyeFrom = eyeSample(b.eye); this.eyeTo = null;
+    } else { this.boss = null; this.eyeFrom = null; this.eyeTo = null; }
     for (const kind of MOTION_KINDS) {
       for (const t of this.tracks[kind].values()) if (t.seen !== s) this.tracks[kind].delete(t.id);
     }
@@ -249,6 +309,28 @@ export class Motion {
         t.tp = t.fp;
         t.aim = next !== null;
         t.snap = false;
+      }
+    }
+    const boss = this.boss;
+    this.eyeTo = next ? this.eyeFrom : null;
+    if (boss) {
+      boss.tx = boss.fx;
+      boss.tz = boss.fz;
+      boss.ta = boss.fa;
+      boss.tp = boss.fp;
+      boss.aim = next !== null;
+      boss.snap = false;
+      const changes = next?.w;
+      if (changes && typeof changes[0] === 'number' && changes[0] & (1 << BOSS_FIELD)) {
+        const b = bossFromWire(valueAt(changes, 1, changes[0], BOSS_FIELD));
+        if (b && b.id === boss.id) {
+          boss.tx = b.pos.x;
+          boss.tz = b.pos.z;
+          boss.ta = b.yaw;
+          boss.tp = b.stride;
+          this.eyeTo = b.hp > 0 && b.deathAt === null ? eyeSample(b.eye) : null;
+          boss.snap = Math.hypot(boss.tx - boss.fx, boss.tz - boss.fz) > TELEPORT;
+        } else boss.aim = false;
       }
     }
     if (!next) return;
@@ -322,6 +404,10 @@ export class Motion {
       if (mask & (1 << f.z)) t.tz = dequant(valueAt(u, at, mask, f.z), CM);
       if (f.a >= 0 && mask & (1 << f.a)) t.ta = dequant(valueAt(u, at, mask, f.a), MRAD);
       if (f.p >= 0 && mask & (1 << f.p)) t.tp = dequant(valueAt(u, at, mask, f.p), MRAD);
+      if (kind === 'hippies' && mask & (1 << HIPPIE_AIRBORNE_FIELD)) {
+        const airborne = valueAt(u, at, mask, HIPPIE_AIRBORNE_FIELD);
+        t.ty = Array.isArray(airborne) ? dequant(airborne[0], CM) : 0;
+      }
     }
   }
 
@@ -330,6 +416,19 @@ export class Motion {
    * authoritative pose pushed `ext` seconds along its velocity.
    */
   private write(world: World, alpha: number, ext: number, blending: boolean): void {
+    const b = world.boss, t = this.boss;
+    if (b && t && b.id === t.id) {
+      // The body stays planted throughout the live sweep. Turn/aim only between
+      // samples of this same shot, never toward a post-beam walking/death frame.
+      const firing = b.eye?.firedAt != null;
+      const eyeBlend = firing && blending && t.aim && !t.snap && this.eyeFrom && this.eyeTo &&
+        continuousEyeContact(this.eyeFrom, this.eyeTo);
+      b.pos.x = firing ? t.fx : posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
+      b.pos.z = firing ? t.fz : posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
+      b.yaw = firing && !eyeBlend ? t.fa : posedAngle(t, t.fa, t.ta, alpha, blending);
+      b.stride = firing ? t.fp : posed(t, t.fp, t.tp, 0, alpha, 0, blending);
+      if (firing && this.eyeFrom) writeEyeSample(b.eye, this.eyeFrom, eyeBlend ? this.eyeTo : null, eyeBlend ? alpha : 0);
+    }
     for (const t of this.tracks.avatars.values()) {
       const av = world.avatars.get(t.id);
       if (!av) continue;
@@ -345,6 +444,9 @@ export class Motion {
       h.pos.x = posed(t, t.fx, t.tx, t.vx, alpha, ext, blending);
       h.pos.z = posed(t, t.fz, t.tz, t.vz, alpha, ext, blending);
       h.facing = posedAngle(t, t.fa, t.ta, alpha, blending);
+      if (t.airborne || (blending && t.ty > 0)) {
+        h.airborne = { y: Math.max(0, posed(t, t.fy, t.ty, t.vy, alpha, ext, blending)), vy: t.vy };
+      } else delete h.airborne;
       h.vel.x = t.vx;
       h.vel.z = t.vz;
     }

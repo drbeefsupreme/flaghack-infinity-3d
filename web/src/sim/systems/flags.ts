@@ -1,6 +1,6 @@
 /**
- * Flag lifecycle: stock → carried → planted/loose/flying → … Conservation: Flags are never
- * destroyed except by explicit design (none in v1). Every state change appends history,
+ * Flag lifecycle: stock → carried → planted/loose/flying → … Conservation: only explicit giant impacts/eating
+ * destroy Flags; ordinary flag actions move them. Every state change appends history,
  * updates SurveyState node arrays and marks the survey dirty.
  *
  * Inventories live here: every function that moves a Flag first detaches it from wherever it
@@ -9,11 +9,11 @@
  * (the throw, which hands a Flag to a projectile, is the one exception and lives in Units).
  * Owner: SurveyRules agent.
  */
-import { AVATAR } from '../constants';
+import { AVATAR, BUILDING_HEIGHT, CRYSTAL_HEIGHT, LIGHTNING_PULL_MULT, PULL_LIGHTNING_INTERVAL, SIM_HZ, WARD_FLAG_RADIUS, WORKSHOP_FLAG_CAPACITY } from '../constants';
 import { spawnFlag } from '../factory';
 import type { V2, V3 } from '../math';
 import { NEUTRAL } from '../types';
-import type { Avatar, EntityId, FactionId, Flag, FlagState, Hippie, Owner } from '../types';
+import type { Avatar, Building, Crystal, EntityId, FactionId, Flag, FlagState, Hippie, Owner } from '../types';
 import type { World } from '../world';
 import { isFlagProtected } from './abilities';
 import { isCollapsed } from './buildings';
@@ -28,20 +28,59 @@ const nearScratch: number[] = [];
 
 type Carrier = Avatar | Hippie;
 
-/** Can `faction` plant on this node right now? (unblocked, free, not under a building/crystal). */
+/** Shared Ward eligibility for ordinary pulls and the giant's Flag attacks. */
+export function wardProtectsFlag(ward: Building, flag: Flag): boolean {
+  return flag.state === 'planted' && flag.owner !== NEUTRAL && ward.kind === 'ward' &&
+    ward.faction === flag.owner && ward.built >= 1 && !ward.disabled &&
+    (ward.pos.x - flag.pos.x) ** 2 + (ward.pos.z - flag.pos.z) ** 2 <= WARD_FLAG_RADIUS ** 2;
+}
+
+/** Pure query shared by pulling and AI planning; reading protection never emits lightning. */
+export function flagPullDefender(world: World, fl: Flag, puller: FactionId): Building | Crystal | null {
+  if (fl.state !== 'planted' || fl.owner === NEUTRAL || fl.owner === puller) return null;
+  for (const c of world.crystals.values()) {
+    if (c.faction === fl.owner && c.growth >= 1 &&
+      (c.pentacle.includes(fl.node) || (fl.altNode >= 0 && c.pentacle.includes(fl.altNode)))) return c;
+  }
+  for (const w of world.buildings.values()) {
+    if (wardProtectsFlag(w, fl)) return w;
+  }
+  return null;
+}
+
+/** Live enemy pull rate: Wards and fully manifested Crystals defend their Flags without stacking. */
+export function defendedPullRate(world: World, fl: Flag, puller: FactionId, starting = false): number {
+  const defender = flagPullDefender(world, fl, puller);
+  if (!defender) return 1;
+  if (starting || world.tick % Math.round(PULL_LIGHTNING_INTERVAL * SIM_HZ) === 0) {
+    if (defender.type === 'crystal') {
+      const node = world.lattice.nodes[defender.pentacle.includes(fl.node) ? fl.node : fl.altNode];
+      world.emit({ t: 'crystalLightning', crystalId: defender.id, flagId: fl.id, faction: defender.faction,
+        from: { x: defender.pos.x, y: world.collision.groundHeight(defender.pos.x, defender.pos.z) + CRYSTAL_HEIGHT * defender.scale, z: defender.pos.z },
+        to: { x: node.x, y: world.collision.groundHeight(node.x, node.z) + 2, z: node.z } });
+    } else {
+      world.emit({ t: 'wardLightning', buildingId: defender.id, flagId: fl.id, faction: defender.faction,
+        from: { x: defender.pos.x, y: world.collision.groundHeight(defender.pos.x, defender.pos.z) + BUILDING_HEIGHT.ward, z: defender.pos.z },
+        to: { x: fl.pos.x, y: fl.pos.y + 2, z: fl.pos.z } });
+    }
+  }
+  return 1 / LIGHTNING_PULL_MULT;
+}
+
+/** Can `faction` plant here? Terrain, occupied nodes and crystals always block placement. */
 export function canPlantAt(world: World, node: number, faction: FactionId): boolean {
   const lat = world.lattice;
   if (!Number.isInteger(node) || node < 0 || node >= lat.nodes.length) return false;
   if (!world.factions[faction].alive) return false;
   if (lat.nodes[node].blocked || world.survey.nodeFlag[node] >= 0) return false;
   for (const c of world.crystals.values()) if (c.node === node) return false;
-  return !isBuildingCorner(world, node);
+  return world.options.match?.structuresBlockFlagPlacement !== true || !isBuildingCorner(world, node);
 }
 
 /**
  * Is `node` a corner of a facet hosting a standing building? Buildings pin their facet:
- * nothing can be planted on its corners and the Crystal never flips them. A collapsed GCC
- * no longer pins anything.
+ * the Crystal never flips them, and optional structure blocking reserves them for planting.
+ * A collapsed GCC no longer pins anything.
  */
 export function isBuildingCorner(world: World, node: number): boolean {
   const facets = world.lattice.facets;
@@ -95,7 +134,7 @@ export function plantSimulacrum(
   world.factions[owner].stats.flagsPlanted++;
   const nb = world.lattice.nodes[b];
   world.emit({ t: 'flagPlanted', flagId, node: a, faction: owner, by, pos: { ...fl.pos } });
-  world.emit({ t: 'flagPlanted', flagId, node: b, faction: owner, by, pos: { x: nb.x, y: 0, z: nb.z } });
+  world.emit({ t: 'flagPlanted', flagId, node: b, faction: owner, by, pos: { x: nb.x, y: world.collision.groundHeight(nb.x, nb.z), z: nb.z } });
   markSurveyDirty(world);
   return true;
 }
@@ -113,6 +152,7 @@ export function collapseSimulacrum(world: World, fl: Flag, keep: number): void {
   fl.node = keep;
   fl.altNode = -1;
   fl.pos.x = n.x;
+  fl.pos.y = world.collision.groundHeight(n.x, n.z);
   fl.pos.z = n.z;
   record(world, fl, 'planted', -1);
   if (fl.owner !== NEUTRAL) {
@@ -126,7 +166,8 @@ export function collapseSimulacrum(world: World, fl: Flag, keep: number): void {
  * carried by them (owner = carrier faction); otherwise it drops loose at its position (or at
  * `dropAt`, e.g. an Omega Pulse flinging it outward). Emits flagPulled. Counts flagsStolen
  * when prev owner differs. Enemy pulls (and knock-loose pulls with carrier -1) respect Stabilize
- * L3 protection. A loose Flag nobody can hold stays put (returns false).
+ * L3 protection. Boss alliances suppress damage, not ordinary pickup or pull ownership changes.
+ * A loose Flag nobody can hold stays put (returns false).
  */
 export function pullFlag(world: World, flagId: EntityId, carrier: EntityId | -1, dropAt?: V3): boolean {
   const fl = world.flags.get(flagId);
@@ -166,11 +207,22 @@ export function dropLoose(world: World, flagId: EntityId, at: V3): void {
   record(world, fl, 'loose', by);
 }
 
-/** Move one Flag from a Hearth's stock into a carrier's hands. Returns the Flag or null. */
+/** Explicit destruction by a giant impact/eating. Canonical detach clears every reference. */
+export function destroyFlag(world: World, flagId: EntityId): boolean {
+  const fl = world.flags.get(flagId);
+  if (!fl) return false;
+  detach(world, fl);
+  for (const p of world.projectiles.values()) if (p.flagId === flagId) world.projectiles.delete(p.id);
+  world.flags.delete(flagId);
+  markSurveyDirty(world);
+  return true;
+}
+
+/** Move one Flag from an own Hearth/Workshop into a carrier's hands. */
 export function takeFromStock(world: World, hearthId: EntityId, carrier: EntityId): Flag | null {
   const hearth = world.buildings.get(hearthId);
   const c = carrierOf(world, carrier);
-  if (!hearth || hearth.kind !== 'hearth' || !c) return null;
+  if (!hearth || (hearth.kind !== 'hearth' && hearth.kind !== 'workshop') || hearth.built < 1 || !c) return null;
   const taker = holdingFaction(world, c);
   if (taker === null || taker !== hearth.faction) return null;
   for (const fl of world.flags.values()) {
@@ -184,7 +236,7 @@ export function takeFromStock(world: World, hearthId: EntityId, carrier: EntityI
 
 /**
  * Hand a Flag that is not planted or in flight (quiver, hands, stock, loose) to a carrier,
- * e.g. Flag Gifts. The carrier's faction becomes the owner. Returns false if it can't hold it.
+ * e.g. Flag recruitment. The carrier's faction becomes the owner. Returns false if it can't hold it.
  */
 export function giveFlag(world: World, flagId: EntityId, carrier: EntityId): boolean {
   const fl = world.flags.get(flagId);
@@ -198,26 +250,38 @@ export function giveFlag(world: World, flagId: EntityId, carrier: EntityId): boo
   return true;
 }
 
-/** Put a carried/loose Flag into a Hearth's stock (owner becomes the Hearth's faction). */
-export function depositToStock(world: World, flagId: EntityId, hearthId: EntityId): void {
+/** Store a Flag at a Hearth or a completed Workshop with room; rejected deposits leave it untouched. */
+export function depositToStock(world: World, flagId: EntityId, hearthId: EntityId): boolean {
   const fl = world.flags.get(flagId);
   const hearth = world.buildings.get(hearthId);
-  if (!fl || !hearth || hearth.kind !== 'hearth' || hearth.faction === NEUTRAL) return;
+  if (!fl || !hearth || (hearth.kind !== 'hearth' && hearth.kind !== 'workshop') || hearth.faction === NEUTRAL || hearth.built < 1) return false;
+  if (hearth.kind === 'workshop') {
+    let stock = 0;
+    for (const flag of world.flags.values()) if (flag.state === 'stock' && flag.holder === hearth.id) stock++;
+    if (stock >= WORKSHOP_FLAG_CAPACITY) return false;
+  }
   const by = fl.state === 'carried' ? fl.holder : -1;
   detach(world, fl);
   fl.owner = hearth.faction;
   fl.holder = hearth.id;
   fl.pos.x = hearth.pos.x;
-  fl.pos.y = 0;
+  fl.pos.y = world.collision.groundHeight(fl.pos.x, hearth.pos.z);
   fl.pos.z = hearth.pos.z;
   fl.tilt = 0;
   record(world, fl, 'stock', by);
+  return true;
 }
 
-/** Create a brand-new Flag in a Hearth's stock (crafting). Emits flagCrafted. */
+/** Create a Flag in Hearth/Workshop stock, respecting local capacity. Emits flagCrafted. */
 export function craftFlag(world: World, hearthId: EntityId): Flag | null {
   const hearth = world.buildings.get(hearthId);
-  if (!hearth || hearth.kind !== 'hearth') return null;
+  if (!hearth || (hearth.kind !== 'hearth' && hearth.kind !== 'workshop')) return null;
+  if (hearth.kind === 'workshop') {
+    if (hearth.built < 1 || hearth.disabled) return null;
+    let stock = 0;
+    for (const flag of world.flags.values()) if (flag.state === 'stock' && flag.holder === hearth.id) stock++;
+    if (stock >= WORKSHOP_FLAG_CAPACITY) return null;
+  }
   const f = hearth.faction;
   if (f === NEUTRAL) return null;
   const fl = spawnFlag(world, { state: 'stock', owner: f, holder: hearth.id, pos: { x: hearth.pos.x, y: 0, z: hearth.pos.z } });
@@ -312,7 +376,7 @@ function attach(world: World, fl: Flag, c: Carrier, f: FactionId): void {
     fl.pos.y = c.pos.y;
   } else {
     c.carryingFlag = fl.id;
-    fl.pos.y = 0;
+    fl.pos.y = world.collision.groundHeight(c.pos.x, c.pos.z) + (c.airborne?.y ?? 0);
   }
   record(world, fl, 'carried', c.id);
 }
@@ -323,7 +387,7 @@ function settle(world: World, fl: Flag, node: number, owner: FactionId): void {
   fl.owner = owner;
   fl.node = node;
   fl.pos.x = n.x;
-  fl.pos.y = 0;
+  fl.pos.y = world.collision.groundHeight(n.x, n.z);
   fl.pos.z = n.z;
   fl.tilt = 0;
   fl.plantedAt = world.time;

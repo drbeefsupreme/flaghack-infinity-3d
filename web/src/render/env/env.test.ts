@@ -1,3 +1,4 @@
+import { groundHeight } from "../../sim/terrain";
 import { describe, expect, it } from 'vitest';
 import { BURN_TIME, DAWN_TIME } from '../../sim/constants';
 import type { GroundType, MapLayout } from '../../sim/map/mapgen';
@@ -104,10 +105,10 @@ describe('time of day', () => {
 });
 
 describe('terrain relief', () => {
-  it('is exactly flat across the playable map (edges included), rising only beyond', () => {
+  it('matches the shared dome inside and preserves hills beyond the flat margin', () => {
     const half = 150;
     for (let x = -half - 4; x <= half + 4; x += 2) {
-      for (let z = -half - 4; z <= half + 4; z += 2) expect(terrainHeight(x, z, half)).toBe(0);
+      for (let z = -half - 4; z <= half + 4; z += 2) expect(terrainHeight(x, z, half)).toBe(groundHeight(x, z, half));
     }
     expect(terrainHeight(half + 12, 0, half)).toBe(0);
     expect(terrainHeight(half + 120, 0, half)).toBeGreaterThan(5);

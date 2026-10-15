@@ -44,8 +44,8 @@ void main() {
   vec3 A;
   vec3 B;
   if (aCorner.z < 0.5) {
-    A = vec3(na.x, ${BEAM_Y.toFixed(3)}, na.y);
-    B = vec3(nb.x, ${BEAM_Y.toFixed(3)}, nb.y);
+    A = vec3(na.x, fhGround(na.xy) + ${BEAM_Y.toFixed(3)}, na.y);
+    B = vec3(nb.x, fhGround(nb.xy) + ${BEAM_Y.toFixed(3)}, nb.y);
     P = mix(A, B, t);
     vec3 axis = normalize(B - A);
     vec3 toCam = cameraPosition - P;
@@ -64,6 +64,7 @@ void main() {
     vec2 ax = normalize(B.xz - A.xz);
     float w = 1.3 + uViewBlend * 1.5;
     P.xz += vec2(-ax.y, ax.x) * side * w * 0.5;
+    P.y += fhGround(P.xz);
     vNear = smoothstep(3.0, 24.0, length(cameraPosition - P));
   }
   vec4 mv = viewMatrix * vec4(P, 1.0);

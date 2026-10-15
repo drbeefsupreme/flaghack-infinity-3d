@@ -50,3 +50,25 @@ describe('StaticBatch.buildTiles', () => {
     expect(tiles.length).toBeGreaterThan(spots.length);
   });
 });
+
+describe('CPU-only scenery ownership', () => {
+  it('preserves primary and shared endpoint IDs through merging, cloth backfaces and tile splitting', () => {
+    const box = new PartsBuilder().box(2, 2, 2, 0xffffff).build();
+    const cloth = new StaticBatch({ twoSided: true });
+    cloth.owners = [23, 71]; cloth.add(box, new THREE.Matrix4());
+    const doubled = cloth.build()!;
+    expect(Array.from(doubled.userData.sceneryOwners as Int32Array)).toEqual(Array.from({ length: box.getAttribute('position').count / 3 * 4 }, (_, i) => i % 2 ? 71 : 23));
+    const merged = new StaticBatch(); merged.add(doubled, new THREE.Matrix4());
+    merged.owners = [109, -1]; merged.add(box, new THREE.Matrix4().makeTranslation(20, 0, 0));
+    const tiles = merged.buildTiles(150, 8);
+    const counts = new Map<number, number>();
+    for (const tile of tiles) {
+      expect(Object.keys(tile.attributes)).not.toContain('sceneryOwners');
+      const owners = tile.userData.sceneryOwners as Int32Array;
+      expect(owners.length).toBe(tile.getAttribute('position').count / 3 * 2);
+      for (let t = 0; t < owners.length; t += 2) { counts.set(owners[t], (counts.get(owners[t]) ?? 0) + 1); expect(owners[t + 1]).toBe(owners[t] === 23 ? 71 : -1); }
+    }
+    expect(counts.get(23)).toBe(box.getAttribute('position').count / 3 * 2);
+    expect(counts.get(109)).toBe(box.getAttribute('position').count / 3);
+  });
+});

@@ -16,6 +16,7 @@ import { GlowMode, placeMatrix } from '../geom';
 import type { PartOptions, PartsBuilder, Place } from '../geom';
 
 interface Placement {
+  owners: readonly [number, number];
   geo: THREE.BufferGeometry;
   matrix: THREE.Matrix4;
   tint: THREE.Color | null;
@@ -33,6 +34,8 @@ function attrArray(geo: THREE.BufferGeometry, name: string, itemSize: number): T
 }
 
 export class StaticBatch {
+  /** Canonical obstacle IDs for subsequently placed parts; -1 means unowned. */
+  owners: readonly [number, number] = [-1, -1];
   private placements: Placement[] = [];
   private vertices = 0;
 
@@ -57,6 +60,7 @@ export class StaticBatch {
   add(geo: THREE.BufferGeometry, matrix: THREE.Matrix4, tint?: THREE.ColorRepresentation, sway?: number): void {
     if (geo.index) throw new Error('StaticBatch needs non-indexed geometry');
     this.placements.push({
+      owners: this.owners,
       geo,
       matrix: matrix.clone(),
       tint: tint === undefined ? null : new THREE.Color(tint),
@@ -99,6 +103,8 @@ export class StaticBatch {
       const q = tileOf[t];
       const dst = parts[q];
       const o = fill[q];
+      dst.owners[o / 3 * 2] = all.owners[t * 2];
+      dst.owners[o / 3 * 2 + 1] = all.owners[t * 2 + 1];
       for (let k = 0; k < 9; k++) {
         dst.pos[o * 3 + k] = all.pos[t * 9 + k];
         dst.nor[o * 3 + k] = all.nor[t * 9 + k];
@@ -117,7 +123,7 @@ export class StaticBatch {
   private merge(): VertexArrays | null {
     const n = this.vertices;
     if (n === 0) return null;
-    const { pos, nor, col, glow, sway, tint } = allocate(n);
+    const { pos, nor, col, glow, sway, tint, owners } = allocate(n);
     const nm = new THREE.Matrix3();
     let o = 0;
     for (const p of this.placements) {
@@ -127,6 +133,7 @@ export class StaticBatch {
       const sg = attrArray(p.geo, 'aGlow', 2);
       const ss = attrArray(p.geo, 'aSway', 1);
       const st = attrArray(p.geo, 'aTint', 1);
+      const sourceOwners = p.geo.userData.sceneryOwners as Int32Array | undefined;
       const e = p.matrix.elements;
       const m = nm.getNormalMatrix(p.matrix).elements;
       // A mirrored placement flips triangle winding; swap two corners to keep faces outward.
@@ -134,6 +141,10 @@ export class StaticBatch {
       const count = sp.length / 3;
       for (let i = 0; i < count; i++, o++) {
         const k = i % 3;
+        if (k === 0) {
+          owners[o / 3 * 2] = p.owners[0] >= 0 ? p.owners[0] : sourceOwners?.[i / 3 * 2] ?? -1;
+          owners[o / 3 * 2 + 1] = p.owners[0] >= 0 ? p.owners[1] : sourceOwners?.[i / 3 * 2 + 1] ?? -1;
+        }
         const r = mirrored && k === 1 ? i + 1 : mirrored && k === 2 ? i - 1 : i;
         const x = sp[r * 3];
         const y = sp[r * 3 + 1];
@@ -163,12 +174,14 @@ export class StaticBatch {
     }
     this.placements = [];
     this.vertices = 0;
-    const merged = { pos, nor, col, glow, sway, tint };
+    const merged = { pos, nor, col, glow, sway, tint, owners };
     return this.twoSided ? backFaces(merged) : merged;
   }
 }
 
 interface VertexArrays {
+  /** Two owners per triangle, including both endpoints of inter-prop strings. CPU-only. */
+  owners: Int32Array;
   pos: Float32Array;
   nor: Float32Array;
   col: Float32Array;
@@ -179,6 +192,7 @@ interface VertexArrays {
 
 function allocate(vertices: number): VertexArrays {
   return {
+    owners: new Int32Array(vertices / 3 * 2).fill(-1),
     pos: new Float32Array(vertices * 3),
     nor: new Float32Array(vertices * 3),
     col: new Float32Array(vertices * 3),
@@ -190,6 +204,7 @@ function allocate(vertices: number): VertexArrays {
 
 function toGeometry(a: VertexArrays): THREE.BufferGeometry {
   const out = new THREE.BufferGeometry();
+  if (a.owners.some(id => id >= 0)) out.userData.sceneryOwners = a.owners;
   out.setAttribute('position', new THREE.BufferAttribute(a.pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(a.nor, 3));
   out.setAttribute('color', new THREE.BufferAttribute(a.col, 3));
@@ -211,6 +226,8 @@ function backFaces(src: VertexArrays): VertexArrays {
   out.glow.set(src.glow);
   out.sway.set(src.sway);
   out.tint.set(src.tint);
+  out.owners.set(src.owners);
+  out.owners.set(src.owners, src.owners.length);
   for (let v = 0; v < n; v++) {
     const k = v % 3;
     const s = k === 1 ? v + 1 : k === 2 ? v - 1 : v;
@@ -361,6 +378,8 @@ const tP3 = new THREE.Vector3();
  * vertex (cloth pinned at its edges).
  */
 export class GeoWriter {
+  owners: readonly [number, number] = [-1, -1];
+  private triangleOwners: number[] = [];
   private pos: number[] = [];
   private col: number[] = [];
   private glw: number[] = [];
@@ -439,6 +458,8 @@ export class GeoWriter {
   /** Non-indexed geometry with flat normals and the env attributes. */
   build(): THREE.BufferGeometry {
     const geo = new THREE.BufferGeometry();
+    if (this.triangleOwners.some(id => id >= 0)) geo.userData.sceneryOwners = Int32Array.from(this.triangleOwners);
+    this.triangleOwners = [];
     geo.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     geo.setAttribute('aGlow', new THREE.Float32BufferAttribute(this.glw, 2));
@@ -454,6 +475,7 @@ export class GeoWriter {
   }
 
   private vertex(p: THREE.Vector3, w: number): void {
+    if (this.pos.length % 9 === 0) this.triangleOwners.push(...this.owners);
     this.pos.push(p.x, p.y, p.z);
     this.col.push(this.color.r, this.color.g, this.color.b);
     this.glw.push(this.glow, this.mode);

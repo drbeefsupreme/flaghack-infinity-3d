@@ -1,3 +1,4 @@
+import { matchSettings } from "../sim/matchSettings";
 /**
  * Player controls: keyboard/mouse → camera, Session presentation state and Commands. Only
  * `app.submit(cmd)` changes the simulation: the continuous avatarInput every tick, and discrete
@@ -14,6 +15,7 @@ import type { V3 } from '../sim/math';
 import { isFlagProtected } from '../sim/systems/abilities';
 import { throwOrigin } from '../sim/systems/avatars';
 import { isCollapsed } from '../sim/systems/buildings';
+import { canRecruit, handFlagBlocker } from '../sim/systems/recruitment';
 import { canPlantAt, nearestPlantableNode } from '../sim/systems/flags';
 import { CHAKRA_ABILITY, CHAKRAS, DRUGS, FACTION_IDS } from '../sim/types';
 import type { Avatar, Building, BuildingKind, EntityId, FactionId, Flag, PieceKind } from '../sim/types';
@@ -22,17 +24,15 @@ import { MAX_RANGE_PITCH, solveThrowPitch, ThrowPredictor } from './aim';
 import type { AppApi } from './app';
 import { BuildGhost } from './buildMode';
 import { CameraRig, PITCH_MAX, PITCH_MIN } from './cameraRig';
+import { effigyCameraTarget } from './effigyCamera';
 import { CommandView, pingKindAt } from './commandView';
 import { Input, LMB, MMB, RMB } from './input';
 import { Picker } from './picking';
 import type { GhostInfo, Screen, Session, ToolKind, ViewMode } from './session';
 
 const DEG = Math.PI / 180;
-/** View blend durations (s): the Tab swoop and the slower GCC Command Table dive. */
+/** View blend duration (s) for the global Command View toggle. */
 const BLEND_TIME = 0.6;
-const DIVE_TIME = 1.35;
-/** Command View height when arriving through the table. */
-const DIVE_CMD_HEIGHT = 150;
 /** Hold E this long at your GCC to start pushing it. */
 const GCC_HOLD = 0.4;
 /** Mouse-look radians per pixel at sensitivity 1, and the precision factor while aiming. */
@@ -145,12 +145,13 @@ const RAISE_PROMPT: Record<BuildingKind, string> = {
 };
 
 /** What E does right now. */
-type ContextKind = 'none' | 'plant' | 'pull' | 'beacon' | 'gcc' | 'release';
+type ContextKind = 'none' | 'plant' | 'pull' | 'beacon' | 'gcc' | 'release' | 'handFlag';
 const CONTEXT_PROMPT: Record<Exclude<ContextKind, 'pull'>, string> = {
+  handFlag: 'E  Hand Flag to recruit Signifier',
   none: '',
   plant: 'E  Plant Flag',
   beacon: 'E  Tap the D.E.G.E.N. Beacon',
-  gcc: 'E  Command Table   Hold E  Push',
+  gcc: 'Hold E  Push',
   release: 'E  Release the Command Center',
 };
 
@@ -185,8 +186,6 @@ export class Controls {
   private view: ViewMode = 'action';
   /** New world not yet set up for play (camera, tools). */
   private freshWorld = false;
-  /** GCC whose tabletop the Command View was entered through (the dive), else null. */
-  private dive: Building | null = null;
 
   // Aim: written per frame, read per tick.
   private aimYaw = 0;
@@ -207,7 +206,6 @@ export class Controls {
   private eMode: 'none' | 'pull' | 'gcc' = 'none';
   private eHeld = 0;
   private gccFired = false;
-  private eGcc: Building | null = null;
   private lastPullAt = -Infinity;
   private lastSwingAt = -Infinity;
   private qHeld = 0;
@@ -240,7 +238,8 @@ export class Controls {
     this.input = new Input(canvas);
     this.command = new CommandView(this.input, this.queue);
     const input = this.input;
-    input.capturesKey = (code) => app.session.screen === 'playing' && GAME_KEYS[code] === true;
+    input.capturesKey = (code) => app.session.screen === 'playing' && !app.session.campChoiceOpen && (GAME_KEYS[code] === true || input.owns(code));
+    input.onMenuBack = ()=>{const s=app.session;if(s.panels.settings)s.panels.settings=false;else if(s.panels.codex)s.panels.codex=false;else if(s.panels.help)s.panels.help=false;else if(s.panels.chakras)s.panels.chakras=false;else if(s.screen==='paused')app.setPaused(false);};
     input.onLockLost = () => {
       const s = app.session;
       if (s.screen === 'playing' && s.view === 'action' && !this.cursorWanted(s) && !this.spectating()) app.setPaused(true);
@@ -278,25 +277,28 @@ export class Controls {
     const inPlay = s.screen === 'playing' && av !== undefined && (seated(world, s) || s.spectator);
     const watcher = inPlay && watching(world, s);
     // A text field (chat) has the keyboard: keys held when it opened must not keep the vexillomancer running.
+    this.input.controls = s.settings.controls;
     const typing = this.input.typing;
+    this.input.pollGamepad(Math.min(dt,0.05),inPlay&&!typing&&!this.cursorWanted(s),s.view==='command');
     if (typing) this.input.clear();
     if (inPlay && av && this.freshWorld) this.beginMatch(s, av);
 
-    if (inPlay && av) {
+    if (inPlay && av && !s.campChoiceOpen) {
       this.toggles(world, s, av, watcher);
       if (s.view !== this.view) {
-        if (s.view === 'command') this.enterCommand(s, watcher ? null : av.pos, null);
+        if (s.view === 'command') this.enterCommand(s, watcher ? null : av.pos);
         else this.exitCommand(s);
       }
       if ((s.view === 'command' || watcher || typing || this.cursorWanted(s)) && this.input.locked) this.input.exitLock();
       s.pointerLocked = this.input.locked;
-      if (s.view === 'command') this.command.controlCamera(s, dt);
+      if (s.view === 'command' && !effigyCameraTarget(world)) this.command.controlCamera(s, dt);
       else if (!watcher) this.look(s);
       if (watcher) this.spectate(world, s, dt);
     }
+    if (s.campChoiceOpen && this.input.locked) this.input.exitLock();
     this.animateBlend(s, dt);
     this.updateCamera(world, s, av, watcher, dt);
-    if (inPlay && av && !watcher && !typing) {
+    if (inPlay && av && !watcher && !typing && !s.campChoiceOpen) {
       this.pick(world, s, av);
       this.targetedKeys(s, av);
       if (s.view === 'action') this.actionFrame(world, s, av, dt);
@@ -309,7 +311,7 @@ export class Controls {
   tick(): void {
     const s = this.app.session;
     const world = this.app.world;
-    if (!world || world !== this.world || s.screen !== 'playing' || !seated(world, s)) return;
+    if (!world || world !== this.world || s.screen !== 'playing' || s.campChoiceOpen || !seated(world, s)) return;
     const av = world.avatars.get(world.factions[s.playerFaction].avatarId);
     if (!av) return;
     if (!world.factions[s.playerFaction].alive) {
@@ -325,10 +327,11 @@ export class Controls {
     out.moveZ = 0;
     out.jump = false;
     out.sprint = false;
+    out.throwMode = false;
     if (s.view === 'action' && av.koUntil <= world.time) {
       // WASD relative to the camera yaw; yaw 0 faces +z, screen-right is (-cos, sin).
-      const fwd = (inp.isDown('KeyW') ? 1 : 0) - (inp.isDown('KeyS') ? 1 : 0);
-      const side = (inp.isDown('KeyD') ? 1 : 0) - (inp.isDown('KeyA') ? 1 : 0);
+      const fwd = (inp.isDown('KeyW') ? 1 : 0) - (inp.isDown('KeyS') ? 1 : 0) - inp.moveY;
+      const side = (inp.isDown('KeyD') ? 1 : 0) - (inp.isDown('KeyA') ? 1 : 0) + inp.moveX;
       const yaw = s.camera.yaw;
       let mx = Math.sin(yaw) * fwd - Math.cos(yaw) * side;
       let mz = Math.cos(yaw) * fwd + Math.sin(yaw) * side;
@@ -340,7 +343,8 @@ export class Controls {
       out.moveX = mx;
       out.moveZ = mz;
       out.jump = this.jumpLatch || inp.isDown('Space');
-      out.sprint = inp.shift;
+      out.throwMode = inp.buttons[RMB];
+      out.sprint = inp.shift && !out.throwMode;
     }
     this.jumpLatch = false;
     // Face where the camera looks; a throw tick turns to the crosshair point with the solved arc.
@@ -355,6 +359,26 @@ export class Controls {
     this.throwQueued = false;
   }
 
+  /** A confirmed ownership change is a fresh input/camera boundary, even in the same world. */
+  resetForSeat(): void {
+    const world = this.app.world, s = this.app.session;
+    if (!world) return;
+    this.input.resetForSeat();
+    this.attachWorld(world, s);
+    this.ctxKind = 'none'; this.ctxNode = -1; this.ctxTarget = -1;
+    this.lastPullAt = this.lastSwingAt = this.lastThrowAt = -Infinity;
+    this.throwPitch = 0;
+    this.idle(s);
+    const avatar = world.avatars.get(world.factions[s.playerFaction].avatarId);
+    if (avatar) {
+      this.beginMatch(s, avatar);
+      s.camera.cmdX = avatar.pos.x;
+      s.camera.cmdZ = avatar.pos.z;
+    }
+    // Pointer lock can be reacquired by the next real canvas gesture, never by a server reply.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  }
+
   dispose(): void {
     this.input.dispose();
   }
@@ -366,7 +390,6 @@ export class Controls {
     this.queue.length = 0;
     this.throwQueued = false;
     this.jumpLatch = false;
-    this.dive = null;
     // A fresh burn always opens in the action view (quitting from the table must not leave
     // the title screen tinted as the Command View).
     s.view = 'action';
@@ -407,7 +430,7 @@ export class Controls {
 
   /** A modal wants the mouse (panels, the Training Burn's graduation): no lock, no auto-pause. */
   private cursorWanted(s: Session): boolean {
-    return panelOpen(s) || this.app.tutorial?.state.phase === 'graduated';
+    return s.campChoiceOpen || panelOpen(s) || this.app.tutorial?.state.phase === 'graduated';
   }
 
   /**
@@ -445,7 +468,7 @@ export class Controls {
       cam.pitch += (START_PITCH - cam.pitch) * k;
     } else if (s.spectator) {
       // Nobody left to stand behind: back over the table.
-      this.enterCommand(s, null, null);
+      this.enterCommand(s, null);
     }
     s.selection.clear();
     if (s.planPreview.length > 0) s.planPreview = [];
@@ -510,7 +533,6 @@ export class Controls {
     this.eMode = 'none';
     this.eHeld = 0;
     this.gccFired = false;
-    this.eGcc = null;
     this.qHeld = 0;
     this.slotKind = '';
     this.lastDemolish = -1;
@@ -531,10 +553,10 @@ export class Controls {
     if (inp.wasPressed('F1')) p.help = !p.help;
     if (inp.wasPressed('KeyL')) s.showLattice = !s.showLattice;
     if (inp.wasPressed('Backquote')) s.debug = !s.debug;
-    if (inp.wasPressed('Tab')) {
+    if (inp.wasPressed('Tab') && !effigyCameraTarget(world)) {
       if (s.view === 'action') {
         const target = watcher ? this.followed(world, s) : av;
-        this.enterCommand(s, target ? target.pos : null, null);
+        this.enterCommand(s, target ? target.pos : null);
       } else {
         // A spectator's chase cam needs someone to chase.
         if (s.spectator && s.followFaction === null) this.cycleFollow(world, s, 1);
@@ -543,18 +565,16 @@ export class Controls {
     }
   }
 
-  /** Enter the Command View centred on `at` (null keeps the table where it was) or dive through a GCC. */
-  private enterCommand(s: Session, at: { x: number; z: number } | null, gcc: Building | null): void {
+  /** Enter the Command View centred on `at` (null keeps the table where it was). */
+  private enterCommand(s: Session, at: { x: number; z: number } | null): void {
     this.view = 'command';
     s.view = 'command';
-    this.dive = gcc;
     const cam = s.camera;
-    const centre = gcc ? gcc.pos : at;
+    const centre = at;
     if (centre) {
       cam.cmdX = centre.x;
       cam.cmdZ = centre.z;
     }
-    if (gcc) cam.cmdHeight = DIVE_CMD_HEIGHT;
     this.rig.snapCommand(cam);
     this.input.exitLock();
     this.releaseHolds();
@@ -568,9 +588,6 @@ export class Controls {
   private exitCommand(s: Session): void {
     this.view = 'action';
     s.view = 'action';
-    // Leaving mid-dive: glide from wherever the dive got to.
-    if (this.dive && s.viewBlend < 1) this.rig.startTransition(0.45);
-    this.dive = null;
     this.command.reset(s);
     s.planTool = 'select';
     s.planPreview = [];
@@ -582,16 +599,17 @@ export class Controls {
 
   private look(s: Session): void {
     const inp = this.input;
-    if ((!inp.locked && !inp.lockUnavailable) || this.cursorWanted(s)) return;
+    if (this.app.world && effigyCameraTarget(this.app.world)) return;
+    if ((!inp.locked && !inp.lockUnavailable && !inp.gamepadActive) || this.cursorWanted(s)) return;
     const k = LOOK_SPEED * s.settings.mouseSensitivity * (s.aim.active ? AIM_LOOK_SCALE : 1);
     const cam = s.camera;
     cam.yaw = wrapAngle(cam.yaw - inp.dx * k);
-    cam.pitch = clamp(cam.pitch + inp.dy * k * (s.settings.invertY ? -1 : 1), PITCH_MIN, PITCH_MAX);
+    cam.pitch = clamp(cam.pitch + inp.lookY(s.settings.invertMouseY) * k, PITCH_MIN, PITCH_MAX);
   }
 
   private animateBlend(s: Session, dt: number): void {
     const target = s.view === 'command' ? 1 : 0;
-    const step = dt / (this.dive ? DIVE_TIME : BLEND_TIME);
+    const step = dt / BLEND_TIME;
     s.viewBlend = target > s.viewBlend ? Math.min(target, s.viewBlend + step) : Math.max(target, s.viewBlend - step);
   }
 
@@ -609,7 +627,7 @@ export class Controls {
       // Watchers ride along with whoever they follow; a fallen camp otherwise orbits its own body.
       const subject = (watcher ? this.followed(world, s) : null) ?? av;
       const sprinting = Math.hypot(subject.vel.x, subject.vel.z) > AVATAR.runSpeed + 0.5;
-      rig.updatePlay(world, subject, subject.faction, s.camera, s.viewBlend, this.dive, s.aim.active && !watcher, sprinting, dt);
+      rig.updatePlay(world, subject, subject.faction, s.camera, s.viewBlend, null, s.aim.active && !watcher, sprinting, dt);
     }
     // Camera trauma: VFX adds it, the camera spends it (muted over the tactical table).
     const shared = this.app.renderer.ctx?.shared;
@@ -676,7 +694,7 @@ export class Controls {
       // Metres per pixel at the cursor's depth: tiny Signifiers stay clickable from on high.
       const wpp = (2 * picker.dist * Math.tan((camera.fov * DEG) / 2)) / this.input.height;
       minR = Math.min(6, CMD_PICK_PX * wpp);
-      nodeR = clamp(CMD_PICK_PX * wpp, NODE_PICK, LEY_EDGE / 2);
+      nodeR = clamp(CMD_PICK_PX * wpp, NODE_PICK, matchSettings(world.options).gridScale / 2);
     }
     const lat = world.lattice;
     hv.node = lat.nearestNode(p.x, p.z, nodeR);
@@ -732,7 +750,8 @@ export class Controls {
     }
 
     this.solveAim(s, av);
-    const aiming = !down && inp.buttons[RMB] && av.carried.length > 0;
+    // Throw mode remains active with an empty quiver so nearby loose Flags can be collected.
+    const aiming = !down && inp.buttons[RMB];
     if (aiming) {
       this.thrower.predict(world, av, f, this.aimYaw, this.throwPitch, s.aim);
       s.aim.active = true;
@@ -801,6 +820,7 @@ export class Controls {
   }
 
   private tryThrow(world: World, av: Avatar): void {
+    if (this.input.shift && !this.input.buttons[RMB]) return;
     if (av.carried.length === 0 || this.throwQueued) return;
     this.queue.push({ t: 'throw', faction: av.faction });
     this.throwQueued = true;
@@ -874,9 +894,9 @@ export class Controls {
     return (fl.state === 'planted' || fl.state === 'loose') && !isFlagProtected(world, fl);
   }
 
-  private gccInReach(av: Avatar, g: Building): boolean {
+  private gccInReach(world: World, av: Avatar, g: Building): boolean {
     if (isCollapsed(g)) return false;
-    return Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) - BUILDINGS.gcc.radius <= AVATAR.gccPushReach && av.pos.y <= 1;
+    return Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) - BUILDINGS.gcc.radius <= AVATAR.gccPushReach && av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) <= 1;
   }
 
   /**
@@ -899,6 +919,11 @@ export class Controls {
     const az = av.pos.z;
     const he = s.hover.entity;
     if (he >= 0) {
+      if (world.hippies.has(he) && !handFlagBlocker(world, f, he)) {
+        this.ctxKind = 'handFlag';
+        this.ctxTarget = he;
+        return;
+      }
       const fl = world.flags.get(he);
       if (fl && this.pullable(world, fl) && Math.hypot(fl.pos.x - ax, fl.pos.z - az) <= AVATAR.pullReach) {
         this.ctxKind = 'pull';
@@ -912,7 +937,7 @@ export class Controls {
         return;
       }
       const b = world.buildings.get(he);
-      if (b && b.kind === 'gcc' && b.faction === f && this.gccInReach(av, b)) {
+      if (b && b.kind === 'gcc' && b.faction === f && this.gccInReach(world, av, b)) {
         this.ctxKind = 'gcc';
         this.ctxTarget = he;
         return;
@@ -954,7 +979,7 @@ export class Controls {
       }
     }
     const g = world.gccOf(f);
-    if (g && this.gccInReach(av, g)) {
+    if (g && this.gccInReach(world, av, g)) {
       this.ctxKind = 'gcc';
       this.ctxTarget = g.id;
     }
@@ -965,6 +990,9 @@ export class Controls {
     const f = s.playerFaction;
     if (inp.wasPressed('KeyE')) {
       switch (this.ctxKind) {
+        case 'handFlag':
+          this.queue.push({ t: 'handFlag', faction: f, hippieId: this.ctxTarget });
+          break;
         case 'plant':
           this.queue.push({ t: 'plant', faction: f, node: this.ctxNode });
           break;
@@ -980,7 +1008,6 @@ export class Controls {
           this.eMode = 'gcc';
           this.eHeld = 0;
           this.gccFired = false;
-          this.eGcc = world.buildings.get(this.ctxTarget) ?? null;
           break;
         case 'release':
           this.queue.push({ t: 'pushGcc', faction: f, on: false });
@@ -1005,11 +1032,7 @@ export class Controls {
     }
     if (inp.wasReleased('KeyE')) {
       if (this.eMode === 'pull' && av.action.kind === 'pull') this.queue.push({ t: 'pull', faction: f, flagId: -1 });
-      if (this.eMode === 'gcc' && !this.gccFired && this.eGcc && this.gccInReach(av, this.eGcc)) {
-        this.enterCommand(s, av.pos, this.eGcc);
-      }
       this.eMode = 'none';
-      this.eGcc = null;
     }
   }
 
@@ -1048,8 +1071,12 @@ export class Controls {
       }
       return this.respawnText;
     }
-    if (aiming) return s.aim.node >= 0 ? 'LMB  Throw: the Flag plants on the Ley Node' : 'LMB  Throw: the Flag lands loose';
-    if (this.input.buttons[RMB]) return 'Quiver empty: restock at your Hearth';
+    if (aiming) {
+      if (av.carried.length === 0) return 'Quiver empty: move near loose Flags to collect them';
+      const target = world.hippies.get(s.hover.entity);
+      if (target && canRecruit(target)) return 'LMB  Throw Flag to recruit Signifier';
+      return s.aim.node >= 0 ? 'LMB  Throw: the Flag plants on the Ley Node' : 'LMB  Throw: the Flag lands loose';
+    }
     let tool: string | null = null;
     const piece = PIECE_TOOL[s.tool];
     if (piece) {

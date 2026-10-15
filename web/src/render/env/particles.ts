@@ -6,6 +6,7 @@
  * the focus uniform.
  */
 import * as THREE from 'three';
+import { TERRAIN_GLSL, groundHeight } from '../../sim/terrain';
 import { hash01 } from '../../sim/rng';
 import type { RenderContext } from '../context';
 import type { EnvContext, EnvPart } from './envTypes';
@@ -18,6 +19,7 @@ const BOX = 72;
 const LEAD = 22;
 
 const VERT = /* glsl */ `
+${TERRAIN_GLSL}
 attribute vec4 aSeed;
 attribute float aKind;
 uniform vec2 uFocus;
@@ -45,7 +47,7 @@ void main() {
     p.xz = uFocus + mod(anchor - uFocus + 0.5 * BOX_W, BOX_W) - 0.5 * BOX_W;
     p.y = 0.4 + aSeed.z * aSeed.z * 9.0 + sin(uTime * 0.6 + ph) * 0.35;
     p.xz += vec2(sin(uTime * 0.37 + ph), cos(uTime * 0.29 + ph * 1.3)) * 0.6;
-    vec3 toP = normalize(p - cameraPosition);
+    vec3 toP = normalize(p + vec3(0.0, groundHeight(p.xz, uHalf), 0.0) - cameraPosition);
     float scatter = pow(max(dot(toP, uSunDir), 0.0), 6.0);
     col = vec3(1.0, 0.86, 0.62) * (0.12 + 1.6 * scatter);
     alpha = uDay * (0.55 + 0.45 * sin(uTime * 2.0 + ph * 3.0));
@@ -64,6 +66,7 @@ void main() {
     alpha = uFireflies * blink * (1.0 - bare * 0.85);
     size = 0.05 + 0.03 * aSeed.z;
   }
+  p.y += groundHeight(p.xz, uHalf);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float dist = -mv.z;
   // Fade at the box rim (where particles recycle) and right in front of the lens.
@@ -147,7 +150,7 @@ export class AmbientParticles implements EnvPart {
     this.focus.value.set(cam.position.x + (this.fwd.x / fl) * LEAD, cam.position.z + (this.fwd.z / fl) * LEAD);
     // Motes and fireflies are eye-level life: from the Command View camera (or any high
     // camera) they would be sub-pixel sparkles that read as noise on the map.
-    const near = 1 - THREE.MathUtils.smoothstep(cam.position.y, 22, 40);
+    const near = 1 - THREE.MathUtils.smoothstep(cam.position.y - groundHeight(cam.position.x, cam.position.z, ctx.world.map.half), 22, 40);
     this.day.value = day.daylight * (1 - day.night) * near;
     this.fireflies.value = day.night * near;
     ctx.renderer.getDrawingBufferSize(this.size);

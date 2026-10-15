@@ -2,6 +2,7 @@
  * Entity constructors. Always create entities through these so defaults stay consistent.
  * They register the entity in the World and return it; they do not emit events.
  */
+import { insideEffigyCrater } from './effigyCrater';
 import { AVATAR, BUILDINGS, FACTION_DEFS, HIPPIE, PIECE, PING_DURATION } from './constants';
 import type { V2, V3 } from './math';
 import type {
@@ -60,7 +61,7 @@ export function createFaction(id: FactionId, isPlayer: boolean, difficulty: Diff
     plan: new Set<number>(),
     jobWeights: { survey: 3, gather: 2, defend: 1, raid: 0, ritual: 1 },
     chakras: { hoist: 0, fly: 0, canton: 0, field: 0, finial: 0 },
-    cooldowns: { beacon: 0, march: 0, stabilize: 0, phason: 0, omega: 0, gift: 0, dialectics: 0, simulacra: 0, retransmit: 0 },
+    cooldowns: { beacon: 0, march: 0, stabilize: 0, phason: 0, omega: 0, dialectics: 0, simulacra: 0, retransmit: 0 },
     drugs: { saffron: 0, dust: 0, acidcop: 0 },
     drugActive: { saffron: 0, dust: 0, acidcop: 0 },
     saffronCrashUntil: 0,
@@ -90,7 +91,7 @@ export function spawnFlag(
     owner: init.owner,
     holder: init.holder ?? -1,
     node: init.node ?? -1,
-    pos: { ...init.pos },
+    pos: { ...init.pos, y: init.state === 'flying' || init.state === 'carried' ? init.pos.y : Math.max(init.pos.y, world.collision.groundHeight(init.pos.x, init.pos.z)) },
     altNode: -1,
     plantedAt: init.state === 'planted' ? world.time : 0,
     lastMovedAt: world.time,
@@ -106,7 +107,7 @@ export function spawnAvatar(world: World, faction: FactionId, at: V2): Avatar {
     id: world.newId(),
     type: 'avatar',
     faction,
-    pos: { x: at.x, y: 0, z: at.z },
+    pos: { x: at.x, y: world.collision.groundHeight(at.x, at.z), z: at.z },
     vel: { x: 0, y: 0, z: 0 },
     yaw: 0,
     pitch: 0,
@@ -132,6 +133,7 @@ export function spawnHippie(world: World, faction: Owner, at: V2): Hippie {
     id: world.newId(),
     type: 'hippie',
     faction,
+    recruitedAt: world.time,
     name: `${rng.pick(HIPPIE_FIRST)} ${rng.pick(HIPPIE_LAST)}`,
     look: rng.int(0, 1 << 30),
     pos: { x: at.x, z: at.z },
@@ -218,6 +220,7 @@ export function spawnCrystal(world: World, node: number, faction: FactionId, pen
   const c: Crystal = {
     id: world.newId(),
     type: 'crystal',
+    scale: insideEffigyCrater(world, n) ? 10 : 1,
     node,
     faction,
     pos: { x: n.x, z: n.z },

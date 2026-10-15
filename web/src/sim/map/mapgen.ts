@@ -1014,7 +1014,8 @@ const MUD_WOBBLE = 0.2; // relative ellipse radius
 const ROAD_WOBBLE = 0.35; // m
 const DIRT_WOBBLE = 2.2; // m
 
-function makeIsBlockedAt(obstacles: Obstacle[], water: Water[]): (x: number, z: number) => boolean {
+/** Rebuildable static predicate; callers can exclude removed props without changing map art. */
+export function makeIsBlockedAt(obstacles: Obstacle[], water: Water[]): (x: number, z: number) => boolean {
   const n = obstacles.length;
   const total = n + water.length;
   const ox = new Float64Array(n);

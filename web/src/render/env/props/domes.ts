@@ -6,6 +6,7 @@
  * twinkle at night.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import { PartsBuilder } from '../geom';
 import { frameOf, GeoWriter, within } from './batch';
@@ -117,6 +118,7 @@ export function buildDomes(domes: Obstacle[], kit: ClutterKit, out: PropBatches)
   const shapes = new Map<number, Geodesic>();
   const lights = LIGHTS[out.quality];
   for (const o of domes) {
+    ownProp(out, o.id);
     const freq = o.radius < 3.5 ? 2 : 4;
     let geo = shapes.get(freq);
     if (!geo) {

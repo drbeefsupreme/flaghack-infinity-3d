@@ -44,13 +44,14 @@ import {
   INSTABILITY_SHIMMER,
   INSTABILITY_STORM,
   LEY_EDGE,
+  LIGHTNING_PULL_MULT,
   MAX_BUILD_LEVEL,
   MESH_TAP_DURATION,
   OUTPOST_PRESSURE_MULT,
   PIECE,
   PROJECTILE,
   RECRUIT_INTERVAL,
-  RECRUIT_LUMBER,
+  RECRUIT_RADIUS,
   RETRANSMIT_ATTENTION,
   RETRANSMIT_COOLDOWN,
   SUDDEN_DEATH_ESCALATE_EVERY,
@@ -209,8 +210,9 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
     kind: 'list',
     items: [
       `**Quiver**: you carry ${AVATAR.quiver} Flags. Stand within ${AVATAR.restockRadius} m of your Hearth and the quiver refills from camp stock.`,
+      `**Hand Flag** (E while aiming at a nearby neutral): give one carried Flag to recruit that Signifier.`,
       `**Plant** (E): a ${AVATAR.plantTime} s tap on a free node within ${AVATAR.plantReach} m.`,
-      `**Throw** (Q, or hold RMB to aim and click LMB): a flick at ${AVATAR.throwSpeed} m/s, ${AVATAR.throwCooldown} s cooldown. The Flag auto-plants on the nearest free node within ${AVATAR.throwSnapRadius} m of impact; otherwise it lies loose. A direct hit stuns a hippie for ${PROJECTILE.hippieStun} s.`,
+      `**Throw** (Q, or hold RMB to aim and click LMB): a flick at ${AVATAR.throwSpeed} m/s, ${AVATAR.throwCooldown} s cooldown. The Flag auto-plants on the nearest free node within ${AVATAR.throwSnapRadius} m of impact; otherwise it lies loose. A direct hit recruits a neutral hippie, who keeps the Flag; enemy hippies take damage and a ${PROJECTILE.hippieStun} s stun.`,
       `**Pull** (hold E): your own Flag in ${AVATAR.pullOwnTime} s, an enemy or neutral Flag in a ${AVATAR.pullEnemyTime} s channel. Pulled Flags go to your quiver if there is room, else they drop loose.`,
       `**Staff** (LMB with the Flag tool): a swing for ${AVATAR.swingDamage} damage to units and ${AVATAR.swingPieceDamage} to pieces; at a pile it chops ${AVATAR.swingLumber} lumber. The staff never plants.`,
       `**Flagless**: at 0 HP you drop every carried Flag loose and return to your Hearth after ${AVATAR.respawnTime} s.`,
@@ -317,7 +319,7 @@ export const CODEX_SURVEY: readonly CodexBlock[] = [
       '**Plant on their implied node**: a real Flag overrides the implication.',
       '**Wall off** your own loop Flags with Tarp Walls.',
       `**Hold the Hearth**: stand within ${CAPTURE.holdRadius} m of your contained Hearth and pressure builds at ${HOLD_PCT}% while you are there.`,
-      '**Ward**, **Stabilize**, and **Dialectics** their defenders into your camp.',
+      'Use **Ward** and **Stabilize** to protect your camp.',
     ],
   },
   {
@@ -400,21 +402,13 @@ export const CODEX_CRYSTAL: readonly CodexBlock[] = [
       `+${CRYSTAL_RITUAL_PER_SEC} Ritual per second for its owner;`,
       `+${CRYSTAL_BONUS_PCT}% containment pressure on enemy Hearths within ${CRYSTAL_PRESSURE_RADIUS} m;`,
       `observes every node within ${CRYSTAL_OBSERVE_RADIUS} m;`,
+      `defends its five pentacle Flags with lightning: enemy pulls take ${LIGHTNING_PULL_MULT}× as long (does not stack with Wards);`,
       'adds to your **C.M.I.**',
     ],
   },
   {
     kind: 'p',
     text: 'A Crystal shatters when its pentacle breaks or its focus node flips. Pull one of the five and it is gone.',
-  },
-  { kind: 'h', text: 'Flag Simulacra' },
-  {
-    kind: 'p',
-    text: `The GCC can plant one Flag on **two nodes at once**. The superposed Flag counts as real on both, until an enemy unit comes within ${GCC.simulacraObserveRadius} m of either: then it collapses, 50/50, onto one node and the other vanishes with a glitch.`,
-  },
-  {
-    kind: 'quote',
-    text: 'Proper casting involves placing the flags far enough apart that they cannot all be seen at once.',
   },
   { kind: 'h', text: 'Interference' },
   {
@@ -451,7 +445,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   },
   {
     kind: 'p',
-    text: `Attention drains ${HIPPIE.attentionDrain} per second while working, ${HIPPIE.attentionDrain * HIPPIE_AI.psychosisDrainMult} per second in Flag Psychosis. At 0 a hippie is distracted and wanders to the nearest sound camp for ${HIPPIE.distractedTime} s, returning at ${HIPPIE.distractedRecoverTo}. Idle hippies recover ${HIPPIE.attentionRecover} per second near your Hearth or a Drum Circle. A hippie knocked to 0 vibes drops what it carries and returns to your Hearth after ${HIPPIE.respawnTime} s.`,
+    text: `Attention drains ${HIPPIE.attentionDrain} per second while working, ${HIPPIE.attentionDrain * HIPPIE_AI.psychosisDrainMult} per second in Flag Psychosis. At 0 a hippie is distracted and wanders to the nearest sound camp for ${HIPPIE.distractedTime} s, returning at ${HIPPIE.distractedRecoverTo}. Idle hippies recover ${HIPPIE.attentionRecover} per second near your Hearth or a Drum Circle. Hippies share a fixed world population. At 0 vibes they drop what they carry and respawn neutral after ${HIPPIE.respawnTime} s. Camps can recruit beyond their attention capacity; the newest excess recruits lose an additional ${HIPPIE.overCapAttentionDrain} attention/s, even when idle, and cannot recover by resting at home. At 0 attention they take a distraction break; if still above capacity when they finish dancing at a sound camp, they become neutral and can be recruited again. Increasing capacity before their break ends keeps them in your camp.`,
   },
   { kind: 'h', text: 'Jobs and Orders' },
   {
@@ -471,7 +465,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   {
     kind: 'canon',
     title: 'Hoarding Is Villainy',
-    text: `Hoarding Flags caused the fall of Tartaria. Keep more than ${HOARD_THRESHOLD} Flags in your Hearth stock and your hippies' attention drains ${HOARD_PCT}% faster, for the cold is the lack of activity.`,
+    text: `Hoarding Flags caused the fall of Tartaria. The base hoarding threshold is ${HOARD_THRESHOLD} (adjustable in Advanced Game Settings), plus 10 per working Workshop. Exceed that total in camp stock and your hippies' attention drains ${HOARD_PCT}% faster, for the cold is the lack of activity.`,
   },
   { kind: 'h', text: 'Buildings' },
   {
@@ -483,18 +477,18 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
     head: ['Building', 'Lumber', 'Effect'],
     rows: [
       ['**Flag Hearth**', '—', `${BUILDINGS.hearth.hp} HP. Crafts 1 Flag every ${HEARTH_FLAG_INTERVAL} s for ${HEARTH_FLAG_COST} lumber and keeps your stock. Cannot be destroyed, only overwritten.`],
-      ['**Flag Workshop**', `${BUILDINGS.workshop.cost}`, `+1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber.`],
+      ['**Flag Workshop**', `${BUILDINGS.workshop.cost}`, `+1 Flag every ${WORKSHOP_FLAG_INTERVAL} s for ${WORKSHOP_FLAG_COST} lumber. Holds 10 for local pickup; overflow goes to the altar. +10 camp hoarding threshold.`],
       [
         '**Drum Circle**',
         `${BUILDINGS.drumcircle.cost}`,
-        `Recruits 1 hippie every ${RECRUIT_INTERVAL} s for 1 Flag + ${RECRUIT_LUMBER} lumber. +${HIPPIE.popCapPerDrumCircle} pop cap. Up to ${DRUMMERS_PER_CIRCLE} drummers, +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
+        `Automatically recruits one existing neutral within ${RECRUIT_RADIUS} m every ${RECRUIT_INTERVAL} s, with no Flag or lumber cost. +${HIPPIE.popCapPerDrumCircle} attention capacity. Up to ${DRUMMERS_PER_CIRCLE} drummers, +${DRUM_RITUAL_PER_SEC} Ritual/s each.`,
       ],
       [
         '**Hearth Ward**',
         `${BUILDINGS.ward.cost}`,
         `−${pct(1 - CAPTURE.wardMult)}% enemy pressure on your Hearths within ${WARD_RADIUS} m. Observes ${WARD_OBSERVE_RADIUS} m. Vibe-check pulse every ${WARD_PULSE_INTERVAL} s: enemy hippies within ${WARD_PULSE_RADIUS} m stunned ${WARD_PULSE_STUN} s, ${WARD_PULSE_DAMAGE} damage.`,
       ],
-      ['**Drug Lab**', `${BUILDINGS.druglab.cost}`, `Brews one dose every ${BREW_TIME} s for ${BREW_COST} lumber, up to ${DRUG_MAX} of each drug.`],
+      ['**Drug Lab**', `${BUILDINGS.druglab.cost}`, `Automatically brews random drugs, favoring low stock: one dose every ${BREW_TIME} s for ${BREW_COST} lumber, up to ${DRUG_MAX} of each drug. Queued orders go first after the current batch.`],
     ],
   },
   { kind: 'h', text: 'Pieces' },
@@ -505,16 +499,14 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
   { kind: 'h', text: 'The Geomantic Command Center' },
   {
     kind: 'p',
-    text: `A black pentagonal cart with Flag-spoked wheels and a tabletop map of the burn. Use the **Command Table** to dive into the Command View. Hold E at the cart to push it at ${GCC.pushSpeed} m/s. If it collapses it is rebuilt at your Hearth after ${GCC.rebuildTime} s.`,
+    text: `A black pentagonal cart with Flag-spoked wheels and a tabletop map of the burn. Press Tab anywhere to open the Command View. Hold E at the cart to push it at ${GCC.pushSpeed} m/s. If it collapses it is rebuilt at your Hearth after ${GCC.rebuildTime} s.`,
   },
   {
     kind: 'list',
     items: [
       `**Geomantic Advice**: reveals the lattice and focus points within ${GCC.adviceRadius} m and observes those nodes.`,
       `**Flag Repair**: every ${GCC.repairInterval} s re-plants one loose Flag of yours within ${GCC.repairRadius} m and mends your pieces and buildings there.`,
-      `**Flag Gifts** (${GCC.giftCooldown} s cooldown): spend 1 Flag to recruit a neutral hippie within ${GCC.giftRadius} m.`,
-      `**Flagellian Dialectics** (${GCC.dialecticsCooldown} s cooldown, ${GCC.dialecticsChannel} s channel at the cart): converts up to ${GCC.dialecticsMax} enemy hippies within ${GCC.dialecticsRadius} m.`,
-      `**Flag Simulacra** (${GCC.simulacraCooldown} s cooldown): one Flag on two nodes at once.`,
+      `**Recruitment**: like a Drum Circle, automatically recruits one existing neutral within ${RECRUIT_RADIUS} m every ${RECRUIT_INTERVAL} s, without a Flag or lumber cost.`,
     ],
   },
   { kind: 'h', text: 'Drugs' },
@@ -529,7 +521,7 @@ export const CODEX_CAMP: readonly CodexBlock[] = [
       ],
       [
         '**Luminous Dust**',
-        `${DRUG.duration.dust} s: the whole lattice, focus points, strain and enemy simulacra revealed; your throws snap within ${AVATAR.throwSnapRadiusDust} m.`,
+        `${DRUG.duration.dust} s: the whole lattice, focus points and strain revealed; your throws snap within ${AVATAR.throwSnapRadiusDust} m.`,
         `Screen distortion, minimap noise, and ${DRUG.falseFlagsMin}–${DRUG.falseFlagsMax} hallucinated False Flags.`,
       ],
       [
@@ -586,9 +578,9 @@ export const TIPS: readonly string[] = [
   'A Flag with Ley Lines to two others observes itself, so a finished loop shrugs off the Phason Tide.',
   'Phason Shift ignores Canon III; only a Stabilize Zone keeps a node from hopping.',
   'Plant a real Flag on a rival\'s implied node and the implication evaporates.',
-  `Your quiver refills from Hearth stock whenever you stand within ${AVATAR.restockRadius} m of the Hearth.`,
+  `Your quiver refills from your Hearth or Workshop stock within ${AVATAR.restockRadius} m of its edge. Throw Flags into your altar or Workshops to deposit them; full Workshops send them to the altar.`,
   `A thrown Flag plants itself on the nearest free node within ${AVATAR.throwSnapRadius} m of where it lands.`,
-  `Keep more than ${HOARD_THRESHOLD} Flags in your Hearth and your hippies' attention drains ${HOARD_PCT}% faster: hoarding is villainy.`,
+  `Exceed your camp hoarding threshold (base ${HOARD_THRESHOLD}, adjustable, plus 10 per working Workshop) and your hippies' attention drains ${HOARD_PCT}% faster: hoarding is villainy.`,
   `Break the loop and the siege unwinds: pressure on a Hearth that is no longer contained decays ${CAPTURE.decay} per second.`,
   `Every defending hippie within ${CAPTURE.defenderRadius} m of a Hearth slows the overwrite, down to ×${CAPTURE.defenderFloor} speed.`,
   `A Crystal adds ${CRYSTAL_BONUS_PCT}% containment pressure to every enemy Hearth within ${CRYSTAL_PRESSURE_RADIUS} m.`,

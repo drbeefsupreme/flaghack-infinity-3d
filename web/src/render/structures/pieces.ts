@@ -15,7 +15,8 @@
  * PIECE.popIn; damage darkens per instance; ownership tints the tarp and lightly the wood.
  */
 import * as THREE from 'three';
-import { LEVEL_HEIGHT, NEUTRAL_COLOR, PIECE } from '../../sim/constants';
+import { groundHeight } from '../../sim/terrain';
+import { LEVEL_HEIGHT, MAP_HALF, NEUTRAL_COLOR, PIECE } from '../../sim/constants';
 import type { Lattice } from '../../sim/lattice/lattice';
 import { DECK_THICKNESS, RAMP_THICKNESS, STILT_RADIUS, stiltFoot, wallSegment } from '../../sim/systems/econ/pieceGeometry';
 import type { PieceKind } from '../../sim/types';
@@ -305,6 +306,7 @@ export function pieceSlotMatrix(
   rampEdge: number,
   s: number,
   out: THREE.Matrix4,
+  half = MAP_HALF,
 ): number {
   let ox: number;
   let oy: number;
@@ -329,6 +331,8 @@ export function pieceSlotMatrix(
     oy = kind === 'floor' ? (level + 1) * H : level * H;
     vC.set((L + L * Math.cos(theta)) / 2, kind === 'floor' ? -DECK_THICKNESS / 2 : H / 2, (L * Math.sin(theta)) / 2);
   }
+  const anchor = kind === 'wall' ? { x: ox, z: oz } : { x: lat.facets[facet].cx, z: lat.facets[facet].cz };
+  oy += groundHeight(anchor.x, anchor.z, half);
   vZ.set(-vX.z, 0, vX.x);
   out.makeBasis(vX, vY, vZ);
   // Scale about the centre: t = origin + R·c·(1 - s).
@@ -377,6 +381,7 @@ export class PieceRenderer {
     const lat = w.lattice;
     // Cheap change signature: membership, hp, ownership, level, lattice turns.
     let sig = w.pieces.size * 1000003 + lat.version * 7919;
+    sig += w.boss?.held?.kind === 'piece' ? w.boss.held.id * 1013 + 1 : 0;
     let popping = false;
     for (const p of w.pieces.values()) {
       sig = (sig * 31 + p.id * 17 + Math.round(p.hp) * 3 + p.level + (p.faction + 2) * 101) % 2147483647;
@@ -393,10 +398,11 @@ export class PieceRenderer {
     for (const b of this.ramps) b.count = 0;
     for (const p of w.pieces.values()) {
       const age = (w.time - p.builtAt) / PIECE.popIn;
+      if (w.boss?.held?.kind === 'piece' && w.boss.held.id === p.id) continue;
       const s = age >= 1 ? 1 : Math.max(0.02, easeOutBack(Math.max(0, age)));
       const dmg = 0.42 + 0.58 * Math.max(0, Math.min(1, p.hp / p.maxHp));
       this.owner.setHex(p.faction >= 0 ? w.factions[p.faction].color : NEUTRAL_COLOR);
-      const variant = pieceSlotMatrix(lat, p.kind, p.edge, p.facet, p.level, p.rampEdge, s, this.m);
+      const variant = pieceSlotMatrix(lat, p.kind, p.edge, p.facet, p.level, p.rampEdge, s, this.m, w.map.half);
       if (p.kind === 'wall') {
         this.wallFrame.push(this.m, this.color.setScalar(dmg));
         this.wallTarp.push(this.m, this.color.copy(WHITE).lerp(this.owner, 0.42).multiplyScalar(dmg));
@@ -406,10 +412,13 @@ export class PieceRenderer {
       (p.kind === 'floor' ? this.decks : this.ramps)[variant].push(this.m, this.color);
       if (p.level !== 0) continue;
       this.color.setScalar(dmg);
+      const fcGround = lat.facets[p.facet];
+      const baseY = groundHeight(fcGround.cx, fcGround.cz, w.map.half);
       if (p.kind === 'floor') {
         for (let i = 0; i < 4; i++) {
           const [x, z] = stiltFoot(lat, p.facet, i, this.foot);
-          this.m.makeScale(s, (H - DECK_THICKNESS) * s, s).setPosition(x, 0, z);
+          const footY = groundHeight(x, z, w.map.half);
+          this.m.makeScale(s, (baseY + H - DECK_THICKNESS - footY) * s, s).setPosition(x, footY, z);
           this.posts.push(this.m, this.color);
         }
       } else {
@@ -419,7 +428,8 @@ export class PieceRenderer {
           const n = lat.nodes[fc.nodes[(Math.max(0, p.rampEdge) + k) % 4]];
           const x = n.x + (fc.cx - n.x) * 0.12;
           const z = n.z + (fc.cz - n.z) * 0.12;
-          this.m.makeScale(s * 0.7, (H - RAMP_THICKNESS) * s, s * 0.7).setPosition(x, 0, z);
+          const footY = groundHeight(x, z, w.map.half);
+          this.m.makeScale(s * 0.7, (baseY + H - RAMP_THICKNESS - footY) * s, s * 0.7).setPosition(x, footY, z);
           this.posts.push(this.m, this.color);
         }
       }

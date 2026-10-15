@@ -143,6 +143,7 @@ export class ActionBar implements UiPart {
     setClass(this.root, 'ix', s.view === 'command' || !s.pointerLocked);
 
     for (const slot of this.tools) {
+      show(slot.root, s.view !== 'command' || slot.tool === 'flag' || slot.tool === 'building');
       const active = s.tool === slot.tool;
       setClass(slot.root, 'on', active);
       if (slot.tool === 'building') {

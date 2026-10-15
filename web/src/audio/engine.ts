@@ -1,5 +1,5 @@
 /**
- * WebAudio engine: context, mix buses (master → glue compressor → limiter, music / sfx / ui / ambience),
+ * WebAudio engine: context, mix buses (master → glue compressor → limiter, music / sfx / ui / ambience / boss),
  * a generated-impulse convolution reverb, the camera listener, positional voice routing and
  * voice management (a global one-shot cap with priority stealing plus per-sound token-bucket
  * rate limits, so fifty Flags planted in one second ring out instead of clipping).
@@ -7,7 +7,7 @@
 import type { Settings } from '../game/session';
 import type { V2 } from '../sim/math';
 
-export type Bus = 'music' | 'sfx' | 'ui' | 'ambience';
+export type Bus = 'music' | 'sfx' | 'ui' | 'ambience' | 'boss';
 
 /** Per-sound rate limit: sustained plays per second and the burst allowed on top. */
 interface RateRule {
@@ -64,6 +64,8 @@ export interface VoiceSpec {
   at?: V2;
   /** Reference-distance multiplier for big sounds that carry across the burn. */
   range?: number;
+  /** Keep horizontal direction but bypass distance attenuation/culling (arena-wide boss cues). */
+  directionalOnly?: boolean;
   gain?: number;
   /** Reverb send 0..1. */
   wet?: number;
@@ -78,6 +80,8 @@ export interface VoiceSpec {
 export interface VoiceHandle {
   input: GainNode;
   t: number;
+  /** Optional cheap pan update for a sustained arena-wide source. */
+  setPosition?: (at: V2) => void;
 }
 
 const REF_DISTANCE = 10;
@@ -92,11 +96,22 @@ export class AudioEngine {
   readonly compressor: DynamicsCompressorNode;
   /** Final fast limiter: keeps pile-ups (a Tide over a capture over an Omega) off the 0 dBFS rail. */
   readonly limiter: DynamicsCompressorNode;
+  /** Foreground boss route avoids the stronger world/music glue compression. */
+  readonly bossMaster: GainNode;
+  readonly bossMuffle: BiquadFilterNode;
+  readonly bossCompressor: DynamicsCompressorNode;
   readonly buses: Record<Bus, GainNode>;
   /** Reverb send inputs per bus; their gains follow the bus volume so tails respect settings. */
   readonly wet: Record<Bus, GainNode>;
   /** Extra gain on the music bus for ducking under huge moments. */
   readonly musicDuck: GainNode;
+  /** Boss sidechain affects other world sounds, not boss/UI or user volume settings. */
+  readonly worldDuck: GainNode;
+  readonly worldWetDuck: GainNode;
+  private bossDucks: { amount: number; until: number }[] = [];
+  private bossDuckAmount = 0;
+  private bossAudible = true;
+  private volumeState: readonly [number, number, number, number, boolean] | null = null;
   readonly reverb: ConvolverNode;
   readonly white: AudioBuffer;
   readonly pink: AudioBuffer;
@@ -139,6 +154,16 @@ export class AudioEngine {
     this.limiter.attack.value = 0.001;
     this.limiter.release.value = 0.12;
     this.master.connect(this.muffle).connect(this.compressor).connect(this.limiter).connect(ctx.destination);
+    this.bossMaster = ctx.createGain();
+    this.bossMuffle = ctx.createBiquadFilter();
+    this.bossMuffle.type = 'lowpass'; this.bossMuffle.frequency.value = 20000; this.bossMuffle.Q.value = .5;
+    this.bossCompressor = ctx.createDynamicsCompressor();
+    this.bossCompressor.threshold.value = -8;
+    this.bossCompressor.knee.value = 6;
+    this.bossCompressor.ratio.value = 2;
+    this.bossCompressor.attack.value = .003;
+    this.bossCompressor.release.value = .15;
+    this.bossMaster.connect(this.bossMuffle).connect(this.bossCompressor).connect(this.limiter);
 
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = this.makeImpulse(2.8);
@@ -146,25 +171,33 @@ export class AudioEngine {
     ret.gain.value = 0.55;
     this.reverb.connect(ret).connect(this.master);
 
+    this.worldDuck = ctx.createGain();
+    this.worldDuck.connect(this.master);
+    this.worldWetDuck = ctx.createGain();
+    this.worldWetDuck.connect(this.reverb);
     this.musicDuck = ctx.createGain();
-    this.musicDuck.connect(this.master);
+    this.musicDuck.connect(this.worldDuck);
     this.buses = {
       music: ctx.createGain(),
       sfx: ctx.createGain(),
       ui: ctx.createGain(),
       ambience: ctx.createGain(),
+      boss: ctx.createGain(),
     };
     this.wet = {
       music: ctx.createGain(),
       sfx: ctx.createGain(),
       ui: ctx.createGain(),
       ambience: ctx.createGain(),
+      boss: ctx.createGain(),
     };
     this.buses.music.connect(this.musicDuck);
-    this.buses.sfx.connect(this.master);
+    this.buses.sfx.connect(this.worldDuck);
+    this.buses.boss.connect(this.bossMaster);
     this.buses.ui.connect(this.master);
-    this.buses.ambience.connect(this.master);
-    for (const b of ['music', 'sfx', 'ui', 'ambience'] as const) this.wet[b].connect(this.reverb);
+    this.buses.ambience.connect(this.worldDuck);
+    for (const b of ['music', 'sfx', 'ambience'] as const) this.wet[b].connect(this.worldWetDuck);
+    for (const b of ['ui', 'boss'] as const) this.wet[b].connect(this.reverb);
 
     this.white = this.makeNoise(2, 1, 'white');
     this.pink = this.makeNoise(4, 2, 'pink');
@@ -190,20 +223,29 @@ export class AudioEngine {
 
   /** `worldScale` trims world SFX (e.g. the attract match behind the title screen). */
   setVolumes(s: Settings, muffled: boolean, worldScale: number): void {
-    const t = this.ctx.currentTime;
     this.quality = s.quality;
+    const old = this.volumeState;
+    if (old && old[0] === s.masterVolume && old[1] === s.musicVolume && old[2] === s.sfxVolume && old[3] === worldScale && old[4] === muffled) return;
+    this.volumeState = [s.masterVolume, s.musicVolume, s.sfxVolume, worldScale, muffled];
+    const t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(s.masterVolume, t, 0.05);
+    this.bossMaster.gain.setTargetAtTime(s.masterVolume, t, 0.05);
     const music = s.musicVolume;
     const sfx = s.sfxVolume * worldScale;
+    this.bossAudible = s.masterVolume > 0 && sfx > 0;
+    this.updateBossDucking();
     this.buses.music.gain.setTargetAtTime(music, t, 0.05);
     this.wet.music.gain.setTargetAtTime(music, t, 0.05);
     this.buses.sfx.gain.setTargetAtTime(sfx, t, 0.05);
+    this.buses.boss.gain.setTargetAtTime(sfx, t, 0.05);
+    this.wet.boss.gain.setTargetAtTime(sfx, t, 0.05);
     this.wet.sfx.gain.setTargetAtTime(sfx, t, 0.05);
     this.buses.ui.gain.setTargetAtTime(s.sfxVolume * 0.8, t, 0.05);
     this.wet.ui.gain.setTargetAtTime(s.sfxVolume * 0.8, t, 0.05);
     this.buses.ambience.gain.setTargetAtTime(s.sfxVolume * 0.85, t, 0.05);
     this.wet.ambience.gain.setTargetAtTime(s.sfxVolume * 0.85, t, 0.05);
     this.muffle.frequency.setTargetAtTime(muffled ? 700 : 20000, t, 0.15);
+    this.bossMuffle.frequency.setTargetAtTime(muffled ? 700 : 20000, t, 0.15);
   }
 
   /** Listener from a camera: position + world matrix columns (right = col 0, forward = -col 2). */
@@ -259,7 +301,7 @@ export class AudioEngine {
 
     // Positional attenuation first: inaudible voices never take a slot or a token.
     let dist = 1;
-    if (spec.at) {
+    if (spec.at && !spec.directionalOnly) {
       dist = this.distanceGain(spec.at.x, spec.at.z, spec.range ?? 1);
       if (dist * gain < MIN_AUDIBLE) {
         this.stats.inaudible++;
@@ -281,7 +323,9 @@ export class AudioEngine {
       return null;
     }
     b.tokens = Math.max(0, b.tokens - 1);
-    gain *= 0.55 + 0.45 * Math.min(1, b.tokens / rule.burst);
+    // Boss contacts already have authoritative once-only events and coalesced rubble.
+    // Keep their balance predictable instead of quietly reducing consecutive impacts.
+    if (spec.bus !== 'boss') gain *= 0.55 + 0.45 * Math.min(1, b.tokens / rule.burst);
 
     if (this.voices.length >= this.maxVoices && !this.steal(priority)) {
       this.stats.capDropped++;
@@ -294,6 +338,7 @@ export class AudioEngine {
     const chain: AudioNode[] = [];
     const bus = spec.bus ?? 'sfx';
     let tail: AudioNode = out;
+    let setPosition: ((at: V2) => void) | undefined;
     if (spec.at) {
       const x = spec.at.x;
       const z = spec.at.z;
@@ -304,7 +349,7 @@ export class AudioEngine {
       tail.connect(air);
       chain.push(air);
       tail = air;
-      if (this.quality === 'high') {
+      if (this.quality === 'high' && !spec.directionalOnly) {
         const p = ctx.createPanner();
         p.panningModel = 'HRTF';
         p.distanceModel = 'inverse';
@@ -320,6 +365,14 @@ export class AudioEngine {
       } else {
         const p = ctx.createStereoPanner();
         p.pan.value = this.panOf(x, z);
+        if (spec.directionalOnly) {
+          let lastPan = p.pan.value;
+          setPosition = at => {
+            const pan = this.panOf(at.x, at.z);
+            if (Math.abs(pan - lastPan) < .01) return;
+            lastPan = pan; p.pan.setTargetAtTime(pan, ctx.currentTime, .04);
+          };
+        }
         out.gain.value = dist;
         tail.connect(p);
         chain.push(p);
@@ -338,7 +391,7 @@ export class AudioEngine {
     }
     this.voices.push({ out, chain, end: t + spec.dur + 0.1, priority });
     this.stats.started++;
-    return { input, t };
+    return { input, t, setPosition };
   }
 
   /** Steal the oldest voice with priority ≤ `priority`; false if none qualifies. */
@@ -374,6 +427,7 @@ export class AudioEngine {
 
   /** Free finished voices and tracked nodes (in-place compaction, no allocation). */
   prune(): void {
+    this.updateBossDucking();
     const t = this.ctx.currentTime;
     let w = 0;
     for (let i = 0; i < this.voices.length; i++) {
@@ -395,6 +449,31 @@ export class AudioEngine {
     }
     this.tracked.length = w;
     this.trackedEnd.length = w;
+  }
+
+  /** Independent leases let footsteps continue without extending an expired roar's deep duck. */
+  duckForBoss(amount: number, hold: number): () => void {
+    const lease = { amount: Math.max(0, Math.min(.95, amount)), until: this.ctx.currentTime + Math.max(0, hold) };
+    this.bossDucks.push(lease);
+    this.updateBossDucking();
+    return () => { lease.until = -Infinity; this.updateBossDucking(); };
+  }
+
+  private updateBossDucking(): void {
+    const t = this.ctx.currentTime;
+    let amount = 0, n = 0;
+    for (const lease of this.bossDucks) if (lease.until > t) {
+      this.bossDucks[n++] = lease; amount = Math.max(amount, lease.amount);
+    }
+    this.bossDucks.length = n;
+    if (!this.bossAudible) amount = 0;
+    if (amount === this.bossDuckAmount) return;
+    const attack = amount > this.bossDuckAmount;
+    this.bossDuckAmount = amount;
+    for (const node of [this.worldDuck, this.worldWetDuck]) {
+      node.gain.cancelScheduledValues(t);
+      node.gain.setTargetAtTime(1 - amount, t, attack ? .025 : .4);
+    }
   }
 
   /** Briefly pull the music down under a huge moment (capture, Omega, The Burn). */

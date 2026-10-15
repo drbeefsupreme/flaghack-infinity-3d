@@ -372,7 +372,7 @@ function discharge(world: World, sc: InstabilityScratch, k: number): void {
   } else {
     const from = sc.start[k];
     const g = sc.members[from + world.rng.int(0, sc.start[k + 1] - from - 1)];
-    to = { x: lat.facets[g].cx, y: 0, z: lat.facets[g].cz };
+    to = { x: lat.facets[g].cx, y: world.collision.groundHeight(lat.facets[g].cx, lat.facets[g].cz), z: lat.facets[g].cz };
   }
   const sky: V3 = { x: to.x + world.rng.range(-3, 3), y: STRIKE_HEIGHT, z: to.z + world.rng.range(-3, 3) };
   world.emit({ t: 'discharge', from: sky, to, target });
@@ -396,19 +396,19 @@ function strikePoint(world: World, id: EntityId): V3 {
   const av = world.avatars.get(id);
   if (av) return { x: av.pos.x, y: av.pos.y + 1.2, z: av.pos.z };
   const h = world.hippies.get(id);
-  if (h) return { x: h.pos.x, y: 1, z: h.pos.z };
+  if (h) return { x: h.pos.x, y: world.collision.groundHeight(h.pos.x, h.pos.z) + (h.airborne?.y ?? 0) + 1, z: h.pos.z };
   const b = world.buildings.get(id);
-  if (b) return { x: b.pos.x, y: 2, z: b.pos.z };
+  if (b) return { x: b.pos.x, y: world.collision.groundHeight(b.pos.x, b.pos.z) + 2, z: b.pos.z };
   const p = world.pieces.get(id);
   if (p && p.facet >= 0) {
     const fc = lat.facets[p.facet];
-    return { x: fc.cx, y: p.level * LEVEL_HEIGHT + 0.2, z: fc.cz };
+    return { x: fc.cx, y: world.collision.groundHeight(fc.cx, fc.cz) + p.level * LEVEL_HEIGHT + 0.2, z: fc.cz };
   }
   if (p && p.edge >= 0) {
     const e = lat.edges[p.edge];
     const a = lat.nodes[e.a];
     const bn = lat.nodes[e.b];
-    return { x: (a.x + bn.x) / 2, y: p.level * LEVEL_HEIGHT + PIECE.wallHeight / 2, z: (a.z + bn.z) / 2 };
+    return { x: (a.x + bn.x) / 2, y: world.collision.groundHeight((a.x + bn.x) / 2, (a.z + bn.z) / 2) + p.level * LEVEL_HEIGHT + PIECE.wallHeight / 2, z: (a.z + bn.z) / 2 };
   }
   return { x: 0, y: 0, z: 0 };
 }

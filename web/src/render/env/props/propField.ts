@@ -23,8 +23,9 @@ import type { EnvContext, EnvPart } from '../envTypes';
 import { buildArt, createRotorTemplates } from './art';
 import type { Rotor, RotorTemplates } from './art';
 import { buildCars } from './cars';
+import { groundPropGeometry, propGroundHeights } from './grounding';
 import { buildDomes } from './domes';
-import { createBatches, createClutterKit, disposeClutterKit } from './kit';
+import { createBatches, createClutterKit, disposeClutterKit, ownProp } from './kit';
 import { buildPortas } from './portas';
 import { buildRocks } from './rocks';
 import { buildShades } from './shades';
@@ -51,6 +52,7 @@ let rotorTemplates: RotorTemplates | null = null;
 
 /** One placement in a BatchedMesh: which template, where, and an optional aTint colour. */
 interface Placed {
+  obstacleId?: number;
   geometry: number;
   matrix: THREE.Matrix4;
   color: THREE.Color | null;
@@ -63,6 +65,9 @@ interface Spinner {
   axis: 'y' | 'z';
 }
 
+interface SceneryRange { geometry: THREE.BufferGeometry; start: number; count: number; }
+interface SceneryInstance { mesh: THREE.BatchedMesh; id: number; }
+
 export class PropField implements EnvPart {
   private env: EnvContext;
   private group = new THREE.Group();
@@ -74,15 +79,30 @@ export class PropField implements EnvPart {
   private spinners: Spinner[] = [];
   private show: StageShow | null = null;
   private signs: StageSigns | null = null;
+  private sceneryCount = 0;
+  private groundHeights = new Map<number, number>();
+  private readonly removed = new Set<number>();
+  private readonly sceneryRanges = new Map<number, SceneryRange[]>();
+  private readonly sceneryInstances = new Map<number, SceneryInstance[]>();
   private spin = new THREE.Matrix4();
   private posed = new THREE.Matrix4();
 
   constructor(env: EnvContext) {
     this.env = env;
+    this.build();
+  }
+
+  /** Build once. CPU-only owner ranges let destruction edit existing buffers in place. */
+  private build(): void {
+    const env = this.env;
+    this.sceneryCount = 0;
     this.group.name = 'props';
     const ctx = env.ctx;
     const map = ctx.world.map;
+    this.groundHeights = propGroundHeights(map.obstacles, map.half);
     const byKind: Record<ObstacleKind, Obstacle[]> = { tent: [], dome: [], art: [], porta: [], tree: [], rock: [], stage: [], shade: [], car: [], effigy: [] };
+    // Always use the original obstacle layout, including on late joins. Shared strings and
+    // row accessories must not relocate when a neighbouring prop has already been destroyed.
     for (const o of map.obstacles) byKind[o.kind].push(o);
 
     const out = createBatches(ctx.quality);
@@ -97,6 +117,19 @@ export class PropField implements EnvPart {
     const trees = buildTrees(byKind.tree, out);
     const stages = buildStages(byKind.stage, map.soundCamps, kit, out);
     disposeClutterKit(kit);
+    for (const it of [...trees.pines, ...trees.oaks, ...rotors.spiral, ...rotors.pinwheel]) {
+      it.matrix.elements[13] += this.groundHeights.get(it.obstacleId ?? -1) ?? 0;
+    }
+    for (const rig of stages.rigs) {
+      const height = this.groundHeights.get(rig.obstacleId) ?? 0;
+      rig.frame.elements[13] += height;
+      rig.front.y += height;
+      for (const fixture of rig.fixtures) fixture.y += height;
+    }
+    for (const sign of stages.signs) {
+      const height = this.groundHeights.get(sign.obstacleId) ?? 0;
+      for (const corner of sign.corners) corner.y += height;
+    }
 
     const u = env.uniforms;
     // Batched and instanced draws get separate material objects (same program): three keys
@@ -109,6 +142,7 @@ export class PropField implements EnvPart {
     const glossInstanced = this.track(createEnvMaterial(u, GLOSS));
     const foliageInstanced = this.track(createEnvMaterial(u, FOLIAGE));
 
+    ownProp(out, -1);
     const strings = out.strings.build();
     out.cloth.add(strings, new THREE.Matrix4());
     const cloth = out.cloth.build();
@@ -120,8 +154,8 @@ export class PropField implements EnvPart {
     for (const geo of [strings, cloth]) geo?.dispose();
 
     const canopies: Placed[] = [];
-    for (const it of trees.pines) canopies.push({ geometry: 0, matrix: it.matrix, color: it.color });
-    for (const it of trees.oaks) canopies.push({ geometry: 1, matrix: it.matrix, color: it.color });
+    for (const it of trees.pines) canopies.push({ geometry: 0, matrix: it.matrix, color: it.color, obstacleId: it.obstacleId });
+    for (const it of trees.oaks) canopies.push({ geometry: 1, matrix: it.matrix, color: it.color, obstacleId: it.obstacleId });
     this.addBatched([trees.pine, trees.oak], canopies, foliage, 'tree-canopies', true, true);
     trees.pine.dispose();
     trees.oak.dispose();
@@ -144,14 +178,17 @@ export class PropField implements EnvPart {
     }
     this.group.matrixAutoUpdate = false;
     env.root.add(this.group);
+    this.removeDestroyedScenery();
   }
 
   update(_dt: number): void {
+    if (this.sceneryCount !== this.env.ctx.world.destroyedScenery.size) this.removeDestroyedScenery();
     const t = this.env.uniforms.uTime.value;
     for (let s = 0; s < this.spinners.length; s++) {
       const { mesh, rotors, axis } = this.spinners[s];
       for (let i = 0; i < rotors.length; i++) {
         const r = rotors[i];
+        if (this.removed.has(r.obstacleId)) continue;
         const angle = r.phase + r.speed * t;
         if (axis === 'y') this.spin.makeRotationY(angle);
         else this.spin.makeRotationZ(angle);
@@ -163,6 +200,39 @@ export class PropField implements EnvPart {
     this.signs?.update(this.env.day.night);
   }
 
+  /** Collapse only removed triangles, preserving tile batching, materials and other props.
+   * Both position and sway collapse, so cloth cannot grow a triangle again in the shader.
+   * Original bounds remain conservative: every removed triangle stays at its first vertex. */
+  private removeDestroyedScenery(): void {
+    const destroyed = this.env.ctx.world.destroyedScenery;
+    // A reset is exceptional; normal authoritative scenery state only grows.
+    if ([...this.removed].some(id => !destroyed.has(id))) {
+      this.dispose(); this.group = new THREE.Group(); this.build(); return;
+    }
+    for (const id of destroyed) {
+      if (this.removed.has(id)) continue;
+      this.removed.add(id);
+      for (const range of this.sceneryRanges.get(id) ?? []) {
+        const position = range.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const sway = range.geometry.getAttribute('aSway') as THREE.BufferAttribute;
+        for (let v = range.start; v < range.start + range.count; v += 3) {
+          const x = position.getX(v), y = position.getY(v), z = position.getZ(v);
+          for (let k = 0; k < 3; k++) { position.setXYZ(v + k, x, y, z); sway.setX(v + k, 0); }
+        }
+        position.addUpdateRange(range.start * 3, range.count * 3); position.needsUpdate = true;
+        sway.addUpdateRange(range.start, range.count); sway.needsUpdate = true;
+      }
+      for (const it of this.sceneryInstances.get(id) ?? []) it.mesh.setVisibleAt(it.id, false);
+      for (const { mesh, rotors } of this.spinners) for (let i = 0; i < rotors.length; i++) {
+        if (rotors[i].obstacleId !== id) continue;
+        mesh.setMatrixAt(i, this.posed.makeScale(0, 0, 0));
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+      this.show?.removeScenery(id); this.signs?.removeScenery(id);
+    }
+    this.sceneryCount = destroyed.size;
+  }
+
   dispose(): void {
     this.env.root.remove(this.group);
     for (const g of this.geometries) g.dispose();
@@ -171,11 +241,14 @@ export class PropField implements EnvPart {
     for (const m of this.materials) disposeEnvMaterial(m);
     this.show?.dispose();
     this.signs?.dispose();
+    this.show = null;
+    this.signs = null;
     this.geometries.clear();
     this.instanced = [];
     this.batched = [];
     this.spinners = [];
     this.materials = [];
+    this.removed.clear(); this.sceneryRanges.clear(); this.sceneryInstances.clear();
   }
 
   private track(mat: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
@@ -204,6 +277,7 @@ export class PropField implements EnvPart {
 
   /** World-space tile geometries (disposed here once copied) placed as-is in one BatchedMesh. */
   private addTiles(tiles: THREE.BufferGeometry[], mat: THREE.Material, name: string, cast: boolean, receive: boolean): void {
+    for (const tile of tiles) groundPropGeometry(tile, this.groundHeights, this.env.ctx.world.map.half);
     const items = tiles.map((_, i): Placed => ({ geometry: i, matrix: IDENTITY, color: null }));
     this.addBatched(tiles, items, mat, name, cast, receive);
     for (const g of tiles) g.dispose();
@@ -221,11 +295,31 @@ export class PropField implements EnvPart {
     let vertices = 0;
     for (const g of plain) vertices += g.getAttribute('position').count;
     const mesh = new THREE.BatchedMesh(items.length, vertices, vertices * 2, mat);
-    const ids = plain.map((g) => mesh.addGeometry(g));
+    const ids = plain.map((g) => {
+      const id = mesh.addGeometry(g);
+      const owners = g.userData.sceneryOwners as Int32Array | undefined;
+      if (owners) {
+        const base = mesh.getGeometryRangeAt(id)!.vertexStart;
+        for (let t = 0; t < owners.length / 2;) {
+          const first = t++, a = owners[first * 2], b = owners[first * 2 + 1];
+          while (t < owners.length / 2 && owners[t * 2] === a && owners[t * 2 + 1] === b) t++;
+          const range = { geometry: mesh.geometry, start: base + first * 3, count: (t - first) * 3 };
+          for (const owner of a === b ? [a] : [a, b]) if (owner >= 0) {
+            const ranges = this.sceneryRanges.get(owner) ?? [];
+            ranges.push(range); this.sceneryRanges.set(owner, ranges);
+          }
+        }
+      }
+      return id;
+    });
     for (const it of items) {
       const id = mesh.addInstance(ids[it.geometry]);
       mesh.setMatrixAt(id, it.matrix);
       if (it.color) mesh.setColorAt(id, it.color);
+      if (it.obstacleId !== undefined) {
+        const instances = this.sceneryInstances.get(it.obstacleId) ?? [];
+        instances.push({ mesh, id }); this.sceneryInstances.set(it.obstacleId, instances);
+      }
     }
     plain.forEach((g, i) => {
       if (g !== templates[i]) g.dispose();

@@ -119,9 +119,9 @@ export class PartsBuilder {
   }
 
   /** A round strut between two points (radius r). */
-  strut(a: THREE.Vector3, b: THREE.Vector3, r: number, color: THREE.ColorRepresentation, opts?: PartOptions & { segments?: number }): this {
+  strut(a: THREE.Vector3, b: THREE.Vector3, r: number, color: THREE.ColorRepresentation, opts?: PartOptions & { segments?: number; heightSegments?: number }): this {
     const len = a.distanceTo(b);
-    const geo = new THREE.CylinderGeometry(r, r, len, opts?.segments ?? 5, 1, true);
+    const geo = new THREE.CylinderGeometry(r, r, len, opts?.segments ?? 5, opts?.heightSegments ?? 1, true);
     const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
     const dir = new THREE.Vector3().subVectors(b, a).normalize();
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);

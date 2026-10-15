@@ -4,6 +4,7 @@
  * and submits Commands.
  */
 import type { Command } from './commands';
+import type { BossOutcome, BossState } from './boss';
 import type { GameEvent } from './events';
 import type { Lattice } from './lattice/lattice';
 import type { MapLayout } from './map/mapgen';
@@ -76,6 +77,13 @@ export class World {
   phase: MatchPhase = 'playing';
   winner: FactionId | null = null;
   suddenDeath = false;
+  /** Authoritative start of the boss reveal, in match seconds. Null before the transition. */
+  effigyRevealedAt: number | null = null;
+  /** Durable authoritative encounter and result, including late joins. */
+  boss: BossState | null = null;
+  bossOutcome: BossOutcome | null = null;
+  /** Canonical map obstacle IDs removed by direct boss beam hits; replicated for late joins. */
+  destroyedScenery = new Set<number>();
 
   lattice!: Lattice;
   map!: MapLayout;
@@ -174,11 +182,10 @@ export class World {
     return out;
   }
 
-  /** Total stock across all of a faction's Hearths. */
+  /** Total stock across all of a faction's Hearths and Workshops. */
   stockCount(f: FactionId): number {
     let n = 0;
-    const hs = this.factions[f].hearthIds;
-    for (const fl of this.flags.values()) if (fl.state === 'stock' && hs.includes(fl.holder)) n++;
+    for (const fl of this.flags.values()) if (fl.state === 'stock' && this.buildings.get(fl.holder)?.faction === f) n++;
     return n;
   }
 

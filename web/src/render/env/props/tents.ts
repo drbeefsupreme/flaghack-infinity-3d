@@ -9,6 +9,7 @@
  * pennant poles) and some string prayer flags / bunting to their camp's shade.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import type { Rng } from '../../../sim/rng';
 import { GlowMode, PartsBuilder } from '../geom';
@@ -334,6 +335,7 @@ function addStrings(tents: Obstacle[], shades: Obstacle[], out: PropBatches): vo
         const top = tops[i];
         let pole = poles[best][0];
         for (const p of poles[best]) if (p.distanceToSquared(top) < pole.distanceToSquared(top)) pole = p;
+        ownProp(out, o.id, shades[best].id);
         flagString(out.strings, top, pole, style, phase);
         return;
       }
@@ -348,7 +350,10 @@ function addStrings(tents: Obstacle[], shades: Obstacle[], out: PropBatches): vo
           bestD = d;
         }
       });
-      if (best >= 0) flagString(out.strings, tops[i], tops[best], style, phase);
+      if (best >= 0) {
+        ownProp(out, o.id, tents[best].id);
+        flagString(out.strings, tops[i], tops[best], style, phase);
+      }
     }
   });
 }
@@ -357,6 +362,7 @@ export function buildTents(tents: Obstacle[], shades: Obstacle[], kit: ClutterKi
   if (tents.length === 0) return;
   const t = createTemplates();
   for (const o of tents) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'tent');
     const frame = frameOf(o.x, o.z, o.yaw);
     if (o.variant === 1) {

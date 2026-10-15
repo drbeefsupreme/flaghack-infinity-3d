@@ -12,11 +12,13 @@
  * dynamic marker layers (decals, beams, sprites) from the feature controllers.
  */
 import * as THREE from 'three';
+import { groundHeight } from '../../sim/terrain';
 import { NEUTRAL_COLOR } from '../../sim/constants';
 import { gccActive } from '../../sim/systems/gcc';
 import type { GameEvent } from '../../sim/events';
 import type { RenderContext, RenderModule } from '../context';
 import { BeamLayer } from './beams';
+import { BossVisionFeature } from './bossVision';
 import { CrystalLayer } from './crystals';
 import { DecalLayer, createDecalMaterial } from './decals';
 import { FacetLayer } from './facetLayer';
@@ -29,6 +31,7 @@ import { HearthFeature } from './hearthRings';
 import { ImpliedPlanFeature } from './impliedPlan';
 import { LatticeLayer } from './latticeLayer';
 import { LeyLayer } from './leyLayer';
+import { MarkedNodeLayer } from './markedNodes';
 import { ObjectiveFeature } from './objectives';
 import { PhasonFeature } from './phasonFx';
 import { SpriteLayer } from './sprites';
@@ -55,12 +58,14 @@ export class SurveyRenderer implements RenderModule {
   private readonly xray: SpriteLayer;
   private readonly aimGhosts: GhostFlagLayer;
   private readonly implied: ImpliedPlanFeature;
+  private readonly marked: MarkedNodeLayer;
   private readonly focus: FocusFeature;
   private readonly hearths: HearthFeature;
   private readonly aim: AimFeature;
   private readonly phason: PhasonFeature;
   private readonly crystals: CrystalLayer;
   private readonly objectives: ObjectiveFeature;
+  private readonly bossVision: BossVisionFeature;
   private readonly res = new THREE.Vector2();
   private readonly viewDir = new THREE.Vector3();
   private grid = 1;
@@ -74,7 +79,7 @@ export class SurveyRenderer implements RenderModule {
     const { scene, world, session } = ctx;
     this.data = new SurveyData(world);
     const d = this.data;
-    this.u = createSurveyUniforms({ node: d.nodeTex, aux: d.auxTex, edge: d.edgeTex, facet: d.facetTex });
+    this.u = createSurveyUniforms({ node: d.nodeTex, aux: d.auxTex, edge: d.edgeTex, facet: d.facetTex }, world.map.half);
     const palette = this.u.uFactionColor.value;
     for (let f = 0; f < 4; f++) palette[f].setHex(world.factions[f].color);
     palette[4].setHex(NEUTRAL_COLOR);
@@ -85,6 +90,8 @@ export class SurveyRenderer implements RenderModule {
     this.ley = new LeyLayer(scene, d, this.u);
     this.decalMat = createDecalMaterial(this.u);
     this.implied = new ImpliedPlanFeature(scene, world, session, d, this.u, this.decalMat);
+    this.marked = new MarkedNodeLayer(world, session, d, this.u, ctx.shared.fx);
+    ctx.shared.commandOverlay = this.marked.scene;
     this.decals = new DecalLayer(scene, this.decalMat, 1024, 5);
     this.beams = new BeamLayer(scene, this.u, 512, 10);
     this.sprites = new SpriteLayer(scene, this.u, 256, 11, false, this.implied.atlas);
@@ -96,6 +103,7 @@ export class SurveyRenderer implements RenderModule {
     this.aim = new AimFeature(world, session);
     this.phason = new PhasonFeature(world, d, this.lattice, this.u);
     this.objectives = new ObjectiveFeature(scene, world, session, d, this.u, ctx.shared);
+    this.bossVision = new BossVisionFeature(scene, world, session, this.u);
   }
 
   onEvent(e: GameEvent): void {
@@ -195,6 +203,7 @@ export class SurveyRenderer implements RenderModule {
     this.hearths.update(now, this.decals, this.beams, this.xray);
     this.aim.update(now, this.sprites, this.decals, this.beams, this.aimGhosts);
     this.implied.update();
+    this.marked.update();
     this.decals.commit();
     this.beams.commit();
     this.sprites.commit();
@@ -203,6 +212,7 @@ export class SurveyRenderer implements RenderModule {
     // Pixels per metre at 1 m of view distance, for markers that keep a minimum screen size.
     const projScale = ctx.camera.projectionMatrix.elements[5] * 0.5 * this.res.y;
     this.objectives.update(now, ctx.camera, projScale, this.res, u.uPx.value);
+    this.bossVision.update(ctx.camera, this.res, u.uPx.value);
   }
 
   /**
@@ -217,7 +227,7 @@ export class SurveyRenderer implements RenderModule {
     cam.getWorldDirection(this.viewDir);
     const ax = cam.position.x;
     const az = cam.position.z;
-    const t = this.viewDir.y < -0.05 ? Math.min(40, cam.position.y / -this.viewDir.y) : 20;
+    const t = this.viewDir.y < -0.05 ? Math.min(40, (cam.position.y - groundHeight(ax, az, this.ctx.world.map.half)) / -this.viewDir.y) : 20;
     const bx = ax + this.viewDir.x * t;
     const bz = az + this.viewDir.z * t;
     const r2 = COVERAGE_RADIUS * COVERAGE_RADIUS;
@@ -241,6 +251,8 @@ export class SurveyRenderer implements RenderModule {
     this.lattice.dispose();
     this.ley.dispose();
     this.implied.dispose();
+    this.marked.dispose();
+    delete this.ctx.shared.commandOverlay;
     this.decals.dispose();
     this.beams.dispose();
     this.sprites.dispose();
@@ -248,6 +260,7 @@ export class SurveyRenderer implements RenderModule {
     this.aimGhosts.dispose();
     this.crystals.dispose();
     this.objectives.dispose();
+    this.bossVision.dispose();
     this.decalMat.dispose();
     this.data.dispose();
   }

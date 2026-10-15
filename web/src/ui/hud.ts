@@ -1,3 +1,5 @@
+import { burnTime, endTime, matchSettings, UNLIMITED_DAYS } from "../sim/matchSettings";
+import { worldDayClock } from '../sim/dayCycle';
 /**
  * Core HUD: the ornate "N FLAGS" resource frame (top-left), the clock plaque with time of
  * day, Phason Tide, Burn and (after The Burn) Dawn countdowns (top-centre), the C.M.I. frame
@@ -11,12 +13,11 @@ import {
   DAWN_TIME,
   DAWN_WARNING,
   HIPPIE_AI,
-  HOARD_THRESHOLD,
   SUDDEN_DEATH_ESCALATE_EVERY,
   TIDE_INTERVAL,
   TIDE_WARNING,
 } from '../sim/constants';
-import { isHoarding, popCap } from '../sim/systems/economy';
+import { hoardThreshold, isHoarding, popCap } from '../sim/systems/economy';
 import { suddenDeathMult } from '../sim/systems/victory';
 import { FACTION_IDS } from '../sim/types';
 import type { World } from '../sim/world';
@@ -25,7 +26,9 @@ import type { UiHost, UiLayout, UiPart } from './core';
 import { button, el, escapeHtml, fmtClock, html, kbd, setAttr, setClass, setText, setVar, show } from './dom';
 import { iconSvg } from './icons';
 import type { IconName } from './icons';
-import { takeableSeat } from './online';
+import { campChoices, canRecoverBossCamp } from './online';
+import { BossHud } from './bossHud';
+import { BossVisionHud } from './bossVisionHud';
 
 /** Dusk falls at 6:00 and night at 10:00 (design §14). */
 const DUSK_AT = 6 * 60;
@@ -92,6 +95,8 @@ export class HudPart implements UiPart {
   private spectateBtn: HTMLButtonElement;
   private spectatePlay: HTMLButtonElement;
   private selectBox: HTMLElement;
+  private bossHud: BossHud;
+  private bossVisionHud: BossVisionHud;
 
   constructor(host: UiHost, layout: UiLayout) {
     this.host = host;
@@ -113,9 +118,8 @@ export class HudPart implements UiPart {
       const val = el('span', 'res-val num', row, '0');
       return { row, val };
     };
-    this.stock = mk('stock', 'Hearth stock');
+    this.stock = mk('stock', 'Camp stock');
     this.hoard = el('span', 'res-tag is-off', this.stock.row, 'HOARDING');
-    this.hoard.title = `Hoarding is villainy: above ${HOARD_THRESHOLD} Flags in stock your Signifiers lose attention ${Math.round((HIPPIE_AI.hoardDrainMult - 1) * 100)}% faster.`;
     this.lumber = mk('lumber', 'Lumber');
     this.ritual = mk('ritual', 'Ritual');
     this.hippies = mk('hippie', 'Signifiers');
@@ -133,6 +137,8 @@ export class HudPart implements UiPart {
 
     // ── Clock plaque ──
     const plaque = el('div', 'clock plaque', layout.topCenter);
+    this.bossHud = new BossHud(layout.topCenter, plaque, layout.center);
+    this.bossVisionHud = new BossVisionHud(layout.topCenter);
     tutorialTarget(plaque, 'clock');
     const main = el('div', 'clock-main', plaque);
     this.todIc = el('span', 'tod-ic', main);
@@ -197,6 +203,8 @@ export class HudPart implements UiPart {
 
   update(world: World | null, _now: number): void {
     const s = this.host.app.session;
+    this.bossHud.update(world, matchScreen(s.screen));
+    this.bossVisionHud.update(world, s);
     if (!matchScreen(s.screen) || !world) return;
     const P = s.playerFaction;
     const fac = world.factions[P];
@@ -209,6 +217,8 @@ export class HudPart implements UiPart {
 
     const stock = world.stockCount(P);
     setText(this.stock.val, String(stock));
+    this.stock.row.title = `Hoarding threshold: ${hoardThreshold(world, P)} Flags. Workshops hold up to 10 Flags each for pickup.`;
+    this.hoard.title = `Above ${hoardThreshold(world, P)} stock Flags, Signifiers lose attention ${Math.round((HIPPIE_AI.hoardDrainMult - 1) * 100)}% faster.`;
     const hoarding = isHoarding(world, P);
     show(this.hoard, hoarding);
     setClass(this.stock.row, 'warn', hoarding);
@@ -220,14 +230,15 @@ export class HudPart implements UiPart {
     let attnN = 0;
     for (const h of world.hippies.values()) {
       if (h.faction !== P) continue;
-      n++;
       if (h.status === 'ko') continue;
+      n++;
       attnSum += h.attention;
       attnN++;
     }
     const cap = popCap(world, P);
     setText(this.hippies.val, `${n}/${cap}`);
-    setClass(this.hippies.row, 'full', n >= cap);
+    setClass(this.hippies.row, 'full', n > cap);
+    this.hippies.row.title = `${n} recruited / ${cap} attention capacity · ${world.hippies.size} hippies in the shared world population. Recruitment has no camp limit. ${Math.max(0, n - cap)} excess recruits lose attention over time.`;
     const attn = attnN > 0 ? attnSum / attnN : 0;
     setVar(this.attnBar, '--p', (attn / 100).toFixed(3));
     setText(this.attnVal, String(Math.round(attn)));
@@ -235,9 +246,14 @@ export class HudPart implements UiPart {
 
     // Clock, time of day, tide, Burn.
     const t = world.time;
-    setText(this.clockT, fmtClock(t));
+    const cycle = worldDayClock(world);
+    const burnAt = burnTime(world.options), endAt = endTime(world.options);
+    const settings = matchSettings(world.options);
+    const dayLimit = settings.days === UNLIMITED_DAYS ? Infinity : settings.days;
+    const dayLabel = settings.days === 0 ? 'Burn' : `Day ${Math.min(dayLimit, Math.floor(t / settings.dayLength) + 1)}`;
+    setText(this.clockT, `${dayLabel} · ${fmtClock(t)}`);
     const phase: TimeOfDay =
-      t >= SUNRISE_AT ? 'dawn' : t >= FIRST_LIGHT_AT ? 'first' : t >= NIGHT_AT ? 'night' : t >= DUSK_AT ? 'dusk' : 'day';
+      cycle >= SUNRISE_AT ? 'dawn' : cycle >= FIRST_LIGHT_AT ? 'first' : cycle >= NIGHT_AT ? 'night' : cycle >= DUSK_AT ? 'dusk' : 'day';
     if (phase !== this.todPhase) {
       this.todPhase = phase;
       const tod = TIME_OF_DAY[phase];
@@ -254,26 +270,26 @@ export class HudPart implements UiPart {
       setClass(this.tide, 'pulse', toTide <= TIDE_WARNING);
     }
     // The Training Burn's director holds The Burn and Dawn back: no countdown to promise there.
-    const timed = world.options.mode !== 'tutorial';
+    const timed = world.options.mode !== 'tutorial' && Number.isFinite(endAt);
     show(this.burn, timed);
-    show(this.dawn, timed && world.suddenDeath);
+    show(this.dawn, timed && world.suddenDeath && world.effigyRevealedAt === null);
     show(this.clockSub, timed || tideDue);
     if (timed) {
       if (world.suddenDeath) {
         // The fire burns hotter every SUDDEN_DEATH_ESCALATE_EVERY s: show the multiplier and the next step.
         setText(this.burnL, `THE BURN ×${suddenDeathMult(world)}`);
-        const into = Math.max(0, t - BURN_TIME) % SUDDEN_DEATH_ESCALATE_EVERY;
+        const into = Math.max(0, t - burnAt) % SUDDEN_DEATH_ESCALATE_EVERY;
         setText(this.burnT, fmtClock(Math.ceil(SUDDEN_DEATH_ESCALATE_EVERY - into)));
-        const toDawn = DAWN_TIME - t;
+        const toDawn = endAt - t;
         setText(this.dawnT, fmtClock(Math.ceil(toDawn)));
         // Pulses through the same last minute the sim announces ("One minute to dawn").
         setClass(this.dawn, 'soon', toDawn <= DAWN_WARNING);
       } else {
         setText(this.burnL, 'Burn');
-        setText(this.burnT, fmtClock(Math.ceil(BURN_TIME - t)));
+        setText(this.burnT, fmtClock(Math.ceil(burnAt - t)));
       }
       setClass(this.burn, 'lit', world.suddenDeath);
-      setClass(this.burn, 'soon', !world.suddenDeath && BURN_TIME - t <= 60);
+      setClass(this.burn, 'soon', !world.suddenDeath && burnAt - t <= 60);
     }
 
     setText(this.cmiN, String(Math.round(fac.stats.cmi)));
@@ -309,9 +325,9 @@ export class HudPart implements UiPart {
       // Online, quitting to the title leaves the host's burn for good.
       const net = this.host.app.net;
       setText(this.spectateBtn, net ? 'Leave the burn' : 'Title');
-      let free = false;
-      for (const g of FACTION_IDS) free ||= takeableSeat(world, net?.lobby ?? null, g);
-      show(this.spectatePlay, free);
+      const recovery = canRecoverBossCamp(this.host.app, world);
+      setText(this.spectatePlay, recovery ? 'Choose a surviving camp' : 'Play a camp');
+      show(this.spectatePlay, recovery || campChoices(this.host.app, world).length > 0);
     }
   }
 
@@ -329,12 +345,14 @@ export class HudPart implements UiPart {
   }
 
   dispose(): void {
+    this.bossHud.dispose();
+    this.bossVisionHud.dispose();
     for (const n of this.nodes) n.remove();
   }
 }
 
 /**
- * Prompt strings from controls look like "E  Plant Flag" or "E  Command Table   Hold E  Push":
+ * Prompt strings from controls look like "E  Plant Flag" or "Hold E  Push":
  * runs of 2+ spaces separate key / label pairs. Keys become keycaps; a leading "Hold" stays text.
  */
 export function renderPrompt(text: string): string {

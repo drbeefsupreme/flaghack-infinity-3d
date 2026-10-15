@@ -1,8 +1,7 @@
 /**
  * Command View (the GCC table): tactical camera control (WASD / arrows / screen-edge /
  * middle-drag pan, wheel zoom toward the cursor), D.E.G.E.N. selection (drag box, click),
- * right-click context orders, Survey planning tools (node, enclose, pentacle, ring, Flag
- * Simulacra targeting), camp building placement and pings at the cursor.
+ * right-click context orders, Survey planning tools (node, enclose, pentacle, ring), camp building placement and pings at the cursor.
  */
 import type * as THREE from 'three';
 import { Vector3 } from 'three';
@@ -12,6 +11,7 @@ import { pentacleOf } from '../sim/lattice/geometry';
 import { planEnclosure, planRing } from '../sim/lattice/planner';
 import type { V2 } from '../sim/math';
 import { isFlagProtected } from '../sim/systems/abilities';
+import { bossEncounterActive } from '../sim/systems/boss/damage';
 import { canPlantAt } from '../sim/systems/flags';
 import { gccActive } from '../sim/systems/gcc';
 import type { EntityId, FactionId, HippieOrder, PingKind } from '../sim/types';
@@ -178,8 +178,8 @@ export class CommandView {
     const w = inp.width;
     const h = inp.height;
     const aspect = w / h;
-    let px = 0;
-    let pz = 0;
+    let px = inp.moveX;
+    let pz = inp.moveY;
     if (inp.isDown('KeyW') || inp.isDown('ArrowUp')) pz -= 1;
     if (inp.isDown('KeyS') || inp.isDown('ArrowDown')) pz += 1;
     if (inp.isDown('KeyA') || inp.isDown('ArrowLeft')) px -= 1;
@@ -191,7 +191,7 @@ export class CommandView {
       else if (inp.my > h - EDGE_BAND) pz += 1;
     }
     if (px !== 0 || pz !== 0) {
-      const l = Math.hypot(px, pz);
+      const l = Math.max(1, Math.hypot(px, pz));
       const speed = cam.cmdHeight * 0.9 * (inp.shift ? 2 : 1);
       cam.cmdX += (px / l) * speed * dt;
       cam.cmdZ += (pz / l) * speed * dt;
@@ -272,9 +272,14 @@ export class CommandView {
       s.selectBox = null;
     }
 
-    // Right button: cancel a tool, else a context order for the selected Signifiers.
+    // Ctrl+RMB is an explicit defend order, even when a target/tool would normally win.
+    // Plain RMB still cancels a tool before issuing contextual orders.
     if (inp.buttonPressed(RMB)) {
-      if (s.tool === 'building') s.tool = 'flag';
+      if (inp.ctrl) {
+        if (s.tool === 'building') s.tool = 'flag';
+        if (s.planTool !== 'select') this.setTool(s, 'select');
+        this.issueOrder(world, s, f);
+      } else if (s.tool === 'building') s.tool = 'flag';
       else if (s.planTool !== 'select') this.setTool(s, 'select');
       else this.issueOrder(world, s, f);
     }
@@ -308,7 +313,8 @@ export class CommandView {
 
   private pruneSelection(world: World, s: Session): void {
     for (const id of s.selection) {
-      if (!world.hippies.has(id) && !world.buildings.has(id) && !world.flags.has(id) && !world.avatars.has(id)) s.selection.delete(id);
+      if (!world.hippies.has(id) && !world.buildings.has(id) && !world.flags.has(id) && !world.avatars.has(id) &&
+        !(bossEncounterActive(world) && world.boss?.id === id && world.boss.hp > 0 && world.boss.action !== 'death' && world.boss.action !== 'dead')) s.selection.delete(id);
     }
   }
 
@@ -322,6 +328,10 @@ export class CommandView {
     this.okind = 'none';
     this.otarget = -1;
     if (this.ownCount === 0 || !s.hover.point) return;
+    if (this.input.ctrl) {
+      this.okind = 'defend';
+      return;
+    }
     if (this.pushArm >= 0) {
       this.okind = 'pushTo';
       return;
@@ -329,6 +339,10 @@ export class CommandView {
     const he = s.hover.entity;
     if (he >= 0) {
       this.otarget = he;
+      if (bossEncounterActive(world) && world.boss?.id === he && world.boss.hp > 0 && world.boss.action !== 'death' && world.boss.action !== 'dead') {
+        this.okind = 'attack';
+        return;
+      }
       const fl = world.flags.get(he);
       if (fl && (fl.owner !== f || fl.state === 'loose')) {
         this.okind = 'pull';
@@ -405,6 +419,7 @@ export class CommandView {
         this.pushArm = -1;
         break;
       case 'defend':
+        this.pushArm = -1;
         order = { kind: 'defend', at };
         break;
       default:
@@ -534,7 +549,6 @@ export class CommandView {
         s.planPreview = this.ringLoop ? this.ringLoop.slice() : [];
         return;
       }
-      case 'simulacra':
       case 'select':
         return;
     }
@@ -559,18 +573,6 @@ export class CommandView {
       case 'ring':
         if (this.ringLoop) this.commit(world, s, f, this.ringLoop);
         return;
-      case 'simulacra': {
-        const n = s.hover.node;
-        if (n < 0 || !canPlantAt(world, n, f) || s.planPreview.includes(n)) return;
-        s.planPreview.push(n);
-        this.markNode(world, s, n);
-        if (s.planPreview.length >= 2) {
-          this.queue.push({ t: 'gcc', faction: f, action: 'simulacra', target: -1, nodes: [s.planPreview[0], s.planPreview[1]] });
-          s.planTool = 'select';
-          this.toolChanged(s);
-        }
-        return;
-      }
       case 'select':
         return;
     }
@@ -700,13 +702,11 @@ export class CommandView {
       case 'pentacle':
         return this.focus >= 0 ? 'LMB  Plan pentacle around this Crystal focus   RMB  Cancel' : 'Pentacle: point at a revealed Crystal focus';
       case 'ring':
-        return this.ringLoop ? this.label('ring', this.ringNew, this.ringRival) : 'Ring: no home ring fits here';
-      case 'simulacra':
-        return s.planPreview.length === 0 ? 'Flag Simulacra: choose the first node   RMB  Cancel' : 'Flag Simulacra: choose the second node, far from the first';
+        return this.ringLoop ? this.label('ring', this.ringNew, this.ringRival) : 'Expand home: no wider home enclosure fits here';
       case 'select':
         break;
     }
-    if (this.pushArm >= 0) return 'RMB  Push the Command Center here   Esc  Cancel';
+    if (this.pushArm >= 0 && !this.input.ctrl) return 'RMB  Push the Command Center here   Esc  Cancel';
     if (this.okind === 'none') return this.ownCount > 0 ? null : 'Drag  Select Signifiers   Tab  Return';
     return this.label(this.okind, this.ownCount);
   }

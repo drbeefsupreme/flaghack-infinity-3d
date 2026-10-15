@@ -6,6 +6,8 @@
  * white, swells and fades while the shards fly out and fall.
  */
 import * as THREE from 'three';
+import { CRYSTAL_HEIGHT } from '../../sim/constants';
+import { CRYSTAL_RADIUS, CRYSTAL_SHOULDER, CRYSTAL_CAP_SCALE } from '../../sim/crystalGeometry';
 import type { GameEvent } from '../../sim/events';
 import type { Crystal } from '../../sim/types';
 import type { World } from '../../sim/world';
@@ -20,12 +22,13 @@ import { InstanceSet } from './instances';
 const CAPACITY = 32;
 const SHARDS = 5;
 const SHATTER_TIME = 1.2;
-const PRISM_H = 7.5;
-const PRISM_R = 1.05;
+const PRISM_H = CRYSTAL_HEIGHT;
+const PRISM_R = CRYSTAL_RADIUS;
 const PINK = new THREE.Color(1.0, 0.38, 0.86);
 const BLUE = new THREE.Color(0.3, 0.62, 1.0);
 
 const PRISM_VERT = /* glsl */ `
+uniform float uCrystalTime;
 ${GLSL_COMMON}
 ${GLSL_VERT}
 attribute vec2 aFace;
@@ -43,7 +46,7 @@ void main() {
   float shatter = iB.z;
   float h = iA.z * (0.12 + 0.88 * grow) * (1.0 + shatter * 0.12);
   float rad = iA.w * (0.55 + 0.45 * grow) * (1.0 + shatter * 0.4);
-  float rot = iB.x + uTime * 0.12;
+  float rot = iB.x + uCrystalTime * 0.12;
   float cs = cos(rot);
   float sn = sin(rot);
   vec3 p = position;
@@ -52,7 +55,7 @@ void main() {
   p.xz = vec2(p.x * cs - p.z * sn, p.x * sn + p.z * cs);
   vec3 n = normal;
   n.xz = vec2(n.x * cs - n.z * sn, n.x * sn + n.z * cs);
-  vec3 wp = vec3(iA.x, 0.0, iA.y) + p;
+  vec3 wp = vec3(iA.x, fhGround(iA.xy), iA.y) + p;
   vec4 mv = viewMatrix * vec4(wp, 1.0);
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
@@ -106,6 +109,7 @@ void main() {
 `;
 
 const SHARD_VERT = /* glsl */ `
+attribute float iScale;
 ${GLSL_COMMON}
 ${GLSL_VERT}
 attribute vec4 iA;
@@ -123,7 +127,7 @@ void main() {
   float shatter = iB.w;
   float ang = phase + uTime * speed;
   float rad = iA.z * (1.0 + shatter * 6.0);
-  float y = iA.w + sin(uTime * 1.3 + phase * 3.0) * 0.35 + shatter * 3.0 - shatter * shatter * 7.0;
+  float y = iA.w + (sin(uTime * 1.3 + phase * 3.0) * 0.35 + shatter * 3.0 - shatter * shatter * 7.0) * iScale;
   vec3 c = vec3(iA.x + cos(ang) * rad, y, iA.y + sin(ang) * rad);
   float s = scale * (1.0 - shatter * 0.6);
   // Spin about a tilted axis: yaw then pitch.
@@ -139,6 +143,7 @@ void main() {
   n.xz = vec2(n.x * c1 - n.z * s1, n.x * s1 + n.z * c1);
   p.xy = vec2(p.x * c2 - p.y * s2, p.x * s2 + p.y * c2);
   n.xy = vec2(n.x * c2 - n.y * s2, n.x * s2 + n.y * c2);
+  c.y += fhGround(iA.xy);
   vec3 wp = c + p;
   vec4 mv = viewMatrix * vec4(wp, 1.0);
   gl_Position = projectionMatrix * mv;
@@ -175,8 +180,8 @@ void main() {
 function prismGeometry(): THREE.BufferGeometry {
   const pos: number[] = [];
   const face: number[] = [];
-  const shoulder = 0.8;
-  const top = 0.86;
+  const shoulder = CRYSTAL_SHOULDER;
+  const top = CRYSTAL_CAP_SCALE;
   const ring = (i: number, r: number): [number, number] => {
     const a = (i / 5) * Math.PI * 2;
     return [Math.cos(a) * r, Math.sin(a) * r];
@@ -208,6 +213,7 @@ function instanced(base: THREE.BufferGeometry): THREE.InstancedBufferGeometry {
 }
 
 interface CrystalView {
+  scale: number;
   id: number;
   x: number;
   z: number;
@@ -238,6 +244,7 @@ export class CrystalLayer {
   private readonly sA: Float32Array;
   private readonly sB: Float32Array;
   private readonly sColor: Float32Array;
+  private readonly sScale: Float32Array;
   private readonly views = new Map<number, CrystalView>();
   private readonly pool: CrystalView[] = [];
   private readonly live: CrystalView[] = [];
@@ -248,7 +255,7 @@ export class CrystalLayer {
   private readonly syncCrystal = (c: Crystal): void => {
     let v = this.views.get(c.id);
     if (!v) {
-      v = this.pool.pop() ?? { id: 0, x: 0, z: 0, faction: 0, seed: 0, growth: 0, shatterAt: -1, flashAt: -1e4, stamp: 0 };
+      v = this.pool.pop() ?? { scale: 1, id: 0, x: 0, z: 0, faction: 0, seed: 0, growth: 0, shatterAt: -1, flashAt: -1e4, stamp: 0 };
       v.id = c.id;
       v.seed = ((c.id * 0.618034) % 1 + 1) % 1;
       v.shatterAt = -1;
@@ -260,6 +267,7 @@ export class CrystalLayer {
     v.z = c.pos.z;
     v.faction = c.faction;
     v.growth = c.growth;
+    v.scale = c.scale;
     v.stamp = this.stamp;
   };
 
@@ -272,6 +280,7 @@ export class CrystalLayer {
     this.pB = this.prisms.add('iB', 4);
     this.pColor = this.prisms.add('iColor', 4);
     this.prismMat = surveyMaterial(shared, { vertexShader: PRISM_VERT, fragmentShader: PRISM_FRAG, side: THREE.DoubleSide, hdrCap: 2.5 });
+    this.prismMat.uniforms.uCrystalTime = { value: world.time };
     this.prismMesh = new THREE.Mesh(this.prisms.geo, this.prismMat);
     this.prismMesh.frustumCulled = false;
     this.prismMesh.renderOrder = 8;
@@ -282,6 +291,7 @@ export class CrystalLayer {
     this.sA = this.shards.add('iA', 4);
     this.sB = this.shards.add('iB', 4);
     this.sColor = this.shards.add('iColor', 4);
+    this.sScale = this.shards.add('iScale', 1);
     this.shardMat = surveyMaterial(shared, { vertexShader: SHARD_VERT, fragmentShader: SHARD_FRAG });
     this.shardMesh = new THREE.Mesh(this.shards.geo, this.shardMat);
     this.shardMesh.frustumCulled = false;
@@ -303,6 +313,7 @@ export class CrystalLayer {
   }
 
   update(now: number, decals: DecalLayer, beams: BeamLayer): void {
+    this.prismMat.uniforms.uCrystalTime.value = this.world.time;
     this.now = now;
     this.stamp++;
     this.world.crystals.forEach(this.syncCrystal);
@@ -327,8 +338,8 @@ export class CrystalLayer {
       let o = np * 4;
       this.pA[o] = v.x;
       this.pA[o + 1] = v.z;
-      this.pA[o + 2] = PRISM_H;
-      this.pA[o + 3] = PRISM_R;
+      this.pA[o + 2] = PRISM_H * v.scale;
+      this.pA[o + 3] = PRISM_R * v.scale;
       this.pB[o] = v.seed * 6.283;
       this.pB[o + 1] = eased;
       this.pB[o + 2] = shatter;
@@ -342,11 +353,12 @@ export class CrystalLayer {
         o = ns * 4;
         this.sA[o] = v.x;
         this.sA[o + 1] = v.z;
-        this.sA[o + 2] = 2.0 + 0.35 * k;
-        this.sA[o + 3] = 1.6 + (PRISM_H - 2.4) * eased * ((k + 0.5) / SHARDS);
+        this.sA[o + 2] = (2.0 + 0.35 * k) * v.scale;
+        this.sA[o + 3] = (1.6 + (PRISM_H - 2.4) * eased * ((k + 0.5) / SHARDS)) * v.scale;
         this.sB[o] = v.seed * 20 + (k * Math.PI * 2) / SHARDS;
         this.sB[o + 1] = (k % 2 === 0 ? 0.55 : -0.42) * (1 + v.seed * 0.3);
-        this.sB[o + 2] = 0.38 * eased;
+        this.sB[o + 2] = 0.38 * eased * v.scale;
+        this.sScale[ns] = v.scale;
         this.sB[o + 3] = shatter;
         this.glow.copy(k % 2 === 0 ? PINK : BLUE).lerp(this.tint, 0.25);
         this.sColor[o] = this.glow.r;
@@ -358,8 +370,8 @@ export class CrystalLayer {
       const fade = 1 - shatter;
       const flash = Math.max(0, 1 - (now - v.flashAt) / 1.4);
       this.glow.copy(BLUE).lerp(PINK, 0.5).lerp(this.tint, 0.3);
-      beams.push(BEAM.pillar, v.x, 0, v.z, v.x, 46 * (0.3 + 0.7 * eased), v.z, 2.4 + flash * 3, this.glow, (0.3 + flash * 1.2) * eased * fade, 6, v.seed * 10);
-      decals.push(DECAL.halo, v.x, v.z, 3.6 + flash * 4, 0, this.glow, (0.75 + flash) * fade * (0.4 + 0.6 * eased), 0.75, 0.6, 0.7, v.seed);
+      beams.push(BEAM.pillar, v.x, 0, v.z, v.x, 46 * (0.3 + 0.7 * eased) * v.scale, v.z, (2.4 + flash * 3) * v.scale, this.glow, (0.3 + flash * 1.2) * eased * fade, 6, v.seed * 10);
+      decals.push(DECAL.halo, v.x, v.z, (3.6 + flash * 4) * v.scale, 0, this.glow, (0.75 + flash) * fade * (0.4 + 0.6 * eased), 0.75, 0.6, 0.7, v.seed);
     }
     this.prisms.commit(np);
     this.shards.commit(ns);

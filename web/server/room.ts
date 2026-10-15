@@ -1,10 +1,12 @@
+import { DEFAULT_MATCH, normalizeMatch } from "../src/sim/matchSettings";
 /**
  * The host's single room: connections and their handshake, players (seats, ready flags, the
  * leader, chat), the lobby phases (lobby → playing → ended → lobby) and the running Match.
  *
  * Players outlive their sockets: a hello carrying a player's token reclaims the same id and seat,
  * also mid-match. A seated player who drops keeps the seat; after SEAT_GRACE_MS an NPC drives it
- * until they return (or until someone else takes it). Disconnected players are forgotten after
+ * until they return (outside the boss encounter, another player may take it after the grace).
+ * Boss takeovers never steal a disconnected human's reserved camp. Disconnected players are forgotten after
  * FORGET_AFTER_MS unless they hold a seat in a running match. Every handler is wrapped so that
  * nothing a client sends can take the host down.
  */
@@ -25,6 +27,7 @@ import type {
 } from '../src/net/protocol';
 import { parseClientMessage } from '../src/net/validate';
 import { FACTION_DEFS } from '../src/sim/constants';
+import { applyBossTakeover, bossTakeoverSeats, isBossTakeoverActive } from '../src/sim/bossTakeover';
 import { FACTION_IDS } from '../src/sim/types';
 import type { Difficulty, FactionId, MatchOptions } from '../src/sim/types';
 import { addressKey, FailureThrottle, PasswordGate } from './auth';
@@ -136,6 +139,10 @@ interface Player {
   jammedAt: number;
   /** When the last seat/ready/settings change took effect (CHANGE_COOLDOWN_MS). */
   changedAt: number;
+  /** New on every matchStart; pre-handoff/reconnect input can never drive a new seat. */
+  inputEpoch: number;
+  /** A temporary exclusive reservation, revalidated at the next authoritative frame boundary. */
+  pendingBossSeat: FactionId | null;
 }
 
 export class Room {
@@ -149,7 +156,7 @@ export class Room {
   private readonly players = new Map<string, Player>();
   private readonly byToken = new Map<string, Player>();
   private phase: LobbyPhase = 'lobby';
-  private readonly settings: LobbySettings = { difficulty: 'normal', seed: null };
+  private readonly settings: LobbySettings = { difficulty: 'normal', seed: null, match: normalizeMatch(DEFAULT_MATCH) };
   private leaderId: string | null = null;
   private match: Match | null = null;
   private nextPlayer = 1;
@@ -161,6 +168,7 @@ export class Room {
   private closing = false;
 
   private readonly listener: MatchListener = {
+    beforeFrame: () => this.settleBossTakeovers(),
     frame: (text) => {
       // 30 times a second: no per-frame closure for `safely`.
       try {
@@ -330,9 +338,11 @@ export class Room {
       chatTimes: [],
       jammedAt: 0,
       changedAt: 0,
+      inputEpoch: 0,
+      pendingBossSeat: null,
     };
     // In the lobby newcomers sit down at the lowest free seat; mid-match they watch first.
-    if (this.phase === 'lobby') player.seat = FACTION_IDS.find((f) => !this.ownerOf(f)) ?? null;
+    if (this.phase === 'lobby') player.seat = FACTION_IDS.find((f) => normalizeMatch(this.settings.match).active.includes(f) && !this.ownerOf(f)) ?? null;
     this.players.set(player.id, player);
     this.byToken.set(player.token, player);
     return player;
@@ -350,6 +360,7 @@ export class Room {
     player.connectedAt = now;
     player.inMatch = false;
     player.joining = this.match !== null;
+    player.pendingBossSeat = null;
     if (this.leaderId === null) this.leaderId = player.id;
     this.abandonAt = 0;
     this.send(conn, { t: 'welcome', protocol: PROTOCOL_VERSION, playerId: player.id, token: player.token, lobby: this.lobbyState() });
@@ -369,6 +380,7 @@ export class Room {
     p.disconnectedAt = Date.now();
     p.inMatch = false;
     p.joining = false;
+    p.pendingBossSeat = null;
     if (this.match && p.seat !== null) this.match.holdStill(p.seat);
     if (this.closing) return;
     this.log(`${p.name} disconnected (${this.connectedCount()} connected)`);
@@ -408,6 +420,8 @@ export class Room {
       case 'ready':
       case 'settings':
         return this.change(player, msg);
+      case 'bossTakeover':
+        return this.takeBossSeat(player, msg.seat);
       case 'start':
         return this.start(player);
       case 'backToLobby':
@@ -450,12 +464,17 @@ export class Room {
   /**
    * Seats: one human each. A seat is free when nobody holds it, or its holder has been gone past
    * the grace (an NPC drives it meanwhile; they come back as a spectator). Mid-match only alive
-   * camps can be taken, and any seat change sends that client a fresh matchStart.
+   * camps can be taken, and any seat change sends that client a fresh matchStart. Boss camp
+   * claims use takeBossSeat instead and never expire another human's reservation.
    */
   private takeSeat(player: Player, seat: FactionId | null): boolean {
     if (seat === player.seat || this.phase === 'ended') return false;
     const match = this.match;
+    // The boss fight has one tightly validated handoff path. A generic seat request cannot
+    // evade elimination checks or steal a disconnected human's NPC-driven reservation.
+    if (match && isBossTakeoverActive(match.world)) return false;
     if (seat !== null) {
+      if(!normalizeMatch(this.settings.match).active.includes(seat))return false;
       const holder = this.ownerOf(seat);
       if (holder && (holder.conn || Date.now() - holder.disconnectedAt < SEAT_GRACE_MS)) return false;
       if (match && !match.world.factions[seat].alive) return false;
@@ -474,6 +493,7 @@ export class Room {
       match.driveNpc(from);
       this.log(`NPC takes over seat ${from} (${FACTION_DEFS[from].name}) from ${player.name}`);
     }
+    this.syncHumanSeats();
     player.inMatch = false;
     player.joining = player.conn !== null;
     if (seat !== null) {
@@ -486,9 +506,64 @@ export class Room {
     return true;
   }
 
+  /** Atomically reserve one existing AI camp before any later claimant can observe it as free. */
+  private takeBossSeat(player: Player, seat: FactionId): void {
+    const reply = (ok: boolean, reason: string | null): void => {
+      if (player.conn) this.send(player.conn, { t: 'bossTakeoverResult', seat, ok, reason });
+    };
+    const match = this.match;
+    if (!match || this.phase !== 'playing' || !isBossTakeoverActive(match.world)) {
+      return reply(false, 'Camp takeover is only available during an active boss encounter.');
+    }
+    if (!player.inMatch || player.joining || player.pendingBossSeat !== null || !player.conn) return reply(false, 'Wait for your current camp handoff to finish.');
+    const from = player.seat;
+    if (from === null || match.world.factions[from].alive) return reply(false, 'Only an eliminated player can take over an AI camp.');
+    if (this.ownerOf(seat) || [...this.players.values()].some((p) => p.pendingBossSeat === seat)) return reply(false, 'That camp is reserved for another player.');
+    if (Date.now() - player.changedAt < CHANGE_COOLDOWN_MS) return reply(false, 'Wait a moment before choosing another camp.');
+    const available = FACTION_IDS.filter((f) => !this.ownerOf(f) && match.drivenByNpc(f));
+    if (!bossTakeoverSeats(match.world, from, available).includes(seat)) return reply(false, 'That AI camp no longer has a surviving altar.');
+    player.pendingBossSeat = seat;
+  }
+
+  /** Nothing can simulate between this validation/mutation and the resulting handoff snapshot. */
+  private settleBossTakeovers(): void {
+    const match = this.match;
+    if (!match) return;
+    for (const player of this.players.values()) {
+      const seat = player.pendingBossSeat;
+      if (seat === null) continue;
+      player.pendingBossSeat = null;
+      const from = player.seat;
+      const available = FACTION_IDS.filter((f) => !this.ownerOf(f) && match.drivenByNpc(f));
+      const ok = !!player.conn && player.inMatch && from !== null &&
+        applyBossTakeover(match.world, from, seat, available);
+      if (!ok || from === null) {
+        if (player.conn) this.send(player.conn, { t: 'bossTakeoverResult', seat, ok: false,
+          reason: 'That camp or the boss encounter changed before the handoff. Choose another surviving AI camp.' });
+        continue;
+      }
+      player.seat = seat;
+      player.ready = false;
+      player.changedAt = Date.now();
+      player.inMatch = false;
+      player.joining = true;
+      match.driveNpc(from);
+      match.driveHuman(seat, player.id, player.inputEpoch + 1);
+      this.syncHumanSeats();
+      this.send(player.conn!, { t: 'bossTakeoverResult', seat, ok: true, reason: null });
+      this.log(`${player.name} takes over boss seat ${seat} (${FACTION_DEFS[seat].name}) from the NPC`);
+      this.announce(player, `${player.name} takes over ${FACTION_DEFS[seat].name} to keep fighting the Effigy.`);
+      this.markLobby();
+    }
+  }
+
   private changeSettings(player: Player, patch: Partial<LobbySettings>): boolean {
     if (player.id !== this.leaderId || this.phase !== 'lobby') return false;
     const changes: string[] = [];
+    if(patch.match) {
+      if(this.humanSeats().some(f=>!patch.match!.active.includes(f))) {this.tell(player,"Move players out of a camp before disabling it.");return false;}
+      this.settings.match=normalizeMatch(patch.match);changes.push("the game setup");
+    }
     if (patch.difficulty !== undefined && patch.difficulty !== this.settings.difficulty) {
       this.settings.difficulty = patch.difficulty;
       changes.push(`the NPC rivals to ${DIFFICULTY_NAMES[patch.difficulty]}`);
@@ -518,6 +593,7 @@ export class Room {
       difficulty: this.settings.difficulty,
       humans,
       mode: 'standard',
+      match: normalizeMatch(this.settings.match),
     };
     const t0 = performance.now();
     let match: Match;
@@ -530,18 +606,20 @@ export class Room {
     }
     this.match = match;
     this.phase = 'playing';
+    for (const p of this.players.values()) if (p.conn) p.inputEpoch++;
     for (const f of FACTION_IDS) {
       const holder = this.ownerOf(f);
-      if (holder?.conn) match.driveHuman(f, holder.id);
+      if (holder?.conn) match.driveHuman(f, holder.id, holder.inputEpoch);
       else match.driveNpc(f);
     }
     // Everyone connected starts together from the encoder's baseline: no frame has gone out yet.
     const snapshot = JSON.stringify(match.full());
     for (const p of this.players.values()) {
       p.ready = false;
+      p.pendingBossSeat = null;
       p.joining = false;
       p.inMatch = p.conn !== null;
-      if (p.conn) this.sendText(p.conn, this.matchStartText(match, p.seat, humans, snapshot));
+      if (p.conn) this.sendText(p.conn, this.matchStartText(match, p.seat, p.inputEpoch, humans, snapshot));
     }
     match.start();
     const npcs = SEAT_COUNT - humans.length;
@@ -567,16 +645,17 @@ export class Room {
       }
       p.joining = false;
       p.inMatch = true;
+      p.inputEpoch++;
       // Hands the seat back from the NPC (or restarts the input sequence) as matchStart goes out.
-      if (p.seat !== null) match.driveHuman(p.seat, p.id);
-      this.sendText(p.conn, this.matchStartText(match, p.seat, humans, snapshot));
+      if (p.seat !== null) match.driveHuman(p.seat, p.id, p.inputEpoch);
+      this.sendText(p.conn, this.matchStartText(match, p.seat, p.inputEpoch, humans, snapshot));
     }
   }
 
   /** matchStart around an already serialized snapshot (stringified once for every recipient). */
-  private matchStartText(match: Match, seat: FactionId | null, humans: FactionId[], snapshot: string): string {
+  private matchStartText(match: Match, seat: FactionId | null, inputEpoch: number, humans: FactionId[], snapshot: string): string {
     const options: MatchOptions = { ...match.world.options, humans };
-    return `{"t":"matchStart","options":${JSON.stringify(options)},"seat":${seat === null ? 'null' : seat},"snapshot":${snapshot}}`;
+    return `{"t":"matchStart","options":${JSON.stringify(options)},"seat":${seat === null ? 'null' : seat},"inputEpoch":${inputEpoch},"snapshot":${snapshot}}`;
   }
 
   private matchEnded(): void {
@@ -606,6 +685,7 @@ export class Room {
       p.inMatch = false;
       p.joining = false;
       p.ready = false;
+      p.pendingBossSeat = null;
     }
     this.markLobby();
   }
@@ -729,6 +809,18 @@ export class Room {
     return FACTION_IDS.filter((f) => this.ownerOf(f) !== undefined);
   }
 
+  /** Replicated faction metadata is also the source for every mirror's options.humans. */
+  private syncHumanSeats(): void {
+    if (!this.match) return;
+    const world = this.match.world;
+    world.options.humans = this.humanSeats();
+    for (const f of FACTION_IDS) {
+      const human = world.options.humans.includes(f);
+      world.factions[f].isPlayer = human;
+      world.factions[f].personality = human ? 'player' : FACTION_DEFS[f].personality;
+    }
+  }
+
   private connectedCount(): number {
     let n = 0;
     for (const p of this.players.values()) if (p.conn) n++;
@@ -750,7 +842,7 @@ export class Room {
       serverName: this.serverName,
       phase: this.phase,
       leaderId: this.leaderId,
-      settings: { difficulty: this.settings.difficulty, seed: this.settings.seed },
+      settings: { difficulty: this.settings.difficulty, seed: this.settings.seed, match: this.settings.match },
       seats: FACTION_IDS.map((faction) => ({ faction, playerId: this.ownerOf(faction)?.id ?? null })),
       players,
       match: this.match ? { time: this.match.world.time, winner: this.match.world.winner } : null,

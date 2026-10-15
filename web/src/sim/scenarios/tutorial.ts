@@ -182,7 +182,7 @@ function relocateTrainingCamp(world: World): void {
   const keeper = world.avatarOf(TRAINING_CAMP);
   const spot = keeperSpot(world, hearth, home, gcc);
   keeper.pos.x = spot.x;
-  keeper.pos.y = 0;
+  keeper.pos.y = world.collision.groundHeight(spot.x, spot.z);
   keeper.pos.z = spot.z;
   keeper.vel.x = 0;
   keeper.vel.y = 0;
@@ -246,7 +246,7 @@ function trainingFacet(world: World, home: Building): number {
     const d = Math.sqrt(dist2(fc.cx, fc.cz, home.pos.x, home.pos.z));
     if (d < TRAINING_MIN_DISTANCE || d > TRAINING_MAX_DISTANCE || !openSunFacet(world, fc.id)) continue;
     if (claimed.some((n) => dist2(lat.nodes[n].x, lat.nodes[n].z, fc.cx, fc.cz) < TRAINING_CALM_RADIUS * TRAINING_CALM_RADIUS)) continue;
-    if (world.map.isBlockedAt(fc.cx, fc.cz) || world.collision.blockedCircle(fc.cx, fc.cz, r + 0.5, 0.2, BUILDING_HEIGHT.hearth)) continue;
+    if (world.map.isBlockedAt(fc.cx, fc.cz) || world.collision.blockedCircle(fc.cx, fc.cz, r + 0.5, world.collision.groundHeight(fc.cx, fc.cz) + 0.2, world.collision.groundHeight(fc.cx, fc.cz) + BUILDING_HEIGHT.hearth)) continue;
     near.length = 0;
     lat.nodesInRadius(fc.cx, fc.cz, CLEAR_RADIUS, near);
     let blocked = 0;
@@ -297,7 +297,7 @@ function parkingFacet(world: World, hearth: Building, home: Building): number {
     if (d2 < GCC_MIN_DISTANCE * GCC_MIN_DISTANCE || d2 > GCC_MAX_DISTANCE * GCC_MAX_DISTANCE) continue;
     // Buildings may share corners; they only need unblocked corners with no Flag on them.
     if (!fc.thick || fc.boundary || fc.nodes.some((n) => lat.nodes[n].blocked || world.survey.nodeFlag[n] >= 0)) continue;
-    if (world.collision.blockedCircle(fc.cx, fc.cz, BUILDINGS.gcc.radius + 0.3, 0.2, BUILDING_HEIGHT.gcc)) continue;
+    if (world.collision.blockedCircle(fc.cx, fc.cz, BUILDINGS.gcc.radius + 0.3, world.collision.groundHeight(fc.cx, fc.cz) + 0.2, world.collision.groundHeight(fc.cx, fc.cz) + BUILDING_HEIGHT.gcc)) continue;
     const d = dist2(fc.cx, fc.cz, px, pz);
     if (d < bestD) {
       bestD = d;
@@ -319,7 +319,7 @@ function keeperSpot(world: World, hearth: Building, home: Building, gcc: Buildin
     const x = hearth.pos.x + Math.cos(a) * KEEPER_DISTANCE;
     const z = hearth.pos.z + Math.sin(a) * KEEPER_DISTANCE;
     if (!world.nav.isWalkable(x, z) || dist2(x, z, gcc.pos.x, gcc.pos.z) < clearGcc * clearGcc) continue;
-    if (world.collision.blockedCircle(x, z, AVATAR.radius, 0.1, AVATAR.height)) continue;
+    if (world.collision.blockedCircle(x, z, AVATAR.radius, world.collision.groundHeight(x, z) + 0.1, world.collision.groundHeight(x, z) + AVATAR.height)) continue;
     return { x, z };
   }
   return world.nav.nearestWalkable(hearth.pos.x + Math.cos(away) * KEEPER_DISTANCE, hearth.pos.z + Math.sin(away) * KEEPER_DISTANCE);

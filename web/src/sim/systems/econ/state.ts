@@ -13,11 +13,6 @@ export interface AlignChannel {
   action: AvatarAction;
 }
 
-export interface DialecticsChannel {
-  action: AvatarAction;
-  gccId: EntityId;
-}
-
 export interface MarchEntry {
   faction: FactionId;
   until: number;
@@ -47,14 +42,11 @@ export class EconState {
   stockTick = -Infinity;
   readonly hoarding: boolean[] = [false, false, false, false];
   readonly stock: number[] = [0, 0, 0, 0];
-  readonly population: number[] = [0, 0, 0, 0];
-  readonly popCap: number[] = [0, 0, 0, 0];
   /** Per-tick scratch for drummer counting (reused, never reallocated). */
   readonly circles: Building[] = [];
   readonly circleDrummers: number[] = [];
 
   readonly aligning: (AlignChannel | null)[] = [null, null, null, null];
-  readonly dialectics: (DialecticsChannel | null)[] = [null, null, null, null];
   /** Forced March end per hippie id (the post-march exhaustion is applied when it lapses). */
   readonly marching = new Map<EntityId, MarchEntry>();
 

@@ -12,6 +12,7 @@
  * them (spiral about its template y axis, pinwheel about its template z axis).
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle } from '../../../sim/map/mapgen';
 import type { Rng } from '../../../sim/rng';
 import { GlowMode, PartsBuilder } from '../geom';
@@ -32,6 +33,7 @@ const PANEL = 0x3a3f4a;
 const STONE = 0x6b6a66;
 
 export interface Rotor {
+  obstacleId: number;
   /** Placement before the spin (the spin turns the template about its own axis). */
   matrix: THREE.Matrix4;
   color: THREE.Color;
@@ -379,6 +381,7 @@ export function createRotorTemplates(): RotorTemplates {
 export function buildArt(art: Obstacle[], out: PropBatches): ArtRotors {
   const rotors: ArtRotors = { spiral: [], pinwheel: [] };
   for (const o of art) {
+    ownProp(out, o.id);
     const rng = obstacleRng(o, 'art');
     const frame = frameOf(o.x, o.z, o.yaw);
     switch (o.variant) {
@@ -389,6 +392,7 @@ export function buildArt(art: Obstacle[], out: PropBatches): ArtRotors {
         const plinth = new PartsBuilder().cylinder(o.radius * 1.0, o.radius * 1.05, 0.25, STONE, { y: 0.125 }, { segments: 12 }).build();
         out.solid.add(plinth, frame);
         rotors.spiral.push({
+          obstacleId: o.id,
           matrix: within(frame, { y: 0.25, sx: o.radius, sy: o.height - 0.25, sz: o.radius }),
           color: new THREE.Color(o.color),
           speed: rng.range(0.12, 0.22) * (rng.chance(0.5) ? 1 : -1),
@@ -405,6 +409,7 @@ export function buildArt(art: Obstacle[], out: PropBatches): ArtRotors {
         pole.box(0.2, 0.2, 0.3, 0x3a3d42, { y: hub, z: -0.12 });
         out.solid.add(pole.build(), frame);
         rotors.pinwheel.push({
+          obstacleId: o.id,
           matrix: within(frame, { y: hub, z: 0.1, sx: R, sy: R, sz: R }),
           color: new THREE.Color(0xffffff),
           speed: rng.range(0.7, 1.2),

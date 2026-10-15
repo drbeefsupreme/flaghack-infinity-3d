@@ -5,18 +5,23 @@
  * Player and AI avatars are identical; both are driven only by these commands.
  * Owner: Units agent.
  */
+import { damageMelee, emitMeleeImpact } from './meleeImpact';
+import { BOSS_RADIUS } from '../boss';
 import { AVATAR, BUILDINGS, GCC, HIPPIE, MAP_HALF } from '../constants';
 import type { CommandOf } from '../commands';
 import { spawnProjectile } from '../factory';
+import { matchSettings } from '../matchSettings';
 import { angleDiff, clamp, TAU } from '../math';
 import type { V3 } from '../math';
 import { NEUTRAL } from '../types';
 import type { Avatar, AvatarAction, AvatarInput, FactionId, Flag, Pile } from '../types';
 import type { World } from '../world';
 import { isFlagProtected } from './abilities';
-import { damageEntity, knockback } from './combat';
+import { observeBossFlagThrow } from './boss/eyeThreats';
+import { knockback } from './combat';
+import { bossPlayerHull } from './boss/playerCollision';
 import { hasEffect, pruneEffects, speedMultiplier } from './effects';
-import { canPlantAt, plantFlag, pullFlag, takeFromStock } from './flags';
+import { canPlantAt, plantFlag, pullFlag, takeFromStock, defendedPullRate } from './flags';
 import { gccActive } from './gcc';
 import { moveCart } from './units/cart';
 import { breakChannel, IDLE, isRooted } from './units/channel';
@@ -99,7 +104,8 @@ export function cmdAvatarInput(world: World, c: CommandOf<'avatarInput'>): void 
   dst.moveX = Number.isFinite(src.moveX) ? src.moveX : 0;
   dst.moveZ = Number.isFinite(src.moveZ) ? src.moveZ : 0;
   dst.jump = src.jump === true;
-  dst.sprint = src.sprint === true;
+  dst.throwMode = src.throwMode === true;
+  dst.sprint = src.sprint === true && !dst.throwMode;
   if (Number.isFinite(src.yaw)) dst.yaw = src.yaw;
   if (Number.isFinite(src.pitch)) dst.pitch = src.pitch;
 }
@@ -128,7 +134,7 @@ export function cmdPlant(world: World, c: CommandOf<'plant'>): void {
   const n = lat.nodes[c.node];
   const dx = n.x - av.pos.x;
   const dz = n.z - av.pos.z;
-  if (dx * dx + dz * dz + av.pos.y * av.pos.y > AVATAR.plantReach * AVATAR.plantReach) {
+  if (dx * dx + dz * dz + (av.pos.y - world.collision.groundHeight(n.x, n.z)) ** 2 > AVATAR.plantReach * AVATAR.plantReach) {
     reject(world, c.faction, 'That Ley Node is out of reach.');
     return;
   }
@@ -147,6 +153,10 @@ export function cmdPlant(world: World, c: CommandOf<'plant'>): void {
 export function cmdThrow(world: World, c: CommandOf<'throw'>): void {
   const av = world.avatarOf(c.faction);
   if (av.koUntil > 0 || hasEffect(world, av, 'stun') || world.time < av.throwReadyAt) return;
+  if (av.input.sprint && !av.input.throwMode) {
+    reject(world, c.faction, 'Stop sprinting or enter throw mode to throw a Flag.');
+    return;
+  }
   if (av.carried.length === 0) {
     reject(world, c.faction, 'Your quiver is empty.');
     return;
@@ -170,6 +180,7 @@ export function cmdThrow(world: World, c: CommandOf<'throw'>): void {
   flag.pos.z = from.z;
   flag.history.push({ t: world.time, x: from.x, z: from.z, state: 'flying', by: av.id });
   if (flag.history.length > 16) flag.history.splice(0, flag.history.length - 16);
+  observeBossFlagThrow(world, proj);
   av.throwReadyAt = world.time + AVATAR.throwCooldown;
   world.emit({ t: 'flagThrown', flagId: flag.id, faction: av.faction, from: { ...from }, vel: { ...vel } });
 }
@@ -185,7 +196,7 @@ function inPullReach(world: World, av: Avatar, fl: Flag, reach: number): boolean
   const alt = world.lattice.nodes[fl.altNode];
   const ax = alt.x - av.pos.x;
   const az = alt.z - av.pos.z;
-  return ax * ax + az * az + av.pos.y * av.pos.y <= r2;
+  return ax * ax + az * az + (av.pos.y - world.collision.groundHeight(alt.x, alt.z)) ** 2 <= r2;
 }
 
 export function cmdPull(world: World, c: CommandOf<'pull'>): void {
@@ -240,7 +251,7 @@ export function cmdPushGcc(world: World, c: CommandOf<'pushGcc'>): void {
     return;
   }
   const edge = Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) - BUILDINGS.gcc.radius;
-  if (edge > AVATAR.gccPushReach || av.pos.y > 1) {
+  if (edge > AVATAR.gccPushReach || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > 1) {
     reject(world, c.faction, 'Get your hands on the Command Center to push it.');
     return;
   }
@@ -281,7 +292,8 @@ function updateAvatar(world: World, av: Avatar, mind: AvatarMind, dt: number): v
   // The cart moves first so the pusher walks into the space it just left.
   updatePush(world, av, dt, stunned);
   stepAvatarMotion(world, av, av.input, dt);
-  progressAction(world, av, stunned);
+  progressAction(world, av, stunned, dt);
+  if (av.input.throwMode && !stunned && canAct(world, av)) collectLooseFlags(world, av);
   restock(world, av, mind);
   if (av.hp < AVATAR.maxHp && world.time - av.lastHurtAt >= AVATAR.regenDelay) {
     av.hp = Math.min(AVATAR.maxHp, av.hp + AVATAR.regenPerSec * dt);
@@ -306,9 +318,8 @@ export type AvatarMotionState = Pick<
  * input and aim are ignored, the body still falls); action (align / channel root it); effects
  * (stun roots it, knockback slides it, speed effects scale it, expiry judged at world.time);
  * pushing (speed capped to the cart's pace, the pushed cart's own shape is passed through).
- * From `world`: only `time` and `collision`.
- * Writes only av.pos, av.vel, av.onGround, av.yaw and av.pitch: no events, no RNG, no scratch,
- * no allocation.
+ * From `world`: `time`, `collision`, the live boss hull, and the match's jump-height setting.
+ * Writes only av.pos, av.vel, av.onGround, av.yaw and av.pitch: no events or RNG.
  */
 export function stepAvatarMotion(world: World, av: AvatarMotionState, input: AvatarInput, dt: number): void {
   const down = av.koUntil > 0;
@@ -329,7 +340,7 @@ export function stepAvatarMotion(world: World, av: AvatarMotionState, input: Ava
     }
   }
   if (!hasEffect(world, av, 'knockback')) {
-    let speed = (input.sprint ? AVATAR.sprintSpeed : AVATAR.runSpeed) * speedMultiplier(world, av);
+    let speed = (input.sprint && !input.throwMode ? AVATAR.sprintSpeed : AVATAR.runSpeed) * speedMultiplier(world, av);
     if (av.pushing >= 0) speed = Math.min(speed, GCC.pushSpeed);
     const a = AVATAR.accel * (av.onGround ? 1 : AVATAR.airControl) * dt;
     let dvx = wx * speed - av.vel.x;
@@ -347,13 +358,15 @@ export function stepAvatarMotion(world: World, av: AvatarMotionState, input: Ava
     av.vel.z *= k;
   }
   if (input.jump && av.onGround && !held) {
-    av.vel.y = AVATAR.jumpSpeed;
+    // Apex height is proportional to launch velocity squared; 2.0 means twice the height.
+    av.vel.y = AVATAR.jumpSpeed * Math.sqrt(matchSettings(world.options).jumpHeight);
     av.onGround = false;
   }
   av.vel.y -= AVATAR.gravity * dt;
   // The pushed cart leads its pusher; a client's copy of it lags, so it never blocks the pusher.
   const ignore = av.pushing >= 0 ? av.pushing : undefined;
-  const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight, ignore);
+  const res = world.collision.moveCharacter(av.pos, av.vel, dt, AVATAR.radius, AVATAR.height, AVATAR.stepHeight,
+    ignore, bossPlayerHull(world.boss, world.time, world.map.half));
   av.onGround = res.onGround;
   const lim = MAP_HALF - AVATAR.radius;
   if (av.pos.x > lim || av.pos.x < -lim) {
@@ -366,7 +379,7 @@ export function stepAvatarMotion(world: World, av: AvatarMotionState, input: Ava
   }
 }
 
-function progressAction(world: World, av: Avatar, stunned: boolean): void {
+function progressAction(world: World, av: Avatar, stunned: boolean, dt: number): void {
   const a = av.action;
   switch (a.kind) {
     case 'swing': {
@@ -382,14 +395,14 @@ function progressAction(world: World, av: Avatar, stunned: boolean): void {
       if (world.time - a.t >= AVATAR.plantTime) av.action = IDLE;
       return;
     case 'pull':
-      progressPull(world, av, a, stunned);
+      progressPull(world, av, a, stunned, dt);
       return;
     default:
       return;
   }
 }
 
-function progressPull(world: World, av: Avatar, a: Extract<AvatarAction, { kind: 'pull' }>, stunned: boolean): void {
+function progressPull(world: World, av: Avatar, a: Extract<AvatarAction, { kind: 'pull' }>, stunned: boolean, dt: number): void {
   const fl = world.flags.get(a.flagId);
   if (
     stunned ||
@@ -401,6 +414,9 @@ function progressPull(world: World, av: Avatar, a: Extract<AvatarAction, { kind:
     av.action = IDLE;
     return;
   }
+  const rate = defendedPullRate(world, fl, av.faction, world.time - a.t <= dt + 1e-9);
+  // Move the start time forward to keep channel progress (including its visual) at half speed.
+  a.t += Math.min(dt, Math.max(0, world.time - a.t)) * (1 - rate);
   if (world.time - a.t < a.dur) return;
   av.action = IDLE;
   // Into the quiver when there is room; a planted Flag otherwise falls loose (flags.ts).
@@ -428,18 +444,21 @@ function resolveSwing(world: World, av: Avatar): void {
   const ax = av.pos.x;
   const ay = av.pos.y;
   const az = av.pos.z;
+  const boss = world.boss;
+  if (boss && boss.hp > 0 && ay - world.collision.groundHeight(boss.pos.x, boss.pos.z) < (boss.crouched ? 12 : 20) &&
+      inCone(ax, az, fx, fz, cosHalf, boss.pos.x, boss.pos.z, reach + BOSS_RADIUS)) {
+    damageMelee(world, boss.id, AVATAR.swingDamage, av.id);
+  }
   for (const o of world.avatars.values()) {
     if (o.faction === av.faction || o.koUntil > 0 || Math.abs(o.pos.y - ay) > UNIT_VERTICAL_REACH) continue;
     if (!inCone(ax, az, fx, fz, cosHalf, o.pos.x, o.pos.z, reach + AVATAR.radius)) continue;
-    damageEntity(world, o.id, AVATAR.swingDamage, av.id);
-    knockback(world, o.id, av.pos, AVATAR.swingKnockback);
+    if (damageMelee(world, o.id, AVATAR.swingDamage, av.id)) knockback(world, o.id, av.pos, AVATAR.swingKnockback);
   }
-  if (ay < UNIT_VERTICAL_REACH) {
+  {
     for (const h of world.hippies.values()) {
-      if (h.faction === av.faction || h.faction === NEUTRAL || h.status === 'ko') continue;
+      if (h.faction === av.faction || h.faction === NEUTRAL || h.status === 'ko' || Math.abs(ay - world.collision.groundHeight(h.pos.x, h.pos.z) - (h.airborne?.y ?? 0)) > UNIT_VERTICAL_REACH) continue;
       if (!inCone(ax, az, fx, fz, cosHalf, h.pos.x, h.pos.z, reach + HIPPIE.radius)) continue;
-      damageEntity(world, h.id, AVATAR.swingDamage, av.id);
-      knockback(world, h.id, av.pos, AVATAR.swingKnockback);
+      if (damageMelee(world, h.id, AVATAR.swingDamage, av.id)) knockback(world, h.id, av.pos, AVATAR.swingKnockback);
     }
   }
 
@@ -463,6 +482,8 @@ function resolveSwing(world: World, av: Avatar): void {
     }
     if ((cx - ax) * (cx - ax) + (cz - az) * (cz - az) > coarse * coarse) continue;
     pieceSpan(p, span);
+    const base = world.collision.groundHeight(cx, cz);
+    span.y0 += base; span.y1 += base;
     if (span.y1 < ay || span.y0 > top) continue;
     pieceClosest(world, p, ax, az, reachPt);
     if (reachPt.dist > reach || reachPt.dist >= bestD) continue;
@@ -470,9 +491,9 @@ function resolveSwing(world: World, av: Avatar): void {
     target = p.id;
     bestD = reachPt.dist;
   }
-  if (ay < BUILDING_HEIGHT) {
+  {
     for (const b of world.buildings.values()) {
-      if (b.faction === av.faction) continue;
+      if (b.faction === av.faction || ay - world.collision.groundHeight(b.pos.x, b.pos.z) >= BUILDING_HEIGHT) continue;
       buildingClosest(b, ax, az, reachPt);
       if (reachPt.dist > reach || reachPt.dist >= bestD) continue;
       if (!inCone(ax, az, fx, fz, cosHalf, reachPt.x, reachPt.z, Infinity)) continue;
@@ -480,13 +501,13 @@ function resolveSwing(world: World, av: Avatar): void {
       bestD = reachPt.dist;
     }
   }
-  if (target >= 0) damageEntity(world, target, AVATAR.swingPieceDamage, av.id);
+  if (target >= 0) damageMelee(world, target, AVATAR.swingPieceDamage, av.id);
 
-  if (ay >= UNIT_VERTICAL_REACH) return;
+
   let pile: Pile | null = null;
   let pileD = Infinity;
   for (const p of world.piles.values()) {
-    if (p.lumber <= 0) continue;
+    if (p.lumber <= 0 || Math.abs(ay - world.collision.groundHeight(p.pos.x, p.pos.z)) >= UNIT_VERTICAL_REACH) continue;
     const d2 = (p.pos.x - ax) * (p.pos.x - ax) + (p.pos.z - az) * (p.pos.z - az);
     if (d2 >= pileD || !inCone(ax, az, fx, fz, cosHalf, p.pos.x, p.pos.z, reach + PILE_RADIUS)) continue;
     pile = p;
@@ -496,16 +517,25 @@ function resolveSwing(world: World, av: Avatar): void {
   const amount = Math.min(AVATAR.swingLumber, pile.lumber);
   pile.lumber -= amount;
   world.factions[av.faction].lumber += amount;
+  emitMeleeImpact(world, pile.id, av.id);
   world.emit({ t: 'harvest', pileId: pile.id, by: av.id, amount, pos: { x: pile.pos.x, z: pile.pos.z } });
 }
 
-/** One Flag per restockInterval from any own Hearth's stock within restockRadius of its edge. */
+/** Throw mode gathers loose Flags in normal pickup reach, never pulling planted Flags. */
+function collectLooseFlags(world: World, av: Avatar): void {
+  for (const flag of world.flags.values()) {
+    if (av.carried.length >= AVATAR.quiver) break;
+    if (flag.state === 'loose' && inPullReach(world, av, flag, AVATAR.pullReach)) pullFlag(world, flag.id, av.id);
+  }
+}
+
+/** One Flag per restockInterval from own Hearth/Workshop stock within restockRadius of its edge. */
 function restock(world: World, av: Avatar, mind: AvatarMind): void {
-  if (av.carried.length >= AVATAR.quiver || world.time < mind.restockAt || av.pos.y > LEVEL_REACH) return;
-  const reach = BUILDINGS.hearth.radius + AVATAR.restockRadius;
-  for (const hid of world.factions[av.faction].hearthIds) {
-    const h = world.buildings.get(hid);
-    if (!h) continue;
+  if (av.carried.length >= AVATAR.quiver || world.time < mind.restockAt || av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) > LEVEL_REACH) return;
+  for (const h of world.buildings.values()) {
+    if (h.faction !== av.faction || (h.kind !== 'hearth' && h.kind !== 'workshop') || h.built < 1) continue;
+    const hid = h.id;
+    const reach = BUILDINGS[h.kind].radius + AVATAR.restockRadius;
     const dx = h.pos.x - av.pos.x;
     const dz = h.pos.z - av.pos.z;
     if (dx * dx + dz * dz > reach * reach) continue;
@@ -565,13 +595,13 @@ function respawnAvatar(world: World, av: Avatar, mind: AvatarMind): void {
   const r = BUILDINGS.hearth.radius + RESPAWN_GAP;
   let x = hearth.pos.x + Math.sin(toCentre) * r;
   let z = hearth.pos.z + Math.cos(toCentre) * r;
-  for (let i = 1; i < 8 && world.collision.blockedCircle(x, z, AVATAR.radius, 0.05, AVATAR.height); i++) {
+  for (let i = 1; i < 8 && world.collision.blockedCircle(x, z, AVATAR.radius, world.collision.groundHeight(x, z) + 0.05, world.collision.groundHeight(x, z) + AVATAR.height); i++) {
     const a = toCentre + (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * (TAU / 8);
     x = hearth.pos.x + Math.sin(a) * r;
     z = hearth.pos.z + Math.cos(a) * r;
   }
   av.pos.x = x;
-  av.pos.y = 0;
+  av.pos.y = world.collision.groundHeight(x, z);
   av.pos.z = z;
   av.vel.x = 0;
   av.vel.y = 0;
@@ -584,5 +614,5 @@ function respawnAvatar(world: World, av: Avatar, mind: AvatarMind): void {
   av.effects.length = 0;
   av.throwReadyAt = 0;
   mind.restockAt = 0;
-  world.emit({ t: 'respawn', id: av.id, kind: 'avatar', faction: av.faction, pos: { x, y: 0, z } });
+  world.emit({ t: 'respawn', id: av.id, kind: 'avatar', faction: av.faction, pos: { x, y: world.collision.groundHeight(x, z), z } });
 }

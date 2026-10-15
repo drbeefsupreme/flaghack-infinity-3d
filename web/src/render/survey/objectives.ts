@@ -13,12 +13,13 @@
  * (uGlow) and a per-material HDR cap, so a cluster of markers never clips to white.
  */
 import * as THREE from 'three';
+import { groundHeight } from '../../sim/terrain';
 import type { ObjectiveMarker, Session } from '../../game/session';
-import { BUILDING_HEIGHT, BUILDINGS, FLAG_YELLOW, LEVEL_HEIGHT } from '../../sim/constants';
+import { BUILDING_HEIGHT, BUILDINGS, CRYSTAL_HEIGHT, FLAG_YELLOW, LEVEL_HEIGHT } from '../../sim/constants';
 import type { EntityId } from '../../sim/types';
 import type { World } from '../../sim/world';
 import type { SharedRender } from '../context';
-import { GLSL_COMMON, GLSL_FRAG, GLSL_OUTPUT, GLSL_VERT, cornerQuad, surveyMaterial } from './glsl';
+import { GLSL_COMMON, GLSL_FRAG, GLSL_OUTPUT, GLSL_VERT, cornerQuad, cornerGrid, surveyMaterial } from './glsl';
 import type { SurveyMaterialOptions, SurveyUniforms } from './glsl';
 import { InstanceSet, XrayMeshes } from './instances';
 import { LABEL_LIFT_PX, LabelLayer, labelHeightPx } from './labels';
@@ -80,7 +81,7 @@ void main() {
   // Room around the ring for the arrival swell and the pulse echo; areas need none.
   float pad = fhId(iB.x) == 3 ? 1.08 : 1.9;
   vec2 m = aCorner * R * pad;
-  vec4 mv = viewMatrix * vec4(iA.x + m.x, iA.y + 0.08, iA.z + m.y, 1.0);
+  vec4 mv = viewMatrix * vec4(iA.x + m.x, iA.y + fhGround(iA.xz + m) - fhGround(iA.xz) + 0.08, iA.z + m.y, 1.0);
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
   vM = m;
@@ -273,6 +274,7 @@ void main() {
   float rise = 1.0 - (1.0 - iB.y) * (1.0 - iB.y) * (1.0 - iB.y);
   float H = iB.x * rise * (1.0 - iB.z);
   vec3 P = vec3(iA.x + cos(ang) * iA.w, iA.y + aCyl.y * H, iA.z + sin(ang) * iA.w);
+  P.y += fhGround(P.xz) - fhGround(iA.xz);
   vec4 mv = viewMatrix * vec4(P, 1.0);
   gl_Position = projectionMatrix * mv;
   vFogDepth = -mv.z;
@@ -487,7 +489,7 @@ export class ObjectiveFeature {
     this.ground = new MarkerLayer(
       scene,
       shared,
-      cornerQuad([-1, -1, -1, 1, 1, 1, 1, -1]),
+      cornerGrid(24),
       { vertexShader: GROUND_VERT, fragmentShader: GROUND_FRAG, hdrCap: 1.4 },
       6,
     );
@@ -677,7 +679,7 @@ export class ObjectiveFeature {
         // Display positions follow phason flip glides.
         v.x = this.data.dispX[v.node];
         v.z = this.data.dispZ[v.node];
-        v.y = 0;
+        v.y = groundHeight(v.x, v.z, this.world.map.half);
         v.top = FLAG_TOP;
         return true;
       }
@@ -686,7 +688,7 @@ export class ObjectiveFeature {
         if (!v.hasAt) return false;
         v.x = v.atX;
         v.z = v.atZ;
-        v.y = 0;
+        v.y = groundHeight(v.x, v.z, this.world.map.half);
         v.top = 0;
         return true;
       case 'entity':
@@ -714,8 +716,8 @@ export class ObjectiveFeature {
     if (h) {
       v.x = anchor ? anchor.x : h.pos.x;
       v.z = anchor ? anchor.z : h.pos.z;
-      v.y = 0;
-      v.top = anchor ? anchor.y : HIPPIE_TOP;
+      v.y = groundHeight(v.x, v.z, this.world.map.half);
+      v.top = anchor ? anchor.y : v.y + HIPPIE_TOP;
       v.footprint = UNIT_RING;
       return true;
     }
@@ -734,7 +736,7 @@ export class ObjectiveFeature {
         v.x = fl.pos.x;
         v.z = fl.pos.z;
       }
-      v.y = fl.state === 'flying' ? 0 : Math.max(0, fl.pos.y);
+      v.y = fl.state === 'flying' ? groundHeight(v.x, v.z, w.map.half) : fl.pos.y;
       v.top = fl.state === 'flying' ? fl.pos.y + 0.6 : v.y + (fl.state === 'planted' ? FLAG_TOP : 0.6);
       v.footprint = 1;
       return true;
@@ -743,8 +745,8 @@ export class ObjectiveFeature {
     if (b) {
       v.x = b.pos.x;
       v.z = b.pos.z;
-      v.y = 0;
-      v.top = BUILDING_HEIGHT[b.kind];
+      v.y = groundHeight(v.x, v.z, this.world.map.half);
+      v.top = v.y + BUILDING_HEIGHT[b.kind];
       v.footprint = BUILDINGS[b.kind].radius + 0.7;
       return true;
     }
@@ -752,8 +754,8 @@ export class ObjectiveFeature {
     if (pile) {
       v.x = pile.pos.x;
       v.z = pile.pos.z;
-      v.y = 0;
-      v.top = 1.4;
+      v.y = groundHeight(v.x, v.z, this.world.map.half);
+      v.top = v.y + 1.4;
       v.footprint = 2.2;
       return true;
     }
@@ -768,8 +770,8 @@ export class ObjectiveFeature {
         v.x = lat.facets[piece.facet].cx;
         v.z = lat.facets[piece.facet].cz;
       } else return false;
-      v.y = piece.level * LEVEL_HEIGHT;
-      v.top = (piece.level + 1) * LEVEL_HEIGHT;
+      v.y = groundHeight(v.x, v.z, w.map.half) + piece.level * LEVEL_HEIGHT;
+      v.top = groundHeight(v.x, v.z, w.map.half) + (piece.level + 1) * LEVEL_HEIGHT;
       v.footprint = 2.6;
       return true;
     }
@@ -777,17 +779,17 @@ export class ObjectiveFeature {
     if (crystal) {
       v.x = crystal.pos.x;
       v.z = crystal.pos.z;
-      v.y = 0;
-      v.top = 7.5 * Math.max(0.15, crystal.growth);
-      v.footprint = 1.8;
+      v.y = groundHeight(v.x, v.z, this.world.map.half);
+      v.top = v.y + CRYSTAL_HEIGHT * crystal.scale * (0.12 + 0.88 * (1 - (1 - crystal.growth) ** 3));
+      v.footprint = 1.8 * crystal.scale;
       return true;
     }
     const other = w.zones.get(id) ?? w.pings.get(id) ?? w.beacons.get(id);
     if (other) {
       v.x = other.pos.x;
       v.z = other.pos.z;
-      v.y = 0;
-      v.top = 1.2;
+      v.y = groundHeight(v.x, v.z, this.world.map.half);
+      v.top = v.y + 1.2;
       v.footprint = 1.2;
       return true;
     }
@@ -795,7 +797,7 @@ export class ObjectiveFeature {
     if (proj) {
       v.x = proj.pos.x;
       v.z = proj.pos.z;
-      v.y = 0;
+      v.y = groundHeight(v.x, v.z, this.world.map.half);
       v.top = proj.pos.y + 0.6;
       v.footprint = 1;
       return true;

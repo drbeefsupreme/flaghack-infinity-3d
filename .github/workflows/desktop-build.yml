@@ -1,0 +1,114 @@
+name: Build Windows desktop launcher
+
+# Build-only workflow. Releases and update-feed activation require separate approval.
+# GitHub requires the workflow on the default branch for manual dispatch.
+# This exact-message gate permits only the approved initial iteration build.
+on:
+  push:
+    branches:
+      - iteration
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Source/update channel (stable = main; iteration = iteration)'
+        type: choice
+        required: true
+        default: iteration
+        options:
+          - stable
+          - iteration
+      version:
+        description: 'Stable: X.Y.Z; iteration: X.Y.Z-iteration.N (no leading v)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/iteration' &&
+       github.event.head_commit.message == 'Update selected-branch launcher [desktop-build:0.1.2-iteration.1:20261012]')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: web
+    env:
+      FLAGHACK_CHANNEL: ${{ github.event_name == 'push' && 'iteration' || inputs.channel }}
+      DESKTOP_VERSION: ${{ github.event_name == 'push' && '0.1.2-iteration.1' || inputs.version }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out the channel's source branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || (inputs.channel == 'stable' && 'main' || 'iteration') }}
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Validate channel and release version
+        run: |
+          @'
+          const { FLAGHACK_CHANNEL: channel, DESKTOP_VERSION: version } = process.env;
+          const number = '(0|[1-9][0-9]*)';
+          const core = `${number}\\.${number}\\.${number}`;
+          const patterns = {
+            stable: new RegExp(`^${core}$`),
+            iteration: new RegExp(`^${core}-iteration\\.${number}$`),
+          };
+          if (!patterns[channel]?.test(version || '')) {
+            throw new Error('Use stable with X.Y.Z, or iteration with X.Y.Z-iteration.N; no leading v, leading zeroes, or build metadata.');
+          }
+          console.log(`Building ${channel} version ${version}`);
+          '@ | node
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Set artifact version without a commit or tag
+        run: npm version "$env:DESKTOP_VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Test launcher and updater
+        run: npm run desktop:test
+
+      - name: Test game
+        run: npm test -- --maxWorkers=2
+
+      - name: Build game, bundle host, and package unsigned Windows app
+        # desktop:package includes desktop:build and explicitly uses --publish never.
+        run: npm run desktop:package
+
+      - name: Verify expected installer and update metadata
+        run: |
+          $manifest = if ($env:FLAGHACK_CHANNEL -eq 'stable') { 'latest.yml' } else { 'iteration.yml' }
+          $expected = @(
+            "desktop-release/Flaghack-Setup-$env:DESKTOP_VERSION-x64.exe",
+            "desktop-release/Flaghack-Setup-$env:DESKTOP_VERSION-x64.exe.blockmap",
+            "desktop-release/$manifest"
+          )
+          foreach ($file in $expected) {
+            if (-not (Test-Path -LiteralPath $file)) { throw "Missing build output: $file" }
+          }
+
+      - name: Upload build artifacts for review (does not publish updates)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: flaghack-windows-${{ env.FLAGHACK_CHANNEL }}-${{ env.DESKTOP_VERSION }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            web/desktop-release/*.exe
+            web/desktop-release/*.exe.blockmap
+            web/desktop-release/latest.yml
+            web/desktop-release/iteration.yml

@@ -38,6 +38,7 @@ void main() {
     base.x += n.x;
     base.z += n.y;
   }
+  base.y += fhGround(base.xz);
   vec3 p = position;
   float seed = iParam.y;
   if (aPart > 0.5) {

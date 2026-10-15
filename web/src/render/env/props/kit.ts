@@ -39,6 +39,12 @@ export function createBatches(quality: PropBatches['quality']): PropBatches {
   };
 }
 
+/** Tag all subsequently emitted parts, including clutter and cloth, with their obstacle. */
+export function ownProp(out: PropBatches, id: number, attachedTo = -1): void {
+  const owners = [id, attachedTo] as const;
+  for (const batch of [out.solid, out.gloss, out.low, out.cloth, out.lights, out.strings]) batch.owners = owners;
+}
+
 /** Presentation randomness for one obstacle (stable per map seed, independent per purpose). */
 export function obstacleRng(o: Obstacle, salt: string): Rng {
   return new Rng(`${salt}:${o.seed}`);

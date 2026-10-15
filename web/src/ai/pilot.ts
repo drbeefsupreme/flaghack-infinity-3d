@@ -6,17 +6,17 @@
  * chakras and work the Command Table. Every command is pre-checked so none is rejected.
  * Owner: AI agent.
  */
-import { ALIGN_RADIUS, AVATAR, BUILDINGS, GCC, GCC_REACH, HIPPIE, SIM_DT } from '../sim/constants';
+import { ALIGN_RADIUS, AVATAR, BUILDINGS, HIPPIE, LIGHTNING_PULL_MULT, SIM_DT } from '../sim/constants';
 import { TAU } from '../sim/math';
 import type { V2, V3 } from '../sim/math';
 import { GROUND_SHAPE } from '../sim/physics/collision';
 import { alignBlocker, isFlagProtected } from '../sim/systems/abilities';
 import { throwOrigin, throwVelocity } from '../sim/systems/avatars';
-import { nearestHearth, popCap, population, stockAt } from '../sim/systems/economy';
-import { canPlantAt } from '../sim/systems/flags';
-import { gccBlocker } from '../sim/systems/gcc';
+import { nearestHearth, population, popCap, stockAt } from '../sim/systems/economy';
+import { canPlantAt, flagPullDefender } from '../sim/systems/flags';
+import { canRecruit, handFlagBlocker } from '../sim/systems/recruitment';
 import { NEUTRAL } from '../sim/types';
-import type { Avatar, EntityId, GccAction } from '../sim/types';
+import type { Avatar, EntityId } from '../sim/types';
 import type { Brain, PilotTask } from './brain';
 import { SIGHT } from './perception';
 import { MAX_THROW_RANGE, solveThrow } from './ballistics';
@@ -84,7 +84,8 @@ export function pilotTick(b: Brain): void {
   const p = b.pilot;
   const valid = taskValid(b, av, p.task);
   // A restock trip is finished with a full quiver (or an empty stock), not half way.
-  const sticky = valid && p.task.kind === 'restock' && !besieged(b);
+  const sticky = valid && ((p.task.kind === 'restock' && !besieged(b)) ||
+    (p.task.kind === 'pull' && av.action.kind === 'pull' && av.action.flagId === p.task.flagId));
   if ((world.time >= p.taskAt + RETHINK && !sticky) || !valid) {
     p.task = chooseTask(b, av);
     p.taskAt = world.time;
@@ -106,6 +107,14 @@ function besieged(b: Brain): boolean {
 function taskValid(b: Brain, av: Avatar, t: PilotTask): boolean {
   const world = b.world;
   switch (t.kind) {
+    case 'pickup': {
+      const fl = world.flags.get(t.flagId);
+      return !!fl && fl.state === 'loose' && av.carried.length < AVATAR.quiver;
+    }
+    case 'recruit': {
+      const h = world.hippies.get(t.hippieId);
+      return !!h && canRecruit(h) && av.carried.length > 0 && population(world, b.f) < popCap(world, b.f);
+    }
     case 'pull': {
       const fl = world.flags.get(t.flagId);
       return !!fl && fl.state === 'planted' && fl.owner !== b.f && !isFlagProtected(world, fl);
@@ -148,7 +157,7 @@ function chooseTask(b: Brain, av: Avatar): PilotTask {
       for (const id of v.critical) {
         const fl = world.flags.get(id);
         if (!fl || fl.state !== 'planted' || isFlagProtected(world, fl)) continue;
-        const d = (fl.pos.x - v.hx) ** 2 + (fl.pos.z - v.hz) ** 2;
+        const d = ((fl.pos.x - v.hx) ** 2 + (fl.pos.z - v.hz) ** 2) * (flagPullDefender(world, fl, b.f) ? LIGHTNING_PULL_MULT : 1);
         if (d < bestD) {
           bestD = d;
           best = id;
@@ -158,12 +167,38 @@ function chooseTask(b: Brain, av: Avatar): PilotTask {
     }
     return { kind: 'hold' };
   }
+  // Shared-population losses return neutral: rebuild with Flags instead of waiting for respawns.
+  const recruiting = population(world, b.f) < popCap(world, b.f);
+  if (recruiting && av.carried.length > 0) {
+    let target = -1;
+    let distance = v.population < 6 ? SIGHT ** 2 : 10 ** 2;
+    for (const id of v.visibleNeutrals) {
+      const h = world.hippies.get(id);
+      if (!h || !canRecruit(h) || h.carryingFlag !== -1 || h.carryingLumber > 0) continue;
+      const d = (h.pos.x - av.pos.x) ** 2 + (h.pos.z - av.pos.z) ** 2;
+      if (d < distance) { distance = d; target = id; }
+    }
+    if (target >= 0) return { kind: 'recruit', hippieId: target };
+  }
+  if (recruiting && av.carried.length === 0 && v.population < 6 && v.visibleNeutrals.length > 0) {
+    const depot = nearestHearth(world, b.f, av.pos, true);
+    if (depot) return { kind: 'restock', hearthId: depot.id };
+  }
+  if (av.carried.length < AVATAR.quiver) {
+    let pick = -1;
+    let distance = (av.carried.length === 0 ? 20 : 4) ** 2;
+    for (const fl of world.flags.values()) {
+      if (fl.state !== 'loose' || Math.abs(fl.pos.y - av.pos.y) > 1) continue;
+      const d = (fl.pos.x - av.pos.x) ** 2 + (fl.pos.z - av.pos.z) ** 2;
+      if (d < distance) { distance = d; pick = fl.id; }
+    }
+    if (pick >= 0) return { kind: 'pickup', flagId: pick };
+  }
   const homeD = Math.hypot(v.hx - av.pos.x, v.hz - av.pos.z);
   // Rituals and the Command Table wait until the vexillomancer is home anyway.
   if (b.alignWanted && homeD <= ERRAND_RANGE && alignBlocker(world, b.f, b.alignWanted) !== 'Already aligning a chakra.') {
     return { kind: 'align' };
   }
-  if (b.gccWanted) return { kind: 'gcc' };
   // Holding a loop round their Hearth: the Flags it hangs on come first.
   const r = b.target === null ? undefined : b.intel(b.target);
   const holding = (b.posture === 'attack' || b.posture === 'opportunist') && r !== undefined && world.inSurvey(r.facet, b.f);
@@ -315,21 +350,6 @@ function frontFlag(b: Brain, flagIds: readonly EntityId[], hx: number, hz: numbe
   return best;
 }
 
-/** The world may have moved on while the vexillomancer walked to the cart. */
-function gccStillWorth(b: Brain, action: GccAction, target: EntityId | -1, nodes: readonly number[]): boolean {
-  const world = b.world;
-  const g = world.gccOf(b.f);
-  if (!g) return false;
-  if (action === 'simulacra') return nodes.length === 2 && canPlantAt(world, nodes[0], b.f) && canPlantAt(world, nodes[1], b.f);
-  if (action === 'gift') {
-    const h = world.hippies.get(target);
-    if (!h || h.faction !== NEUTRAL || h.koUntil > world.time) return false;
-    if ((h.pos.x - g.pos.x) ** 2 + (h.pos.z - g.pos.z) ** 2 > GCC.giftRadius * GCC.giftRadius) return false;
-    return population(world, b.f) < popCap(world, b.f) && (world.stockCount(b.f) > 0 || world.avatarOf(b.f).carried.length > 0);
-  }
-  return true;
-}
-
 /** The planned node the avatar should take next: assault-loop nodes far from home first. */
 function pickPlantNode(b: Brain, av: Avatar): number {
   const world = b.world;
@@ -379,6 +399,24 @@ function run(b: Brain, av: Avatar): void {
   }
   if (swingAtIntruder(b, av, t)) return;
   switch (t.kind) {
+    case 'pickup': {
+      const fl = world.flags.get(t.flagId);
+      if (!fl || fl.state !== 'loose') return done(b);
+      // Throw mode ends sprinting and automatically collects grounded Flags.
+      moveTo(b, av, fl.pos.x, fl.pos.z, Math.max(0.6, AVATAR.pullReach - 0.8), true);
+      return;
+    }
+    case 'recruit': {
+      const h = world.hippies.get(t.hippieId);
+      if (!h || !canRecruit(h) || av.carried.length === 0) return done(b);
+      if (handFlagBlocker(world, b.f, h.id) === '') {
+        face(b, av, h.pos.x, h.pos.z);
+        world.submit({ t: 'handFlag', faction: b.f, hippieId: h.id });
+        return done(b);
+      }
+      moveTo(b, av, h.pos.x, h.pos.z, Math.max(0.6, AVATAR.pullReach - 0.8));
+      return;
+    }
     case 'pull': {
       const fl = world.flags.get(t.flagId);
       if (!fl) return done(b);
@@ -395,7 +433,7 @@ function run(b: Brain, av: Avatar): void {
     case 'plant': {
       const node = world.lattice.nodes[t.node];
       const d = Math.hypot(node.x - av.pos.x, node.z - av.pos.z);
-      if (d <= PLANT_STAND && av.pos.y < 0.5) {
+      if (d <= PLANT_STAND && av.pos.y - world.collision.groundHeight(av.pos.x, av.pos.z) < 0.5) {
         face(b, av, node.x, node.z);
         if (av.action.kind === 'idle' || av.action.kind === 'channel') {
           world.submit({ t: 'plant', faction: b.f, node: t.node });
@@ -450,26 +488,6 @@ function run(b: Brain, av: Avatar): void {
       b.alignWanted = null;
       return done(b);
     }
-    case 'gcc': {
-      const want = b.gccWanted;
-      const g = world.gccOf(b.f);
-      if (!want || !g) return done(b);
-      const why = gccBlocker(world, b.f, want.action);
-      if (why === '') {
-        stand(b, av);
-        if (gccStillWorth(b, want.action, want.target, want.nodes)) {
-          world.submit({ t: 'gcc', faction: b.f, action: want.action, target: want.target, nodes: want.nodes });
-        }
-        b.gccWanted = null;
-        return done(b);
-      }
-      if (Math.hypot(g.pos.x - av.pos.x, g.pos.z - av.pos.z) > GCC_REACH + BUILDINGS.gcc.radius - 1) {
-        moveTo(b, av, g.pos.x, g.pos.z, GCC_REACH);
-        return;
-      }
-      b.gccWanted = null;
-      return done(b);
-    }
     case 'hold':
       if (Math.hypot(v.hx - av.pos.x, v.hz - av.pos.z) <= HOLD_STAND) stand(b, av);
       else moveTo(b, av, v.hx, v.hz, HOLD_STAND - 1);
@@ -502,7 +520,7 @@ function run(b: Brain, av: Avatar): void {
 
 /** Staff the nearest rival hippie or vexillomancer within reach, when not mid-errand. */
 function swingAtIntruder(b: Brain, av: Avatar, t: PilotTask): boolean {
-  if (t.kind === 'plant' || t.kind === 'align' || t.kind === 'gcc') return false;
+  if (t.kind === 'plant' || t.kind === 'align') return false;
   if (av.action.kind !== 'idle') return false;
   const world = b.world;
   const reach = AVATAR.swingReach + HIPPIE.radius - 0.3;
@@ -566,7 +584,7 @@ function tryThrow(b: Brain, av: Avatar, n: number): boolean {
   const tz = node.z + Math.cos(ang) * err;
   const aim = b.pilot.aim;
   for (const high of [false, true]) {
-    if (!solveThrow(av.pos, tx, 0, tz, high, aim)) continue;
+    if (!solveThrow(av.pos, tx, world.collision.groundHeight(tx, tz), tz, high, aim)) continue;
     if (!clearFlight(b, av, aim.yaw, aim.pitch, tx, tz)) continue;
     send(b, 0, 0, aim.yaw, aim.pitch, false, false);
     world.submit({ t: 'throw', faction: b.f });
@@ -612,7 +630,7 @@ function clearFlight(b: Brain, av: Avatar, yaw: number, pitch: number, tx: numbe
       const near = (hit.x - tx) ** 2 + (hit.z - tz) ** 2 <= AVATAR.throwSnapRadius * AVATAR.throwSnapRadius;
       return near && (hit.shape === GROUND_SHAPE || hit.ny >= 0.7);
     }
-    if (ny <= 0) return (nx - tx) ** 2 + (nz - tz) ** 2 <= AVATAR.throwSnapRadius * AVATAR.throwSnapRadius;
+    if (ny <= col.groundHeight(nx, nz)) return (nx - tx) ** 2 + (nz - tz) ** 2 <= AVATAR.throwSnapRadius * AVATAR.throwSnapRadius;
     x = nx;
     y = ny;
     z = nz;
@@ -621,13 +639,14 @@ function clearFlight(b: Brain, av: Avatar, yaw: number, pitch: number, tx: numbe
 }
 
 /** Path toward (gx, gz); returns true when within `arrive`. */
-function moveTo(b: Brain, av: Avatar, gx: number, gz: number, arrive: number): boolean {
+function moveTo(b: Brain, av: Avatar, gx: number, gz: number, arrive: number, throwMode = false): boolean {
   const world = b.world;
   const p = b.pilot;
   const now = world.time;
   const d = Math.hypot(gx - av.pos.x, gz - av.pos.z);
   if (d <= arrive) {
-    stand(b, av);
+    if (throwMode) send(b, 0, 0, av.input.yaw, 0, false, false, true);
+    else stand(b, av);
     return true;
   }
   const stale = p.path.length === 0 || Math.hypot(gx - p.goalX, gz - p.goalZ) > REPATH_SHIFT || now - p.pathAt > REPATH_AGE;
@@ -663,7 +682,7 @@ function moveTo(b: Brain, av: Avatar, gx: number, gz: number, arrive: number): b
     p.stuckZ = av.pos.z;
     p.stuckAt = now;
   }
-  send(b, wx / l, wz / l, Math.atan2(wx, wz), 0, d > SPRINT_FROM, now < p.jumpUntil);
+  send(b, wx / l, wz / l, Math.atan2(wx, wz), 0, d > SPRINT_FROM && !throwMode, now < p.jumpUntil, throwMode);
   return false;
 }
 
@@ -679,7 +698,7 @@ function face(b: Brain, av: Avatar, x: number, z: number): void {
 }
 
 /** Submit the input if it differs from what the avatar already has. */
-function send(b: Brain, mx: number, mz: number, yaw: number, pitch: number, sprint: boolean, jump: boolean): void {
+function send(b: Brain, mx: number, mz: number, yaw: number, pitch: number, sprint: boolean, jump: boolean, throwMode = false): void {
   const p = b.pilot;
   if (
     Math.abs(mx - p.sentMoveX) < 0.02 &&
@@ -687,7 +706,8 @@ function send(b: Brain, mx: number, mz: number, yaw: number, pitch: number, spri
     Math.abs(yaw - p.sentYaw) < 0.01 &&
     Math.abs(pitch - p.sentPitch) < 0.002 &&
     sprint === p.sentSprint &&
-    jump === p.sentJump
+    jump === p.sentJump &&
+    throwMode === p.sentThrowMode
   ) {
     return;
   }
@@ -697,7 +717,8 @@ function send(b: Brain, mx: number, mz: number, yaw: number, pitch: number, spri
   p.sentPitch = pitch;
   p.sentSprint = sprint;
   p.sentJump = jump;
-  b.world.submit({ t: 'avatarInput', faction: b.f, input: { moveX: mx, moveZ: mz, jump, sprint, yaw, pitch } });
+  p.sentThrowMode = throwMode;
+  b.world.submit({ t: 'avatarInput', faction: b.f, input: { moveX: mx, moveZ: mz, jump, sprint, yaw, pitch, throwMode } });
 }
 
 function dist3(av: Avatar, x: number, y: number, z: number): number {

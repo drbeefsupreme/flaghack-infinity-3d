@@ -2,12 +2,14 @@
  * Session: player-side presentation state (never simulation truth). Shared by game/
  * (controls write it), render/ (reads it) and ui/ (reads + writes panels/tools).
  */
+import { DEFAULT_MATCH } from "../sim/matchSettings";
+import { defaultControls } from "./bindings";
 import type { Severity } from '../sim/events';
 import type { V2, V3 } from '../sim/math';
 import type { BuildingKind, Difficulty, EntityId, FactionId, HippieOrder, PieceKind } from '../sim/types';
 
 /**
- * 'lobby': connected to a host, waiting for the match (the attract burn plays behind it).
+ * 'lobby': configuring a local or hosted match (the attract burn plays behind it).
  * 'paused' online only opens the menu: the host's burn keeps running.
  */
 export type Screen = 'title' | 'lobby' | 'playing' | 'paused' | 'ended';
@@ -31,11 +33,8 @@ export interface ObjectiveMarker {
 export type ViewMode = 'action' | 'command';
 /** Action-mode tool (what LMB / E do). */
 export type ToolKind = 'flag' | 'wall' | 'floor' | 'ramp' | 'demolish' | 'building';
-/**
- * Command View Survey planning tool. 'simulacra' = Flag Simulacra targeting: the next two
- * plan-node clicks become the superposed pair (UI arms it; controls collect + submit).
- */
-export type PlanTool = 'select' | 'node' | 'enclose' | 'pentacle' | 'ring' | 'simulacra';
+/** Command View Survey planning tool. */
+export type PlanTool = 'select' | 'node' | 'enclose' | 'pentacle' | 'ring';
 
 export interface AimInfo {
   /** Throw aim held (RMB) or quick-throw preview. */
@@ -93,11 +92,13 @@ export interface FeedItem {
 }
 
 export interface Settings {
+  match: import("../sim/matchSettings").MatchSettings;
+  controls: import("./bindings").ControlSettings;
   masterVolume: number;
   musicVolume: number;
   sfxVolume: number;
   mouseSensitivity: number;
-  invertY: boolean;
+  invertMouseY: boolean;
   quality: 'low' | 'medium' | 'high';
   showFps: boolean;
   difficulty: Difficulty;
@@ -144,11 +145,13 @@ export class Session {
   feed: FeedItem[] = [];
   camera: CameraState = { yaw: 0, pitch: 0.35, dist: 6.5, cmdX: 0, cmdZ: 0, cmdHeight: 120 };
   settings: Settings = {
+    match: {...DEFAULT_MATCH, active:[...DEFAULT_MATCH.active]},
+    controls: defaultControls(),
     masterVolume: 0.8,
     musicVolume: 0.6,
     sfxVolume: 0.9,
     mouseSensitivity: 1,
-    invertY: false,
+    invertMouseY: false,
     quality: 'high',
     showFps: false,
     difficulty: 'normal',
@@ -156,6 +159,8 @@ export class Session {
   debug = false;
   /** Online spectator: watches without a seat (no gameplay input, free camera). */
   spectator = false;
+  /** Camp chooser owns keyboard/controller focus and keeps the pointer free. */
+  campChoiceOpen = false;
   /** Online: player handles by seat (nameplates, Hearth rail, feed). Empty offline. */
   playerNames: Partial<Record<FactionId, string>> = {};
   /** Online spectator / fallen camp: the faction whose vexillomancer the camera follows ([ and ] cycle), else null. */

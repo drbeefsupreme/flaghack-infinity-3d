@@ -6,6 +6,7 @@
  * hammer strikes (sawdust, sparks); every crafted Flag pops a golden flourish.
  */
 import * as THREE from 'three';
+import { WORKSHOP_FLAG_CAPACITY } from '../../sim/constants';
 import type { GameEvent } from '../../sim/events';
 import type { Building } from '../../sim/types';
 import { BuildingView, DUST_TAN, SPARK_GOLD, type FrameInfo } from './buildingView';
@@ -108,6 +109,7 @@ function buildHammer(mb: ModelBuilder): void {
 export const WORKSHOP_MODEL: ModelRecipe = { name: 'workshop', build: buildWorkshop };
 
 export class WorkshopView extends BuildingView {
+  private readonly stockFlags: THREE.Group[] = [];
   private readonly saw = new THREE.Group();
   private readonly hammer = new THREE.Group();
   private lastProgress = Number.NaN;
@@ -123,9 +125,22 @@ export class WorkshopView extends BuildingView {
     this.hammer.position.set(HAMMER_POS[0], HAMMER_POS[1], HAMMER_POS[2]);
     this.addStatic(kit.model('workshopHammer', buildHammer), this.hammer);
     this.body.add(this.saw, this.hammer);
+    for (let i = 0; i < WORKSHOP_FLAG_CAPACITY; i++) {
+      const flag = new THREE.Group();
+      this.addStatic(kit.model('workshopStockFlag', (mb) => {
+        mb.rod('woodDark', [0, 0, 0], [0, 1.2, 0], 0.018, 5);
+        mb.add('cloth', flagCloth().scale(0.32, 0.32, 1), 0, 1.12, 0);
+      }), flag);
+      flag.position.set(-1.2 + (i % 5) * 0.48, 0.05, 1.5 + Math.floor(i / 5) * 0.25);
+      flag.visible = false;
+      this.body.add(flag);
+      this.stockFlags.push(flag);
+    }
   }
 
   protected override animate(b: Building, f: FrameInfo, active: boolean): void {
+    const stock = f.stock.get(b.id) ?? 0;
+    for (let i = 0; i < this.stockFlags.length; i++) this.stockFlags[i].visible = i < stock;
     const producing = active && !Number.isNaN(this.lastProgress) && b.progress !== this.lastProgress;
     this.lastProgress = b.progress;
     this.working = damp(this.working, producing ? 1 : 0, producing ? 6 : 1.5, f.dt);

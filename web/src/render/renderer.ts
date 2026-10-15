@@ -14,6 +14,7 @@ import { EnvRenderer } from './env/envRenderer';
 import { PostFx } from './post/postfx';
 import { StructuresRenderer } from './structures/structuresRenderer';
 import { SurveyRenderer } from './survey/surveyRenderer';
+import { renderCommandOverlay } from './survey/markedNodes';
 import { VfxRenderer } from './vfx/vfxRenderer';
 
 /**
@@ -159,6 +160,7 @@ export class GameRenderer {
     }
     if (performance.now() < this.warmUntil) return;
     this.post?.render(dt);
+    renderCommandOverlay(this.renderer, this.camera, ctx.shared.commandOverlay);
   }
 
   private updateFx(dt: number): void {

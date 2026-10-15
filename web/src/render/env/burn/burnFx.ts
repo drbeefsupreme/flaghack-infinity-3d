@@ -1,3 +1,4 @@
+import { terrainHeight } from '../terrain';
 /**
  * The Burn's live fire. Everything animates on the GPU from a handful of uniforms; the CPU
  * only writes those uniforms and drives the fire light each frame:
@@ -524,7 +525,7 @@ export class BurnFx {
     const flick = 0.82 + 0.09 * Math.sin(t * 9.1) + 0.06 * Math.sin(t * 15.7 + 1.3) + 0.03 * Math.sin(t * 27.3 + 0.4);
     const strength = Math.min(1.2, burn.uFire.value + drive.flare * 0.5);
     const origin = ctx.world.map.effigy;
-    light.position.set(origin.x + Math.sin(t * 3.3) * 0.3, Math.max(2.5, Math.min(10, top * 0.45)), origin.z + Math.cos(t * 2.9) * 0.3);
+    light.position.set(origin.x + Math.sin(t * 3.3) * 0.3, terrainHeight(origin.x, origin.z, ctx.world.map.half) + Math.max(2.5, Math.min(10, top * 0.45)), origin.z + Math.cos(t * 2.9) * 0.3);
     light.intensity = FIRE_LIGHT_PEAK * strength * flick;
     light.color.setRGB(1, 0.36 + 0.5 * (flick - 0.82), 0.1 + 0.2 * (flick - 0.82));
   }

@@ -20,6 +20,10 @@ import type {
 export type Severity = 'info' | 'good' | 'warn' | 'danger' | 'epic';
 
 export type GameEvent =
+  /** Host-only removal fact; one sound cue per successful scenery impact batch. */
+  | { t: 'sceneryCrushed'; pos: V2; count: number }
+  /** Cosmetic per-prop removal fact. Absolute ground position and full local dimensions. */
+  | { t: 'sceneryDestroyed'; sceneryId: number; pos: V3; size: V3; yaw: number }
   // Flags
   | { t: 'flagPlanted'; flagId: EntityId; node: number; faction: Owner; by: EntityId | -1; pos: V3 }
   | { t: 'flagPulled'; flagId: EntityId; node: number; faction: Owner; prevOwner: Owner; by: EntityId | -1; pos: V3 }
@@ -47,16 +51,22 @@ export type GameEvent =
   // Conquest
   | { t: 'hearthStage'; hearthId: EntityId; faction: Owner; stage: CaptureStage; prev: CaptureStage; attacker: FactionId | null }
   | { t: 'captured'; hearthId: EntityId; from: Owner; to: FactionId; pos: V2 }
-  | { t: 'eliminated'; faction: FactionId; by: FactionId | null }
+  | { t: 'eliminated'; faction: FactionId; by: FactionId | null; cause?: 'boss' }
+  | { t: 'bossEnded'; kind: 'victory' | 'defeat'; winners: FactionId[] }
   /** `reason` 'dawn': no single camp was left at DAWN_TIME and the dominant one was crowned. */
   | { t: 'victory'; faction: FactionId; reason?: 'conquest' | 'dawn' }
   | { t: 'burn' } // The Burn / sudden death begins
   // Units & combat
   | { t: 'swing'; by: EntityId; pos: V3; yaw: number }
   | { t: 'hit'; target: EntityId; by: EntityId | -1; amount: number; pos: V3 }
+  | { t: 'meleeImpact'; impactId: number; target: EntityId; by: EntityId; faction: Owner; pos: V3 }
+  /** Cosmetic live-only break fact; poses/colors are frozen before topology changes. */
+  | { t: 'bossBarrierShattered'; bossId: EntityId; breakId: number; at: number; segments: { edge: number; faction: FactionId; color: number; pos: V3; yaw: number }[] }
+  | { t: 'bossImpact'; bossId: EntityId; by: EntityId; flagId: EntityId; faction: FactionId; pos: V3; headshot: boolean; amount: number }
+  | { t: 'bossFootfall'; bossId: EntityId; pos: V2; heavy: boolean }
   | { t: 'ko'; id: EntityId; kind: 'avatar' | 'hippie'; faction: Owner; by: EntityId | -1; pos: V3 }
   | { t: 'respawn'; id: EntityId; kind: 'avatar' | 'hippie'; faction: Owner; pos: V3 }
-  | { t: 'recruited'; hippieId: EntityId; faction: FactionId; via: 'drumcircle' | 'gift' | 'dialectics' }
+  | { t: 'recruited'; hippieId: EntityId; faction: FactionId; via: 'drumcircle' | 'gcc' | 'hand' | 'throw' | 'dialectics' }
   | { t: 'distracted'; hippieId: EntityId; faction: Owner }
   | { t: 'harvest'; pileId: EntityId; by: EntityId; amount: number; pos: V2 }
   | { t: 'lumberDelivered'; faction: FactionId; amount: number; pos: V2 }
@@ -67,6 +77,8 @@ export type GameEvent =
   | { t: 'buildingDone'; buildingId: EntityId; kind: BuildingKind; faction: Owner; pos: V2 }
   | { t: 'buildingDisabled'; buildingId: EntityId; kind: BuildingKind; faction: Owner; pos: V2 }
   | { t: 'buildingRepaired'; buildingId: EntityId; kind: BuildingKind; faction: Owner; pos: V2 }
+  | { t: 'crystalLightning'; crystalId: EntityId; flagId: EntityId; faction: Owner; from: V3; to: V3 }
+  | { t: 'wardLightning'; buildingId: EntityId; flagId: EntityId; faction: Owner; from: V3; to: V3 }
   | { t: 'wardPulse'; buildingId: EntityId; faction: Owner; pos: V2 }
   // Economy / progression
   | { t: 'brewed'; faction: FactionId; drug: DrugId }

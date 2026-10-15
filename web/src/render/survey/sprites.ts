@@ -42,6 +42,7 @@ void main() {
     vec4 n = fhNode(an);
     p.x += n.x;
     p.z += n.y;
+    p.y += fhGround(p.xz);
   }
   vec4 mv = viewMatrix * vec4(p, 1.0);
   vec4 c = projectionMatrix * mv;

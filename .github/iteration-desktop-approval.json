@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "repository": "elmorei/flaghack-infinity-3d",
+  "version": "0.1.2-iteration.1",
+  "source": "69384d2257787f9dbc2899fea0b3040557a77f30",
+  "run_id": 38198810535,
+  "run_attempt": 1,
+  "workflow_id": 381482608,
+  "artifact_id": 11724302794,
+  "artifact_name": "flaghack-windows-iteration-0.1.2-iteration.1",
+  "zip": {
+    "size": 121801701,
+    "sha256": "bd7a79b05c64994e9bfda4f5a7c0b23fadea7b154c31b92673a97389f70090e2",
+    "sha512": "WZVtdE8iI8vUz+FbfTxpAs7pEyY/emufUtVpOhXDSSusU6TrTDReIJM5PYI+cXrr7xPJfb7+jeYZN/grN04OpA=="
+  },
+  "assets": {
+    "Flaghack-Setup-0.1.2-iteration.1-x64.exe": {
+      "size": 121672452,
+      "sha256": "23fb7bb0215c8ed58e3d1533113cc03ccbcb3c3ddb3afde79544f69601ca9618",
+      "sha512": "7XF09pq5ExKcLNF2SjZdqG0yc4d0+BDvnslCglUImBIEgq0iQOyARCqzB/lzb1by9eEzwqhNjmg+qIxVjYc2PA=="
+    },
+    "Flaghack-Setup-0.1.2-iteration.1-x64.exe.blockmap": {
+      "size": 128358,
+      "sha256": "3e6fdb2baa0873c75cfeca07db99e78b20fbab0854eae88767da68419a0e69e5",
+      "sha512": "KgfoD3xYB/qyHR5DPc/D8LVkWQBJU32aHqs2LLHkK79ShGM01sA0meFtaPqUvdm/0bqtyhXVc1sKdLT9kuXRXw=="
+    },
+    "iteration.yml": {
+      "size": 389,
+      "sha256": "f650bb1eb58bcf3e4f1d67967bfcc8d2608cdf3fa69c7f24d06b5d43f116ca89",
+      "sha512": "F7/3ljRWUtzjYNhXo1/StbaQtQmQ3owfZpJyKhiFHppO+ScCePbFn4YLYDnjYN1ChC8DpwhcIZ2Q1d9cJe+ssA=="
+    }
+  },
+  "launcher_tests": 119,
+  "game_tests": 1271
+}

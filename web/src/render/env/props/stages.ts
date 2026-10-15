@@ -9,6 +9,7 @@
  * emissive strength follows the night.
  */
 import * as THREE from 'three';
+import { ownProp } from './kit';
 import type { Obstacle, SoundCamp } from '../../../sim/map/mapgen';
 import { GlowMode, PartsBuilder } from '../geom';
 import { flat, frameOf, GeoWriter, toWorld, within } from './batch';
@@ -24,6 +25,7 @@ const BLACK = 0x151517;
 const CONE = 0x3a3b40;
 
 export interface StageRig {
+  obstacleId: number;
   /** World-space lens positions of the moving heads on the front truss. */
   fixtures: THREE.Vector3[];
   /** World axes of the stage: across (local +x) and toward the dance floor (local +z). */
@@ -40,6 +42,7 @@ export interface StageRig {
 }
 
 interface SignSpec {
+  obstacleId: number;
   /** World corners: bottom-left, bottom-right, top-right, top-left (seen from the front). */
   corners: THREE.Vector3[];
   normal: THREE.Vector3;
@@ -118,6 +121,7 @@ const FIXTURES = { low: 3, medium: 4, high: 6 };
 export function buildStages(stages: Obstacle[], camps: SoundCamp[], kit: ClutterKit, out: PropBatches): StageBuild {
   const result: StageBuild = { rigs: [], signs: [] };
   for (const o of stages) {
+    ownProp(out, o.id);
     const camp = campFor(o, camps);
     const color = new THREE.Color(camp ? camp.color : o.color);
     const hx = o.hx;
@@ -142,6 +146,7 @@ export function buildStages(stages: Obstacle[], camps: SoundCamp[], kit: Clutter
     for (const dy of [-1, 1]) b.box(sw + 0.16, 0.08, 0.04, color, { y: sy + dy * (sh / 2 + 0.04), z: sz }, { glow: 2.4, glowMode: GlowMode.beat });
     for (const dx of [-1, 1]) b.box(0.08, sh + 0.16, 0.04, color, { x: dx * (sw / 2 + 0.04), y: sy, z: sz }, { glow: 2.4, glowMode: GlowMode.beat });
     result.signs.push({
+      obstacleId: o.id,
       corners: [
         toWorld(frame, -sw / 2, sy - sh / 2, sz + 0.005),
         toWorld(frame, sw / 2, sy - sh / 2, sz + 0.005),
@@ -212,6 +217,7 @@ export function buildStages(stages: Obstacle[], camps: SoundCamp[], kit: Clutter
     }
 
     result.rigs.push({
+      obstacleId: o.id,
       fixtures,
       right: new THREE.Vector3(Math.cos(o.yaw), 0, -Math.sin(o.yaw)),
       forward: new THREE.Vector3(Math.sin(o.yaw), 0, Math.cos(o.yaw)),
@@ -301,7 +307,7 @@ export class StageSigns {
   private material: THREE.MeshStandardMaterial;
   private texture: THREE.CanvasTexture;
 
-  constructor(specs: SignSpec[]) {
+  constructor(private readonly specs: SignSpec[]) {
     const canvas = document.createElement('canvas');
     canvas.width = ROW_W;
     canvas.height = ROW_H * specs.length;
@@ -343,6 +349,15 @@ export class StageSigns {
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.name = 'stage-signs';
     this.mesh.receiveShadow = true;
+  }
+
+  removeScenery(id: number): void {
+    const index = this.mesh.geometry.index!;
+    this.specs.forEach((spec, i) => {
+      if (spec.obstacleId !== id) return;
+      for (let k = 0; k < 6; k++) index.setX(i * 6 + k, i * 4);
+      index.addUpdateRange(i * 6, 6); index.needsUpdate = true;
+    });
   }
 
   /** LED backdrops: readable by day, glowing at night. */

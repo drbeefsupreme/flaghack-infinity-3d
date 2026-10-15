@@ -11,6 +11,10 @@ friends join from their browsers with a password.
 
 > Under no conditions should you attempt to play a game that claims to be Flaghack.
 
+## This fork
+
+This iteration adds camp toggles, 0–5 days or Unlimited, advanced match settings, gamepad input and customizable controls. Zero days starts at The Burn. See [the fork guide](docs/fork-iteration.md).
+
 ## Play
 
 ```sh
@@ -31,8 +35,8 @@ At the title, pick a rival difficulty (Chill / Normal / Hard / Vexillosaint) and
 New here? Start with the **Training Burn** on the title screen. The Vexillosaint, speaking
 from your Geomantic Command Center, walks you through twelve short lessons: moving, planting
 and throwing Flags, Ley Lines, the Survey, implied Flags, the turning Crystal, the Command
-table, building, Crystals and chakras, defending a Hearth, the Overwrite, and the cart's Flag
-Gifts. Each lesson awards a fragment of the **Seal of Flagistan**. Progress is saved in the
+table, building, Crystals and chakras, defending a Hearth, the Overwrite, and recruiting
+Signifiers. Each lesson awards a fragment of the **Seal of Flagistan**. Progress is saved in the
 browser. The lesson panel restarts, skips or revisits any lesson; in the field, Tab frees the
 cursor so you can click it. In a real burn, **Liber HH** (J) explains every rule in lore voice.
 
@@ -42,13 +46,13 @@ cursor so you can click it. In a real burn, **Liber HH** (J) explains every rule
 |---|---|
 | WASD / Space / Shift / Mouse | Move, jump, sprint, look (click to lock the pointer) |
 | Q · RMB hold + LMB | Quick-throw a Flag · aimed throw (it plants on the node it lands near) |
-| E | Plant · hold to pull · at your GCC: Command Table (hold: push the cart) |
+| E | Plant · hold to pull · hold at your GCC to push the cart |
 | LMB | Swing your staff (harvest lumber, bonk rivals) or place the selected piece |
 | Z / X / C / V / B | Tarp Wall / Deck / Ramp / Demolish / camp building |
 | 1–5 | Chakra abilities: Priority Beacon, Forced March, Stabilize Zone, Phason Shift, Omega Pulse |
 | 6 / 7 / 8 | Saffron, Luminous Dust, Acid Cop Vision |
 | G / H / P / T | Rally Signifiers, send followers, D.E.G.E.N. ping, Retransmit "TAKE A SHOT" |
-| Tab | Command View: select and order Signifiers, plan Surveys (N/E/P/R = Node/Enclose/Pentacle/Ring), set camp priorities |
+| Tab | Command View: select and order Signifiers, plan Surveys (N/E/P/R = Node/Enclose/Pentacle/Expand home), set camp priorities |
 | K / J / F1 / L / Esc | Chakras, Liber HH, help, lattice overlay, pause |
 
 ## Hosting a multiplayer burn
@@ -151,10 +155,12 @@ join a local `npm run host`. `npx vitest run server` tests the host over real so
   any one Flag in it; the HUD marks the critical ones.
 - **Signifiers** (hippies) do most of the work. They fetch, plant, chop, defend, raid and
   drum according to your Camp Priorities, and report what they're up to over their
-  **D.E.G.E.N. Beacon** mesh.
-- **The Geomantic Command Center** is a pentagonal push-cart. Its live map tabletop is
-  your Command View. It also does Flag Repair, Flag Gifts (recruit neutrals),
-  Flagellian Dialectics (convert rivals) and Flag Simulacra.
+  **D.E.G.E.N. Beacon** mesh. They form one fixed world population: knockouts respawn
+  neutral. Drum Circles and the GCC recruit nearby neutrals, and handing or throwing a Flag
+  recruits them directly. Recruitment may exceed camp capacity; excess recruits lose attention.
+- **The Geomantic Command Center** is a pentagonal push-cart. Its tabletop displays a live map;
+  open the Command View from anywhere with Tab. It also provides Flag Repair, automatic neutral recruitment,
+  lattice revelation and node observation.
 - **The Burn** comes at 14:00. The effigy burns and capture pressure escalates every two
   minutes. If more than one camp still stands at **Dawn** (30:00), the camp holding the most
   Hearths completes the Survey and wins.
@@ -172,8 +178,6 @@ join a local `npm run host`. `npx vitest run server` tests the host over real so
   tides. A Flag counts as observed when your vexillomancer, GCC, Hearth or Wards are
   near it, or when it has Ley Lines to two other Flags (Canon III). Finished loops are
   therefore tide-proof and half-built ones are not.
-- **Superposition.** A Flag Simulacrum stands on two nodes at once until a rival comes
-  close and collapses it to one.
 - **The implied Flag fractal.** A free node at the exact midpoint of two of your Flags
   holds an implied Flag. This holds at edge scale and at the φ-inflated scale, so
   implications cascade to third order.
@@ -232,3 +236,9 @@ harness `/ratchet` hill-climb. In the browser console, `window.fh` stages scenar
 The repository root still holds the first Godot 4.6 scaffold (`project.godot`, `scripts/`,
 `scenes/`, `tests/`, run with `./scripts/tools/run_gut.sh`). It is superseded by `web/`
 and kept for reference; `web/.gdignore` keeps Godot from scanning the web project.
+
+## Boss audio credits
+
+The boss vocals include recordings by CGEffex (CC BY 4.0), ecfike (CC0), and 123agumon (CC0).
+See [full attribution, source and license links](web/public/audio/boss/CREDITS.md).
+The same credits ship with browser and desktop builds at `audio/boss/CREDITS.md`.

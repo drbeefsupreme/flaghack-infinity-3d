@@ -3,6 +3,7 @@ import type { Command, CommandType } from '../sim/commands';
 import { MAX_CHAT_LENGTH, MAX_CLIENT_MESSAGE_BYTES, MAX_FRAME_COMMANDS, MAX_NAME_LENGTH, PROTOCOL_VERSION } from './protocol';
 import type { ClientMessage } from './protocol';
 import { fitsLattice, parseClientMessage, parseCommand } from './validate';
+import { normalizeMatch } from '../sim/matchSettings';
 
 const INPUT = { moveX: 0.5, moveZ: -1, jump: false, sprint: true, yaw: 1.25, pitch: -0.3 };
 const AT = { x: 10.5, z: -20 };
@@ -10,6 +11,7 @@ const AT = { x: 10.5, z: -20 };
 /** At least one valid sample per Command variant (every HippieOrder kind, sentinel ids). */
 const VALID: Command[] = [
   { t: 'avatarInput', faction: 0, input: INPUT },
+  { t: 'avatarInput', faction: 0, input: { ...INPUT, throwMode: true } },
   { t: 'plant', faction: 1, node: 12 },
   { t: 'throw', faction: 2 },
   { t: 'pull', faction: 3, flagId: 44 },
@@ -40,21 +42,21 @@ const VALID: Command[] = [
   { t: 'align', faction: 0, chakra: 'canton' },
   { t: 'drug', faction: 0, drug: 'acidcop' },
   { t: 'brew', faction: 0, labId: 80, drug: 'dust' },
-  { t: 'gcc', faction: 0, action: 'simulacra', target: -1, nodes: [4, 9] },
-  { t: 'gcc', faction: 0, action: 'gift', target: 52, nodes: [] },
+  { t: 'handFlag', faction: 0, hippieId: 52 },
   { t: 'pushGcc', faction: 0, on: true },
   { t: 'ping', faction: 0, kind: 'sos', at: AT },
   { t: 'retransmit', faction: 0 },
   { t: 'tapBeacon', faction: 0, beaconId: 66 },
 ];
 
-/** Compiler-checked list of every Command type, so a new variant cannot go untested. */
-const COMMAND_TYPES: Record<CommandType, true> = {
+/** Every supported Command type; the retired GCC discriminator is tested as invalid. */
+const COMMAND_TYPES: Record<Exclude<CommandType, 'gcc'>, true> = {
   avatarInput: true,
   plant: true,
   throw: true,
   pull: true,
   swing: true,
+  handFlag: true,
   build: true,
   demolish: true,
   placeBuilding: true,
@@ -67,7 +69,6 @@ const COMMAND_TYPES: Record<CommandType, true> = {
   align: true,
   drug: true,
   brew: true,
-  gcc: true,
   pushGcc: true,
   ping: true,
   retransmit: true,
@@ -76,6 +77,8 @@ const COMMAND_TYPES: Record<CommandType, true> = {
 
 /** Wrong in exactly one way each. */
 const INVALID: [string, unknown][] = [
+  ['retired Dialectics', { t: 'gcc', faction: 0, action: 'dialectics', target: -1, nodes: [] }],
+  ['retired Simulacra', { t: 'gcc', faction: 0, action: 'simulacra', target: -1, nodes: [4, 9] }],
   ['not an object', 'plant'],
   ['an array', [{ t: 'throw', faction: 0 }]],
   ['unknown type', { t: 'teleport', faction: 0 }],
@@ -93,6 +96,7 @@ const INVALID: [string, unknown][] = [
   ['infinite move', { t: 'avatarInput', faction: 0, input: { ...INPUT, moveX: Infinity } }],
   ['NaN yaw', { t: 'avatarInput', faction: 0, input: { ...INPUT, yaw: NaN } }],
   ['jump as string', { t: 'avatarInput', faction: 0, input: { ...INPUT, jump: 'yes' } }],
+  ['throw mode as string', { t: 'avatarInput', faction: 0, input: { ...INPUT, throwMode: 'yes' } }],
   ['input missing pitch', { t: 'avatarInput', faction: 0, input: { moveX: 0, moveZ: 0, jump: false, sprint: false, yaw: 0 } }],
   ['input extra key', { t: 'avatarInput', faction: 0, input: { ...INPUT, fly: true } }],
   ['unknown piece', { t: 'build', faction: 0, kind: 'tower', edge: 1, facet: -1, level: 0, rampEdge: 0 }],
@@ -119,6 +123,8 @@ const INVALID: [string, unknown][] = [
   ['unknown chakra', { t: 'align', faction: 0, chakra: 'heart' }],
   ['unknown drug', { t: 'drug', faction: 0, drug: 'coffee' }],
   ['brew lab as string', { t: 'brew', faction: 0, labId: '80', drug: 'dust' }],
+  ['removed gift action', { t: 'gcc', faction: 0, action: 'gift', target: 52, nodes: [] }],
+  ['invalid handoff target', { t: 'handFlag', faction: 0, hippieId: -1 }],
   ['unknown gcc action', { t: 'gcc', faction: 0, action: 'nuke', target: -1, nodes: [] }],
   ['three simulacrum nodes', { t: 'gcc', faction: 0, action: 'simulacra', target: -1, nodes: [1, 2, 3] }],
   ['pushGcc as number', { t: 'pushGcc', faction: 0, on: 1 }],
@@ -127,7 +133,7 @@ const INVALID: [string, unknown][] = [
 
 /** An input frame carrying `cmds` (raw JSON). */
 function input(cmds: unknown[], seq = 1): string {
-  return JSON.stringify({ t: 'input', seq, input: INPUT, cmds });
+  return JSON.stringify({ t: 'input', inputEpoch: 1, seq, input: INPUT, cmds });
 }
 
 describe('parseCommand', () => {
@@ -137,7 +143,7 @@ describe('parseCommand', () => {
 
   it.each(VALID.map((c) => [`${c.t} ${JSON.stringify(c).slice(0, 60)}`, c] as const))('accepts %s', (_label, cmd) => {
     expect(parseCommand(JSON.parse(JSON.stringify(cmd)))).toEqual(cmd);
-    expect(parseClientMessage(input([cmd]))).toEqual({ t: 'input', seq: 1, input: INPUT, cmds: [cmd] });
+    expect(parseClientMessage(input([cmd]))).toEqual({ t: 'input', inputEpoch: 1, seq: 1, input: INPUT, cmds: [cmd] });
   });
 
   it.each(INVALID)('rejects %s', (_label, value) => {
@@ -153,11 +159,37 @@ describe('parseCommand', () => {
 });
 
 describe('parseClientMessage', () => {
+  it.each([100, 101, 12345, 50000, 1000000])('accepts whole-number boss HP %s through the wire', (bossHp) => {
+    const message = { t: 'settings', settings: { match: normalizeMatch({ bossHp }) } };
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+  });
+  it.each([0, -1, 99, 1000001, 50000.5, '50000', undefined, null, NaN, Infinity, -Infinity])('rejects malformed or out-of-range boss HP %s', (bossHp) => {
+    const message = { t: 'settings', settings: { match: { ...normalizeMatch(), bossHp } } };
+    expect(parseClientMessage(JSON.stringify(message))).toBeNull();
+  });
+  it.each([-1, 0, 1, 2, 3, 4, 5])('accepts and preserves day setting %s through the wire', (days) => {
+    const message = { t: 'settings', settings: { match: normalizeMatch({ days }) } };
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+  });
+  it.each([-2, 6, 0.5, '0', null, NaN, Infinity])('rejects malformed day setting %s', (days) => {
+    const message = { t: 'settings', settings: { match: { ...normalizeMatch(), days } } };
+    expect(parseClientMessage(JSON.stringify(message))).toBeNull();
+  });
+  it('accepts new match options and rejects malformed or out-of-range values', () => {
+    const match = normalizeMatch({ jumpHeight: 1.5, maxSignifiers: 9, structuresBlockFlagPlacement: true });
+    const message = { t: 'settings', settings: { match } };
+    expect(parseClientMessage(JSON.stringify({ ...message, settings: { match: { ...match, bossMode: false } } }))).toMatchObject({ settings: { match: { bossMode: false } } });
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+    for (const patch of [{ jumpHeight: 0 }, { maxSignifiers: 0.5 }, { maxSignifiers: 201 }, { structuresBlockFlagPlacement: 'off' }, { bossMode: 'on' }, { bossMode: 1 }, { bossMode: null }, { bossMode: undefined }]) {
+      expect(parseClientMessage(JSON.stringify({ t: 'settings', settings: { match: { ...match, ...patch } } }))).toBeNull();
+    }
+  });
   const VALID_MESSAGES: ClientMessage[] = [
     { t: 'hello', protocol: PROTOCOL_VERSION, name: 'alice', password: 'saffron-pentacle-42', token: null },
     { t: 'hello', protocol: PROTOCOL_VERSION, name: 'alice', password: '', token: 'ab12' },
     { t: 'seat', seat: 2 },
     { t: 'seat', seat: null },
+    { t: 'bossTakeover', seat: 3 },
     { t: 'ready', ready: true },
     { t: 'settings', settings: { difficulty: 'vexillosaint' } },
     { t: 'settings', settings: { seed: null } },
@@ -165,7 +197,7 @@ describe('parseClientMessage', () => {
     { t: 'start' },
     { t: 'backToLobby' },
     { t: 'chat', text: 'There ought to be flags' },
-    { t: 'input', seq: 7, input: INPUT, cmds: [] },
+    { t: 'input', inputEpoch: 1, seq: 7, input: INPUT, cmds: [] },
     { t: 'ping', id: 3, clientTime: 1234.5 },
   ];
 
@@ -188,6 +220,12 @@ describe('parseClientMessage', () => {
     ['hello fractional protocol', JSON.stringify({ t: 'hello', protocol: 1.5, name: 'a', password: 'b', token: null })],
     ['seat out of range', '{"t":"seat","seat":4}'],
     ['seat as string', '{"t":"seat","seat":"1"}'],
+    ['boss seat null', '{"t":"bossTakeover","seat":null}'],
+    ['boss seat out of range', '{"t":"bossTakeover","seat":4}'],
+    ['boss seat forged source', '{"t":"bossTakeover","seat":2,"from":0}'],
+    ['input without epoch', JSON.stringify({ t: 'input', seq: 1, input: INPUT, cmds: [] })],
+    ['input epoch zero', JSON.stringify({ t: 'input', inputEpoch: 0, seq: 1, input: INPUT, cmds: [] })],
+    ['input fractional epoch', JSON.stringify({ t: 'input', inputEpoch: 1.5, seq: 1, input: INPUT, cmds: [] })],
     ['ready as string', '{"t":"ready","ready":"true"}'],
     ['unknown setting', '{"t":"settings","settings":{"map":"desert"}}'],
     ['unknown difficulty', '{"t":"settings","settings":{"difficulty":"insane"}}'],
@@ -196,7 +234,7 @@ describe('parseClientMessage', () => {
     ['chat too long', JSON.stringify({ t: 'chat', text: 'x'.repeat(MAX_CHAT_LENGTH * 4 + 1) })],
     ['seq 0', input([], 0)],
     ['fractional seq', input([], 1.5)],
-    ['cmds not an array', JSON.stringify({ t: 'input', seq: 1, input: INPUT, cmds: {} })],
+    ['cmds not an array', JSON.stringify({ t: 'input', inputEpoch: 1, seq: 1, input: INPUT, cmds: {} })],
     ['too many cmds', input(Array.from({ length: MAX_FRAME_COMMANDS + 1 }, () => ({ t: 'swing', faction: 0 })))],
     ['one bad cmd among good ones', input([{ t: 'swing', faction: 0 }, { t: 'swing', faction: 9 }])],
     ['infinite clientTime', '{"t":"ping","id":1,"clientTime":1e999}'],
@@ -240,5 +278,16 @@ describe('fitsLattice', () => {
     expect(fitsLattice({ t: 'gcc', faction: 0, action: 'simulacra', target: -1, nodes: [1, 100] }, lat)).toBe(false);
     expect(fitsLattice({ t: 'order', faction: 0, hippies: [1], order: { kind: 'plant', node: 100 } }, lat)).toBe(false);
     expect(fitsLattice({ t: 'order', faction: 0, hippies: [1], order: { kind: 'attack', target: 100000 } }, lat)).toBe(true);
+  });
+});
+
+
+describe('network Flag hoarding threshold', () => {
+  it.each([0, 24, 75, 1000])('accepts threshold %s', (hoardThreshold) => {
+    const message = { t: 'settings', settings: { match: normalizeMatch({ hoardThreshold }) } };
+    expect(parseClientMessage(JSON.stringify(message))).toEqual(message);
+  });
+  it.each([-1, 1001, 3.5, '24', null, undefined])('rejects malformed threshold %s', (hoardThreshold) => {
+    expect(parseClientMessage(JSON.stringify({ t: 'settings', settings: { match: { ...normalizeMatch(), hoardThreshold } } }))).toBeNull();
   });
 });

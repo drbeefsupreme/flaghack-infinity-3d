@@ -3,7 +3,7 @@
  * the host to clients, in which order, and how they are quantized. Only what clients read
  * replicates (render/, ui/, game/, audio/ and the sim helpers they call); host-only data never
  * leaves the host: hippie brains and last-SOS times, Flag histories and planting times, avatar
- * inputs, hearth craft progress, collision shape ids (mirrors register their own), system
+ * movement inputs (sprint/throw-mode intent does replicate), hearth craft progress, collision shape ids (mirrors register their own), system
  * scratch and the RNG. Hippie velocities are not sent either: mirrors derive them from the
  * interpolated motion.
  *
@@ -15,6 +15,9 @@
  * Owner: NetCore agent.
  */
 import type { SurveyState, World } from '../sim/world';
+import { BOSS_ACTIONS } from '../sim/boss';
+import type { BossEyeState, BossState, BossTargetKind } from '../sim/boss';
+import type { V3 } from '../sim/math';
 import { econ } from '../sim/systems/econ/state';
 import { isFactionId } from '../sim/systems/rules/factions';
 import { CHAKRAS, DRUGS, FACTION_IDS, JOBS, NEUTRAL } from '../sim/types';
@@ -329,7 +332,6 @@ const COOLDOWN_KEYS = keysOf<CooldownKey>({
   stabilize: true,
   phason: true,
   omega: true,
-  gift: true,
   dialectics: true,
   simulacra: true,
   retransmit: true,
@@ -774,6 +776,12 @@ const AVATAR_FIELDS: readonly Field<Avatar>[] = [
   idField('pushing', (a) => a.pushing, (a, v) => {
     a.pushing = v;
   }),
+  bool('sprint', (a) => a.input.sprint, (a, v) => {
+    a.input.sprint = v;
+  }),
+  bool('throwMode', (a) => a.input.throwMode === true, (a, v) => {
+    a.input.throwMode = v;
+  }),
 ];
 
 const HIPPIE_FIELDS: readonly Field<Hippie>[] = [
@@ -841,6 +849,17 @@ const HIPPIE_FIELDS: readonly Field<Hippie>[] = [
     h.beacon = v;
   }),
   effectsField<Hippie>(),
+  num('recruitedAt', MS, (h) => h.recruitedAt, (h, v) => { h.recruitedAt = v; }),
+  {
+    key: 'airborne',
+    enc: (h) => h.airborne ? [quant(h.airborne.y, CM), quant(h.airborne.vy, CM)] : null,
+    same: (h, p) => h.airborne ? Array.isArray(p) && p[0] === quant(h.airborne.y, CM) &&
+      p[1] === quant(h.airborne.vy, CM) : p === null,
+    dec: (h, v) => {
+      if (Array.isArray(v)) h.airborne = { y: dequant(v[0], CM), vy: dequant(v[1], CM) };
+      else delete h.airborne;
+    },
+  },
 ];
 
 const BUILDING_FIELDS: readonly Field<Building>[] = [
@@ -923,6 +942,7 @@ const PILE_FIELDS: readonly Field<Pile>[] = [
 ];
 
 const CRYSTAL_FIELDS: readonly Field<Crystal>[] = [
+  num('scale', MILLI, (c) => c.scale, (c, v) => { c.scale = v; }),
   idField('node', (c) => c.node, (c, v) => {
     c.node = v;
   }),
@@ -1074,6 +1094,7 @@ function blankHippie(id: EntityId): Hippie {
     id,
     type: 'hippie',
     faction: NEUTRAL,
+    recruitedAt: 0,
     name: '',
     look: 0,
     pos: { x: 0, z: 0 },
@@ -1124,7 +1145,7 @@ function blankPile(id: EntityId): Pile {
 }
 
 function blankCrystal(id: EntityId): Crystal {
-  return { id, type: 'crystal', node: -1, faction: 0, pos: { x: 0, z: 0 }, bornAt: 0, growth: 0, pentacle: [] };
+  return { id, type: 'crystal', scale: 1, node: -1, faction: 0, pos: { x: 0, z: 0 }, bornAt: 0, growth: 0, pentacle: [] };
 }
 
 function blankProjectile(id: EntityId): Projectile {
@@ -1317,7 +1338,90 @@ export const FACTION_MASK_ALL = (1 << FACTION_FIELDS.length) - 1;
 
 // ── World scalars ────────────────────────────────────────────────────────────
 
+const BOSS_TARGET_KINDS: readonly BossTargetKind[] = ['avatar', 'hippie', 'building', 'piece', 'flag'];
+/** Sub-millimetre beam geometry prevents a far endpoint drifting when quantized. */
+const EYE_GEOMETRY = 1000000;
+const eyeVector = (v: V3 | null): Wire => v ? [quant(v.x, EYE_GEOMETRY), quant(v.y, EYE_GEOMETRY), quant(v.z, EYE_GEOMETRY)] : null;
+function eyeVectorFromWire(v: Wire): V3 | null {
+  return Array.isArray(v) && v.length === 3 ? { x: dequant(v[0], EYE_GEOMETRY), y: dequant(v[1], EYE_GEOMETRY), z: dequant(v[2], EYE_GEOMETRY) } : null;
+}
+function eyeWire(e: BossEyeState): Wire {
+  return [quant(e.nextFireAt, MS), e.chargeAt === null ? null : quant(e.chargeAt, MS),
+    e.firedAt === null ? null : quant(e.firedAt, MS), eyeVector(e.target), eyeVector(e.origin), eyeVector(e.direction), eyeVector(e.impact), e.impactTag, e.route.map(eyeVector), e.sample, [...e.damaged], [...e.knockedFlags]];
+}
+
+/** Boss row is durable world state, never reconstructed from animation events. */
+function bossWire(b: BossState | null): Wire {
+  if (!b) return null;
+  return [b.id, quant(b.pos.x, CM), quant(b.pos.z, CM), quant(b.yaw, MRAD),
+    quant(b.hp, TENTH), quant(b.maxHp, TENTH), quant(b.spawnedAt, MS), b.action,
+    quant(b.actionAt, MS), b.actionSeq, b.hitSeq, b.target ? [b.target.kind, b.target.id] : null,
+    b.focusFaction, b.retaliateId, quant(b.retaliateUntil, MS), quant(b.nextAttackAt, MS),
+    b.deathAt === null ? null : quant(b.deathAt, MS),
+    b.barrier ? [b.barrier.edge, b.barrier.faction, quant(b.barrier.x, CM), quant(b.barrier.z, CM), quant(b.barrier.at, MS)] : null,
+    quant(b.stride, CM), b.held ? [b.held.kind, b.held.id, b.held.faction, quant(b.held.x, CM), quant(b.held.z, CM)] : null, b.crouched, eyeWire(b.eye),
+    b.objectiveAltarId, quant(b.routeStartStride, CM), quant(b.nextSceneryStompStride, CM), quant(b.opportunisticAfter, MS),
+    b.lightning.map(l => [l.kind, l.id, l.faction, eyeVector(l.from), eyeVector(l.to)]), quant(b.interruptImmuneUntil, MS)];
+}
+
+export function bossFromWire(v: Wire): BossState | null {
+  if (!Array.isArray(v) || v.length < 28 || !oneOf(v[7], BOSS_ACTIONS) ||
+      typeof v[27] !== 'number' || !Number.isFinite(v[27]) || v[27] < 0) return null;
+  const target = list(v[11]);
+  const barrier = list(v[17]);
+  const held = list(v[19]);
+  const eye = list(v[21]);
+  if (eye.length !== 12) return null;
+  return {
+    lightning: list(v[26]).flatMap(value => { const a = list(value), from = eyeVectorFromWire(a[3]), to = eyeVectorFromWire(a[4]);
+      return (a[0] === 'ward' || a[0] === 'crystal') && from && to ? [{ kind: a[0], id: int(a[1], -1), faction: faction(a[2]), from, to }] : []; }),
+    id: int(v[0], -1), pos: { x: dequant(v[1], CM), z: dequant(v[2], CM) }, yaw: dequant(v[3], MRAD),
+    hp: dequant(v[4], TENTH), maxHp: dequant(v[5], TENTH), spawnedAt: dequant(v[6], MS), action: v[7],
+    actionAt: dequant(v[8], MS), actionSeq: int(v[9], 0), hitSeq: int(v[10], 0),
+    target: oneOf(target[0], BOSS_TARGET_KINDS) ? { kind: target[0], id: int(target[1], -1) } : null,
+    focusFaction: optFaction(v[12]), retaliateId: typeof v[13] === 'number' ? v[13] : null,
+    objectiveAltarId: typeof v[22] === 'number' ? int(v[22], -1) : null,
+    routeStartStride: dequant(v[23], CM), nextSceneryStompStride: dequant(v[24], CM), opportunisticAfter: dequant(v[25], MS),
+    retaliateUntil: dequant(v[14], MS), nextAttackAt: dequant(v[15], MS),
+    interruptImmuneUntil: dequant(v[27], MS),
+    deathAt: v[16] === null ? null : dequant(v[16], MS),
+    barrier: barrier.length === 5 ? { edge: int(barrier[0], -1), faction: faction(barrier[1]),
+      x: dequant(barrier[2], CM), z: dequant(barrier[3], CM), at: dequant(barrier[4], MS) } : null,
+    stride: dequant(v[18], CM), crouched: v[20] === true,
+    held: oneOf(held[0], BOSS_TARGET_KINDS) ? { kind: held[0], id: int(held[1], -1), faction: owner(held[2]),
+      x: dequant(held[3], CM), z: dequant(held[4], CM) } : null,
+    eye: { nextFireAt: dequant(eye[0], MS), chargeAt: eye[1] === null ? null : dequant(eye[1], MS),
+      firedAt: eye[2] === null ? null : dequant(eye[2], MS), target: eyeVectorFromWire(eye[3]),
+      origin: eyeVectorFromWire(eye[4]), direction: eyeVectorFromWire(eye[5]), impact: eyeVectorFromWire(eye[6]), impactTag: eye[7] === null ? null : int(eye[7], 0),
+      route: list(eye[8]).map(eyeVectorFromWire).filter((p): p is V3 => p !== null), sample: int(eye[9], -1),
+      damaged: ints(eye[10]), knockedFlags: ints(eye[11]) },
+  };
+}
+
 export const WORLD_FIELDS: readonly Field<World>[] = [
+  {
+    key: 'destroyedScenery',
+    enc: (w) => [...w.destroyedScenery].sort((a, b) => a - b),
+    same: (w, prev) => wireEqual([...w.destroyedScenery].sort((a, b) => a - b), prev),
+    dec: (w, v) => { w.destroyedScenery = new Set(ints(v).filter((id) => id >= 0 &&
+      w.map.obstacles.some((o) => o.id === id && o.kind !== 'effigy'))); },
+  },
+  {
+    key: 'boss',
+    enc: (w) => bossWire(w.boss),
+    same: (w, prev) => wireEqual(bossWire(w.boss), prev),
+    dec: (w, v) => { w.boss = bossFromWire(v); },
+  },
+  {
+    key: 'bossOutcome',
+    enc: (w) => w.bossOutcome ? [w.bossOutcome.kind, [...w.bossOutcome.winners], quant(w.bossOutcome.at, MS)] : null,
+    same: (w, p) => w.bossOutcome ? Array.isArray(p) && p[0] === w.bossOutcome.kind &&
+      wireEqual(p[1], w.bossOutcome.winners) && p[2] === quant(w.bossOutcome.at, MS) : p === null,
+    dec: (w, v) => {
+      w.bossOutcome = Array.isArray(v) && (v[0] === 'victory' || v[0] === 'defeat')
+        ? { kind: v[0], winners: ints(v[1]).filter(isFactionId), at: dequant(v[2], MS) } : null;
+    },
+  },
   choice('phase', PHASES, (w) => w.phase, (w, v) => {
     w.phase = v;
   }),
@@ -1327,6 +1431,12 @@ export const WORLD_FIELDS: readonly Field<World>[] = [
   bool('suddenDeath', (w) => w.suddenDeath, (w, v) => {
     w.suddenDeath = v;
   }),
+  {
+    key: 'effigyRevealedAt',
+    enc: (w) => w.effigyRevealedAt === null ? null : quant(w.effigyRevealedAt, MS),
+    same: (w, prev) => (w.effigyRevealedAt === null ? null : quant(w.effigyRevealedAt, MS)) === prev,
+    dec: (w, v) => { w.effigyRevealedAt = typeof v === 'number' && Number.isFinite(v) ? v / MS : null; },
+  },
   num('tideNextAt', MS, (w) => w.tide.nextAt, (w, v) => {
     w.tide.nextAt = v;
   }),

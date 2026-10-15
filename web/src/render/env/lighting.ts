@@ -1,12 +1,14 @@
 /**
  * Scene lights: hemisphere sky/ground fill, one directional sun/moon light with a shadow map
  * that follows the camera's focus (texel-snapped so shadows don't swim), and the effigy's
- * fire light. The light count never changes during a match (the fire light exists from the
- * start at intensity 0), so no material ever recompiles mid-game.
+ * fire light, and a gentle occasional storm light during the boss fight. The light count
+ * never changes during a match (fire/storm lights start at intensity 0), so changing their
+ * intensity does not recompile materials mid-game.
  */
 import * as THREE from 'three';
 import type { RenderContext } from '../context';
 import type { DayState, EnvPart } from './envTypes';
+import { bossLightningLevel, BOSS_LIGHTNING_INTENSITY } from './bossLightning';
 
 interface ShadowTier {
   mapSize: number;
@@ -29,6 +31,7 @@ export class EnvLighting implements EnvPart {
   private day: DayState;
   private hemi: THREE.HemisphereLight;
   private sun: THREE.DirectionalLight;
+  private storm: THREE.PointLight;
   private tier: ShadowTier | null;
   private radius = 0;
   // Scratch (no per-frame allocation).
@@ -56,7 +59,11 @@ export class EnvLighting implements EnvPart {
     }
     this.fireLight = new THREE.PointLight(0xff7a2a, 0, 140, 1.4);
     this.fireLight.position.set(0, 12, 0);
-    root.add(this.hemi, this.sun, this.sun.target, this.fireLight);
+    // Real incident light keeps the boss's source colours, roughness, and metal highlights.
+    // Local falloff illuminates the character and nearby ground, without a screen flash.
+    this.storm = new THREE.PointLight(0xdbe8ff, 0, 120, 2);
+    this.storm.name = 'boss-storm-light';
+    root.add(this.hemi, this.sun, this.sun.target, this.fireLight, this.storm);
     // The hemisphere light is fixed and placeSun() recomposes the sun pair itself; the fire
     // light keeps auto updates because the Burn moves it every frame.
     for (const o of [this.hemi, this.sun, this.sun.target]) {
@@ -73,6 +80,11 @@ export class EnvLighting implements EnvPart {
     this.sun.color.copy(day.lightColor);
     this.sun.intensity = day.lightIntensity;
     this.placeSun();
+    const { world, session } = this.ctx;
+    const boss = world.boss;
+    const inFight = session.screen === 'playing' || session.screen === 'paused';
+    this.storm.intensity = (inFight ? bossLightningLevel(boss, world.time) : 0) * BOSS_LIGHTNING_INTENSITY;
+    if (boss) this.storm.position.set(boss.pos.x + 24, 38, boss.pos.z + 18);
   }
 
   /** Centre the light (and its shadow box) on the camera's focus, snapped to shadow texels. */
@@ -120,5 +132,6 @@ export class EnvLighting implements EnvPart {
     this.sun.dispose();
     this.hemi.dispose();
     this.fireLight.dispose();
+    this.storm.dispose();
   }
 }

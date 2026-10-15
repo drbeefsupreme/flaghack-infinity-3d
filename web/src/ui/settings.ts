@@ -1,16 +1,21 @@
+import { DEFAULT_MATCH, UNLIMITED_DAYS, normalizeMatch } from "../sim/matchSettings";
+import { normalizeControls } from "../game/bindings";
+import { controlSettings } from "./controlSettings";
 /**
  * Settings panel (session.panels.settings; from title or pause): master/music/sfx volume,
- * mouse sensitivity, invert Y, render quality, FPS overlay. Values write straight into
+ * mouse sensitivity, separate mouse/gamepad look inversion, render quality, FPS overlay. Values write straight into
  * session.settings (audio/controls/renderer read them live) and persist in localStorage.
  */
 import type { Settings } from '../game/session';
 import type { World } from '../sim/world';
 import { DIFFICULTIES } from './catalog';
 import type { UiHost, UiPart } from './core';
-import { button, el, setClass, setText, show } from './dom';
+import { button, el, setAttr, setClass, setText, show } from './dom';
 import { iconSvg } from './icons';
 
 const STORAGE_KEY = 'fh.settings.v1';
+/** v2 separated zero days from Unlimited; v3 retired the encounter controls. */
+const MATCH_SETTINGS_VERSION = 3;
 const QUALITIES: readonly Settings['quality'][] = ['low', 'medium', 'high'];
 
 type RangeKey = 'masterVolume' | 'musicVolume' | 'sfxVolume' | 'mouseSensitivity';
@@ -41,11 +46,26 @@ export function loadSettings(target: Settings): void {
   }
   if (typeof raw !== 'object' || raw === null) return;
   const src: Record<string, unknown> = { ...raw };
+  const match = src.match;
+  const version = typeof src.matchSettingsVersion === 'number' && Number.isFinite(src.matchSettingsVersion) ? src.matchSettingsVersion : 0;
+  // Before v2, saved zero days meant Unlimited, not an immediate Burn.
+  target.match = normalizeMatch(version < 2 && typeof match === 'object' && match !== null && 'days' in match && match.days === 0
+    ? { ...match, days: UNLIMITED_DAYS }
+    : match as never);
+  // Retired UI values must not leave an invisible disabled or test-health encounter.
+  // Scope this upgrade to old local saves; explicit current and network options still work.
+  if (version < 3) {
+    target.match.bossMode = DEFAULT_MATCH.bossMode;
+    target.match.bossHp = DEFAULT_MATCH.bossHp;
+  }
+  target.controls = normalizeControls(src.controls);
   for (const r of RANGES) {
     const v = src[r.key];
     if (typeof v === 'number' && Number.isFinite(v)) target[r.key] = Math.min(r.max, Math.max(r.min, v));
   }
-  if (typeof src.invertY === 'boolean') target.invertY = src.invertY;
+  // Keep the previous general inversion preference for the mouse only.
+  const invertMouseY = typeof src.invertMouseY === 'boolean' ? src.invertMouseY : src.invertY;
+  if (typeof invertMouseY === 'boolean') target.invertMouseY = invertMouseY;
   if (typeof src.showFps === 'boolean') target.showFps = src.showFps;
   const q = QUALITIES.find((x) => x === src.quality);
   if (q) target.quality = q;
@@ -55,7 +75,7 @@ export function loadSettings(target: Settings): void {
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...s, matchSettingsVersion: MATCH_SETTINGS_VERSION }));
   } catch {
     // Private mode / quota: settings still apply for this session.
   }
@@ -71,7 +91,8 @@ export class SettingsPanel implements UiPart {
   private host: UiHost;
   private root: HTMLElement;
   private ranges: RangeRow[] = [];
-  private invert: HTMLButtonElement;
+  private invertMouse: HTMLButtonElement;
+  private invertPad: HTMLButtonElement;
   private fps: HTMLButtonElement;
   private quality = new Map<Settings['quality'], HTMLButtonElement>();
   private lastSaved = '';
@@ -102,18 +123,34 @@ export class SettingsPanel implements UiPart {
       this.ranges.push({ def, input, val });
     }
 
-    el('label', 'set-l', grid, 'Invert Y');
-    this.invert = button(
+    el('label', 'set-l', grid, 'Invert mouse');
+    this.invertMouse = button(
       'toggle',
       grid,
       '',
       () => {
         const st = this.host.app.session.settings;
-        st.invertY = !st.invertY;
+        st.invertMouseY = !st.invertMouseY;
         this.persist();
       },
       'toggle',
     );
+    this.invertMouse.setAttribute('aria-label', 'Invert mouse');
+    el('span', 'set-v', grid, '');
+
+    el('label', 'set-l', grid, 'Invert gamepad');
+    this.invertPad = button(
+      'toggle',
+      grid,
+      '',
+      () => {
+        const controls = this.host.app.session.settings.controls;
+        controls.invertPadY = !controls.invertPadY;
+        this.persist();
+      },
+      'toggle',
+    );
+    this.invertPad.setAttribute('aria-label', 'Invert gamepad');
     el('span', 'set-v', grid, '');
 
     el('label', 'set-l', grid, 'Quality');
@@ -149,6 +186,7 @@ export class SettingsPanel implements UiPart {
     );
     el('span', 'set-v', grid, '');
 
+    controlSettings(box,host.app.session.settings,()=>this.persist());
     const foot = el('div', 'modal-foot', box);
     el('span', 'panel-hint', foot, 'Quality applies to the next Survey you begin.');
     button('btn btn-primary', foot, 'Done', () => this.close(), 'back');
@@ -176,12 +214,16 @@ export class SettingsPanel implements UiPart {
       if (document.activeElement !== r.input && Number(r.input.value) !== v) r.input.value = String(v);
       setText(r.val, r.def.format(v));
     }
-    setText(this.invert, st.invertY ? 'On' : 'Off');
-    setClass(this.invert, 'on', st.invertY);
+    setText(this.invertMouse, st.invertMouseY ? 'On' : 'Off');
+    setClass(this.invertMouse, 'on', st.invertMouseY);
+    setAttr(this.invertMouse, 'aria-pressed', String(st.invertMouseY));
+    setText(this.invertPad, st.controls.invertPadY ? 'On' : 'Off');
+    setClass(this.invertPad, 'on', st.controls.invertPadY);
+    setAttr(this.invertPad, 'aria-pressed', String(st.controls.invertPadY));
     setText(this.fps, st.showFps ? 'On' : 'Off');
     setClass(this.fps, 'on', st.showFps);
     for (const [q, b] of this.quality) setClass(b, 'on', st.quality === q);
-    // Difficulty is picked on the title screen but persisted with the rest.
+    // Match settings are picked in the lobby and persisted with the rest.
     this.persist();
   }
 

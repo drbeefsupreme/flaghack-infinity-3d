@@ -44,7 +44,7 @@ export function placeAvatar(world: World, f: FactionId, x: number, z: number): v
   const at = world.nav.nearestWalkable(x, z);
   av.pos.x = at.x;
   av.pos.z = at.z;
-  av.pos.y = 0;
+  av.pos.y = world.collision.groundHeight(at.x, at.z);
   av.vel.x = 0;
   av.vel.y = 0;
   av.vel.z = 0;

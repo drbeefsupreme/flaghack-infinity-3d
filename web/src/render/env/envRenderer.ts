@@ -1,3 +1,5 @@
+import { burnTime } from "../../sim/matchSettings";
+import { worldDayClock } from '../../sim/dayCycle';
 /**
  * Environment: sky, sun/moon, day–night cycle, fog, ground (grass/dirt/roads/mud/pond),
  * map props (tents, domes, art, porta rows, trees, sound camps with lights, the Flag effigy
@@ -22,7 +24,9 @@ import { AmbientParticles } from './particles';
 import { LumberPiles } from './piles/lumberPiles';
 import { PropField } from './props/propField';
 import { SkyDome } from './sky';
+import { BurnRain } from './rain';
 import { terrainHeight } from './terrain';
+import { bossAwakeningExposure, bossAwakeningLevel } from '../../sim/bossPresentation';
 import { ATTRACT_CLOCK, computeDayState, createDayState } from './timeOfDay';
 
 /** Ambient warmth the fire adds to the hemisphere ground colour during The Burn. */
@@ -79,7 +83,7 @@ export class EnvRenderer implements RenderModule {
     const ground = new Ground(env);
     this.parts = [lighting, new SkyDome(env), ground];
     if (ctx.quality === 'high') this.parts.push(new GrassField(env, ground.typeTexture));
-    this.parts.push(new PropField(env), new Effigy(env), new LumberPiles(env), new AmbientParticles(env, ground.typeTexture));
+    this.parts.push(new PropField(env), new Effigy(env), new LumberPiles(env), new AmbientParticles(env, ground.typeTexture), new BurnRain(env));
   }
 
   update(dt: number): void {
@@ -106,12 +110,12 @@ export class EnvRenderer implements RenderModule {
   private syncDay(): void {
     const { ctx, env } = this;
     const world = ctx.world;
-    const day = computeDayState(ctx.session.screen === 'title' ? ATTRACT_CLOCK : world.time, env.day);
+    const day = computeDayState(ctx.session.screen === 'title' ? ATTRACT_CLOCK : worldDayClock(world), env.day);
 
     const burn = env.burn;
     if (world.suddenDeath && !burn.active) {
       burn.active = true;
-      burn.startedAt = burnStartFor(world.time);
+      burn.startedAt = world.options.mode === "tutorial" ? burnStartFor(world.time) : burnTime(world.options);
     }
     burn.elapsed = burn.active ? Math.max(0, world.time - burn.startedAt) : 0;
     burn.progress = Math.min(1, burn.elapsed / BURN_CHAR_SECONDS);
@@ -138,7 +142,8 @@ export class EnvRenderer implements RenderModule {
     this.fog.color.copy(day.fogColor);
     this.fog.near = day.fogNear + lift * 0.9;
     this.fog.far = day.fogFar + lift * 1.6;
-    ctx.renderer.toneMappingExposure = day.exposure;
+    const inMatch = ctx.session.screen === 'playing' || ctx.session.screen === 'paused';
+    ctx.renderer.toneMappingExposure = day.exposure * bossAwakeningExposure(inMatch ? bossAwakeningLevel(world) : 0);
     ctx.sunDir.copy(day.lightDir);
     ctx.daylight = day.daylight;
   }

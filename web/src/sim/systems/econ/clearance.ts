@@ -114,7 +114,7 @@ function inWater(map: MapLayout, x: number, z: number): boolean {
  * static obstacle, or stand in the pond?
  */
 export function segmentClearance(
-  map: MapLayout,
+  world: World,
   ax: number,
   az: number,
   bx: number,
@@ -122,11 +122,14 @@ export function segmentClearance(
   halfWidth: number,
   y0: number,
 ): MapClearance {
+  const map = world.map;
   const mx = (ax + bx) / 2;
   const mz = (az + bz) / 2;
   const reach = Math.hypot(bx - ax, bz - az) / 2 + halfWidth;
   for (const o of map.obstacles) {
-    if (o.height <= y0) continue;
+    if (world.destroyedScenery.has(o.id)) continue;
+    if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
+    if (world.collision.groundHeight(o.x, o.z) + o.height <= world.collision.groundHeight(mx, mz) + y0) continue;
     const bound = obstacleBound(o) + reach;
     if ((o.x - mx) ** 2 + (o.z - mz) ** 2 > bound * bound) continue;
     if (o.shape === 'circle') {
@@ -155,7 +158,8 @@ export function segmentClearance(
 }
 
 /** A convex footprint (deck slab, ramp) over heights [y0, ∞): static obstacle or pond in the way? */
-export function polygonClearance(map: MapLayout, xs: number[], zs: number[], y0: number): MapClearance {
+export function polygonClearance(world: World, xs: number[], zs: number[], y0: number): MapClearance {
+  const map = world.map;
   const n = xs.length;
   let cx = 0;
   let cz = 0;
@@ -168,7 +172,9 @@ export function polygonClearance(map: MapLayout, xs: number[], zs: number[], y0:
   let reach = 0;
   for (let i = 0; i < n; i++) reach = Math.max(reach, Math.hypot(xs[i] - cx, zs[i] - cz));
   for (const o of map.obstacles) {
-    if (o.height <= y0) continue;
+    if (world.destroyedScenery.has(o.id)) continue;
+    if (o.kind === 'effigy' && world.effigyRevealedAt !== null) continue;
+    if (world.collision.groundHeight(o.x, o.z) + o.height <= world.collision.groundHeight(cx, cz) + y0) continue;
     const bound = obstacleBound(o) + reach;
     if ((o.x - cx) ** 2 + (o.z - cz) ** 2 > bound * bound) continue;
     if (o.shape === 'circle') {
@@ -192,7 +198,7 @@ export function polygonClearance(map: MapLayout, xs: number[], zs: number[], y0:
 export function segmentHitsBuilding(world: World, ax: number, az: number, bx: number, bz: number, halfWidth: number, y0: number): boolean {
   for (const b of world.buildings.values()) {
     if (isCollapsed(b)) continue;
-    if (BUILDING_HEIGHT[b.kind] <= y0) continue;
+    if (world.collision.groundHeight(b.pos.x, b.pos.z) + BUILDING_HEIGHT[b.kind] <= world.collision.groundHeight((ax + bx) / 2, (az + bz) / 2) + y0) continue;
     if (distToSegment(b.pos.x, b.pos.z, ax, az, bx, bz) < BUILDINGS[b.kind].radius + halfWidth) return true;
   }
   return false;
@@ -202,7 +208,7 @@ export function segmentHitsBuilding(world: World, ax: number, az: number, bx: nu
 export function polygonHitsBuilding(world: World, xs: number[], zs: number[], y0: number): boolean {
   for (const b of world.buildings.values()) {
     if (isCollapsed(b)) continue;
-    if (BUILDING_HEIGHT[b.kind] <= y0) continue;
+    if (world.collision.groundHeight(b.pos.x, b.pos.z) + BUILDING_HEIGHT[b.kind] <= world.collision.groundHeight(xs.reduce((a, x) => a + x, 0) / xs.length, zs.reduce((a, z) => a + z, 0) / zs.length) + y0) continue;
     if (circleHitsPolygon(b.pos.x, b.pos.z, BUILDINGS[b.kind].radius, xs, zs)) return true;
   }
   return false;

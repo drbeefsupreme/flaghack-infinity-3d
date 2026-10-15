@@ -12,6 +12,7 @@ import type { V2 } from '../sim/math';
 import { isCollapsed } from '../sim/systems/buildings';
 import type { Avatar, Building, FactionId } from '../sim/types';
 import type { World } from '../sim/world';
+import { effigyCameraTarget } from './effigyCamera';
 import type { CameraState } from './session';
 
 const DEG = Math.PI / 180;
@@ -127,6 +128,10 @@ export class CameraRig {
   readonly origin = new THREE.Vector3();
   readonly dir = new THREE.Vector3();
 
+  private effigyLocked = false;
+  private effigyTurn = 0;
+  private effigyYaw = 0;
+  private effigyPitch = 0;
   private mode: RigMode | null = null;
   private hasPose = false;
   private from = newPose();
@@ -165,11 +170,13 @@ export class CameraRig {
   setMode(mode: RigMode, dur: number): void {
     if (mode === this.mode) return;
     this.mode = mode;
+    this.effigyLocked = false;
     this.startTransition(dur);
   }
 
   /** New world: drop smoothing state that refers to the old one (the on-screen pose is kept). */
   resetFollow(): void {
+    this.effigyLocked = false;
     this.pivotReady = false;
     this.focusReady = false;
     this.wasDown = false;
@@ -256,6 +263,12 @@ export class CameraRig {
     sprinting: boolean,
     dt: number,
   ): void {
+    const focus = effigyCameraTarget(world);
+    if (!focus && this.effigyLocked) {
+      this.effigyLocked = false;
+      // Command/Flagless views return to their own pose; action retains the focused heading.
+      this.startTransition(0.65);
+    }
     const down = av.koUntil > world.time;
     if (down !== this.wasDown) {
       this.wasDown = down;
@@ -268,18 +281,50 @@ export class CameraRig {
 
     if (blend <= 0) copyPose(this.near, this.base);
     else {
-      this.commandPose(cam, dt, this.far);
+      this.commandPose(world, cam, dt, this.far);
       if (dive) {
         if (blend < DIVE_CUT) {
-          this.tablePose(dive, this.tmp);
+          this.tablePose(world, dive, this.tmp);
           blendPose(this.near, this.tmp, ease(blend / DIVE_CUT), this.base);
         } else {
-          this.tableWorldPose(this.tmp);
+          this.tableWorldPose(world, this.tmp);
           blendPose(this.tmp, this.far, ease((blend - DIVE_CUT) / (1 - DIVE_CUT)), this.base);
         }
       } else blendPose(this.near, this.far, ease(blend), this.base);
     }
     this.finish(dt);
+    if (focus) {
+      const p = this.pose;
+      if (!this.effigyLocked) {
+        this.effigyLocked = true;
+        this.effigyTurn = 0;
+        this.effigyYaw = p.yaw;
+        this.effigyPitch = p.pitch;
+        // The emergence owns orientation until release, including an interrupted mode blend.
+        this.transDur = 0;
+      }
+      this.effigyTurn += Math.max(0, dt);
+      // Rotate at the current camera location; do not teleport the player's viewpoint.
+      const cp = Math.cos(p.pitch);
+      const cx = p.tx - Math.sin(p.yaw) * cp * p.dist;
+      const cy = p.ty - Math.sin(p.pitch) * p.dist;
+      const cz = p.tz - Math.cos(p.yaw) * cp * p.dist;
+      const dx = focus.x - cx, dy = focus.y - cy, dz = focus.z - cz;
+      const yaw = Math.atan2(dx, dz), pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      let arc = (yaw - this.effigyYaw) % (2 * Math.PI);
+      if (arc > Math.PI) arc -= 2 * Math.PI;
+      if (arc < -Math.PI) arc += 2 * Math.PI;
+      const turn = ease(this.effigyTurn / 1.1);
+      p.yaw = this.effigyYaw + arc * turn;
+      p.pitch = this.effigyPitch + (pitch - this.effigyPitch) * turn;
+      p.tx = cx + Math.sin(p.yaw) * Math.cos(p.pitch) * p.dist;
+      p.ty = cy + Math.sin(p.pitch) * p.dist;
+      p.tz = cz + Math.cos(p.yaw) * Math.cos(p.pitch) * p.dist;
+      if (!down && blend === 0) {
+        cam.yaw = p.yaw;
+        cam.pitch = -p.pitch;
+      }
+    }
   }
 
   /** Write the pose (plus trauma shake) into the three.js camera. */
@@ -381,7 +426,7 @@ export class CameraRig {
     const hx = hearth ? hearth.pos.x : av.pos.x;
     const hz = hearth ? hearth.pos.z : av.pos.z;
     out.tx = av.pos.x + (hx - av.pos.x) * k;
-    out.ty = av.pos.y * (1 - k) + 1;
+    out.ty = av.pos.y * (1 - k) + world.collision.groundHeight(hx, hz) * k + 1;
     out.tz = av.pos.z + (hz - av.pos.z) * k;
     out.yaw = this.orbitYaw;
     out.pitch = -0.62;
@@ -389,14 +434,14 @@ export class CameraRig {
     out.fov = FOV_DEATH;
   }
 
-  private commandPose(cam: CameraState, dt: number, out: RigPose): void {
+  private commandPose(world: World, cam: CameraState, dt: number, out: RigPose): void {
     // Glide toward the session target so minimap jumps animate; wheel/pan stay responsive.
     const k = Math.min(1, dt * 12);
     this.cmdX += (cam.cmdX - this.cmdX) * k;
     this.cmdZ += (cam.cmdZ - this.cmdZ) * k;
     this.cmdH += (cam.cmdHeight - this.cmdH) * k;
     out.tx = this.cmdX;
-    out.ty = 0;
+    out.ty = world.collision.groundHeight(this.cmdX, this.cmdZ);
     out.tz = this.cmdZ;
     out.yaw = Math.PI;
     out.pitch = CMD_PITCH;
@@ -405,9 +450,9 @@ export class CameraRig {
   }
 
   /** Just above the GCC tabletop, looking straight down at the live map, north up. */
-  private tablePose(gcc: Building, out: RigPose): void {
+  private tablePose(world: World, gcc: Building, out: RigPose): void {
     out.tx = gcc.pos.x;
-    out.ty = GCC_TABLE_Y;
+    out.ty = GCC_TABLE_Y + world.collision.groundHeight(gcc.pos.x, gcc.pos.z);
     out.tz = gcc.pos.z;
     out.yaw = Math.PI + GCC_TABLE_MAP_YAW;
     out.pitch = DIVE_PITCH;
@@ -416,9 +461,9 @@ export class CameraRig {
   }
 
   /** The same framing at world scale: the tabletop map becomes the battlefield. */
-  private tableWorldPose(out: RigPose): void {
+  private tableWorldPose(world: World, out: RigPose): void {
     out.tx = 0;
-    out.ty = 0;
+    out.ty = world.collision.groundHeight(0, 0);
     out.tz = 0;
     out.yaw = Math.PI + GCC_TABLE_MAP_YAW;
     out.pitch = DIVE_PITCH;

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR, HIPPIE, LEVEL_HEIGHT, SIM_DT } from '../../constants';
+import { AVATAR, HIPPIE, LEVEL_HEIGHT, MAP_HALF, SIM_DT } from '../../constants';
 import type { GameEvent } from '../../events';
 import { spawnFlag, spawnHippie, spawnZone } from '../../factory';
 import { planEnclosure } from '../../lattice/planner';
 import type { V3 } from '../../math';
+import { groundHeight } from '../../terrain';
+import { normalizeMatch } from '../../matchSettings';
 import { createMatch } from '../../setup';
 import { Simulation } from '../../simulation';
 import type { Avatar, AvatarInput, FactionId, Hippie, JobKind } from '../../types';
@@ -23,7 +25,8 @@ interface Match {
 }
 
 function match(seed = 'units-suite'): Match {
-  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard' });
+  // Keep deterministic mechanics fixtures independent of editable menu defaults.
+  const world = createMatch({ seed, difficulty: 'normal', humans: [], mode: 'standard', match: normalizeMatch({ jumpHeight: 1, maxSignifiers: 40 }) });
   // No phason tides mid-test: they would decohere Flags under the scenario.
   world.tide.nextAt = Infinity;
   return { world, sim: new Simulation(world), events: [] };
@@ -52,7 +55,7 @@ function onlyJob(m: Match, f: FactionId, job: JobKind): void {
 
 function placeAvatar(av: Avatar, x: number, z: number): void {
   av.pos.x = x;
-  av.pos.y = 0;
+  av.pos.y = groundHeight(x, z, MAP_HALF);
   av.pos.z = z;
   av.vel.x = 0;
   av.vel.y = 0;
@@ -80,8 +83,9 @@ function throwRange(av: Avatar, yaw: number, pitch: number): number {
   for (let i = 0; i < 600; i++) {
     v.y -= AVATAR.gravity * SIM_DT;
     const ny = p.y + v.y * SIM_DT;
-    if (ny <= 0) {
-      const t = p.y / (p.y - ny);
+    const ground = groundHeight(p.x + v.x * SIM_DT, p.z + v.z * SIM_DT, MAP_HALF);
+    if (ny <= ground) {
+      const t = (p.y - ground) / (p.y - ny);
       return Math.hypot(p.x + v.x * SIM_DT * t - av.pos.x, p.z + v.z * SIM_DT * t - av.pos.z);
     }
     p.x += v.x * SIM_DT;
@@ -127,6 +131,81 @@ function squattedPlan(world: World, free: number, squatted: number, dist: number
 }
 
 describe('vexillomancer avatar', () => {
+  it('blocks sprint throws and lets throw mode end sprinting before a same-tick throw', () => {
+    const m = match();
+    const av = m.world.avatarOf(0);
+    const n = m.world.lattice.nodes[openNode(m.world, 14, { x: 0, z: 60 })];
+    placeAvatar(av, n.x, n.z);
+    const carried = av.carried.length;
+    input(m, 0, { sprint: true, moveZ: 1 });
+    run(m, 0.3);
+    expect(av.vel.z).toBeCloseTo(AVATAR.sprintSpeed);
+    m.world.submit({ t: 'throw', faction: 0 });
+    run(m, SIM_DT);
+    expect(av.carried).toHaveLength(carried);
+    expect(m.world.projectiles.size).toBe(0);
+
+    input(m, 0, { sprint: true, throwMode: true, moveZ: 1 });
+    m.world.submit({ t: 'throw', faction: 0 });
+    run(m, SIM_DT);
+    expect(av.input.sprint).toBe(false);
+    expect(av.carried).toHaveLength(carried - 1);
+    expect(m.world.projectiles.size).toBe(1);
+    run(m, 0.3);
+    expect(av.vel.z).toBeCloseTo(AVATAR.runSpeed);
+  });
+
+  it('picks up nearby loose Flags in throw mode, including with an empty quiver, up to capacity', () => {
+    const m = match();
+    const av = m.world.avatarOf(0);
+    for (const id of [...av.carried]) depositToStock(m.world, id, m.world.hearthOf(0)!.id);
+    m.world.hippies.clear();
+    const node = openNode(m.world, 8, { x: 0, z: 60 });
+    const n = m.world.lattice.nodes[node];
+    placeAvatar(av, n.x, n.z);
+    const planted = spawnFlag(m.world, { state: 'loose', owner: 0, pos: { ...av.pos } });
+    expect(plantFlag(m.world, planted.id, node, 0, av.id)).toBe(true);
+    const loose = Array.from({ length: AVATAR.quiver + 1 }, () =>
+      spawnFlag(m.world, { state: 'loose', owner: 1, pos: { x: n.x + 1, y: 0, z: n.z } }),
+    );
+    const far = spawnFlag(m.world, { state: 'loose', owner: 1, pos: { x: n.x + AVATAR.pullReach + 1, y: 0, z: n.z } });
+    run(m, SIM_DT);
+    expect(av.carried).toHaveLength(0);
+    input(m, 0, { throwMode: true });
+    run(m, SIM_DT);
+    expect(av.carried).toHaveLength(AVATAR.quiver);
+    expect(loose.filter((f) => f.state === 'carried' && f.holder === av.id && f.owner === 0)).toHaveLength(AVATAR.quiver);
+    expect(loose.at(-1)!.state).toBe('loose');
+    expect(far.state).toBe('loose');
+    expect(planted.state).toBe('planted');
+  });
+
+  it('triples the default jump apex while preserving explicit original and double heights', () => {
+    const m = match();
+    const av = m.world.avatarOf(0);
+    const n = m.world.lattice.nodes[openNode(m.world, 4, { x: 0, z: 60 })];
+    const peaks: number[] = [];
+    for (const jumpHeight of [1, 2, undefined]) {
+      m.world.options.match = normalizeMatch({ jumpHeight });
+      placeAvatar(av, n.x, n.z);
+      av.onGround = true;
+      const cmd: AvatarInput = { moveX: 0, moveZ: 0, sprint: false, jump: true, yaw: 0, pitch: 0 };
+      stepAvatarMotion(m.world, av, cmd, SIM_DT);
+      expect(av.vel.y).toBeCloseTo(AVATAR.jumpSpeed * Math.sqrt(jumpHeight ?? 3) - AVATAR.gravity * SIM_DT);
+      cmd.jump = false;
+      let peak = av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF);
+      for (let i = 0; i < 120; i++) {
+        stepAvatarMotion(m.world, av, cmd, SIM_DT);
+        peak = Math.max(peak, av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF));
+      }
+      expect(av.onGround).toBe(true);
+      peaks.push(peak);
+    }
+    expect(peaks[1] / peaks[0]).toBeCloseTo(2, 1);
+    // Discrete 60 Hz integration slightly understates the smaller reference apex.
+    expect(Math.abs(peaks[2] / peaks[0] - 3)).toBeLessThan(0.1);
+  });
+
   it('runs, jumps and lands back on the ground', () => {
     const m = match();
     const av = m.world.avatarOf(0);
@@ -141,7 +220,7 @@ describe('vexillomancer avatar', () => {
     input(m, 0, { moveX: -oz / ol, moveZ: ox / ol, yaw: Math.atan2(-oz, ox) });
     run(m, 1);
     expect(Math.hypot(av.pos.x - x0, av.pos.z - z0)).toBeGreaterThan(6);
-    expect(av.pos.y).toBe(0);
+    expect(av.pos.y).toBeCloseTo(groundHeight(av.pos.x, av.pos.z, MAP_HALF), 8);
 
     input(m, 0, { jump: true });
     run(m, SIM_DT);
@@ -149,7 +228,7 @@ describe('vexillomancer avatar', () => {
     let peak = 0;
     let airborne = false;
     run(m, 1.2, () => {
-      peak = Math.max(peak, av.pos.y);
+      peak = Math.max(peak, av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF));
       if (!av.onGround) airborne = true;
       return false;
     });
@@ -157,7 +236,7 @@ describe('vexillomancer avatar', () => {
     // v² / 2g = 7.5² / 48 ≈ 1.17 m
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThan(1.3);
-    expect(av.pos.y).toBe(0);
+    expect(av.pos.y).toBeCloseTo(groundHeight(av.pos.x, av.pos.z, MAP_HALF), 8);
     expect(av.onGround).toBe(true);
   });
 
@@ -326,9 +405,9 @@ describe('vexillomancer avatar', () => {
       copy.pushing = av.pushing;
       stepAvatarMotion(world, copy, inp, SIM_DT);
       expect({ tick: i, motion: motion(copy) }).toEqual({ tick: i, motion: motion(av) });
-      peak = Math.max(peak, av.pos.y);
+      peak = Math.max(peak, av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF));
       if (av.pos.y > 2.5 && !av.onGround) airborneHigh = true;
-      if (peak > 3 && av.pos.y === 0 && av.onGround) landedAfterDeck = true;
+      if (peak > 3 && Math.abs(av.pos.y - groundHeight(av.pos.x, av.pos.z, MAP_HALF)) < 1e-8 && av.onGround) landedAfterDeck = true;
     };
 
     for (let i = 0; i < 300; i++) {
@@ -430,7 +509,7 @@ describe('hippies', () => {
     expect(world.factions[0].stats.flagsStolen).toBeGreaterThan(0);
   });
 
-  it('a KO drops the carried Flag loose and the hippie respawns at its Hearth', () => {
+  it('a KO drops the carried Flag loose and the same hippie respawns neutral', () => {
     const m = match();
     const world = m.world;
     const hearth = world.hearthOf(0);
@@ -453,7 +532,10 @@ describe('hippies', () => {
     run(m, 1);
     expect(h.status).not.toBe('ko');
     expect(h.hp).toBe(HIPPIE.maxHp);
-    expect(Math.hypot(h.pos.x - hearth.pos.x, h.pos.z - hearth.pos.z)).toBeLessThan(12);
+    expect(h.faction).toBe(-1);
+    expect(h.order).toBeNull();
+    expect(h.beacon).toBe(false);
+    expect(m.world.map.neutralSpawns.some((p) => Math.hypot(h.pos.x - p.x, h.pos.z - p.z) < 12)).toBe(true);
   });
 
   it('attention runs out → distracted at a sound camp → recovers to work', () => {
@@ -595,18 +677,21 @@ describe('hippies', () => {
     expect(gcc.gcc?.pushedBy).toBe(-1);
   });
 
-  it('steps 150 hippies inside the tick budget', () => {
-    const m = match('units-perf');
-    const world = m.world;
-    let n = world.hippies.size;
-    for (let i = 0; n < 150; i++, n++) {
+  it.each([150, 200])('steps %i hippies inside the tick budget', (population) => {
+    // Retain the 150-worker stress scenario and cover the fresh 200-hippie default too.
+    const world = population === 200
+      ? createMatch({ seed: 'units-perf', difficulty: 'normal', humans: [], mode: 'standard' })
+      : match('units-perf').world;
+    world.tide.nextAt = Infinity;
+    const m: Match = { world, sim: new Simulation(world), events: [] };
+    for (let i = 0, n = world.hippies.size; n < population; i++, n++) {
       const f = (i % 4) as FactionId;
       const hearth = world.hearthOf(f);
       if (!hearth) throw new Error('no hearth');
       const a = (i * 2.399) % (Math.PI * 2);
       spawnHippie(world, f, { x: hearth.pos.x + Math.sin(a) * 9, z: hearth.pos.z + Math.cos(a) * 9 });
     }
-    expect(world.hippies.size).toBe(150);
+    expect(world.hippies.size).toBe(population);
     run(m, 2);
     let total = 0;
     const ticks = 600;
